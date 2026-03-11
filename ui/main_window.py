@@ -1,0 +1,619 @@
+from PyQt6.QtWidgets import (QMainWindow, QWidget, QHBoxLayout, QVBoxLayout,
+                             QSplitter, QMenuBar, QMenu, QStatusBar,
+                             QFileDialog, QMessageBox, QInputDialog)
+from PyQt6.QtCore import Qt, QRect, QRectF
+from PyQt6.QtGui import QAction, QKeySequence, QColor, QImageReader, QImageWriter, QPainter, QPainterPath
+
+from ui.canvas_widget    import CanvasWidget
+from ui.toolbar          import ToolBar
+from ui.tool_options_bar import ToolOptionsBar
+from ui.layers_panel     import LayersPanel
+from ui.color_panel      import ColorPanel
+
+from core.document  import Document
+from core.history   import HistoryManager, HistoryState
+
+
+# ── Tool registry ─────────────────────────────────────────────────────────────
+def _build_tool_registry(text_parent):
+    from tools.brush_tool   import BrushTool
+    from tools.eraser_tool  import EraserTool
+    from tools.fill_tool    import FillTool
+    from tools.effect_tools import BlurTool, SharpenTool, SmudgeTool
+    from tools.other_tools  import (SelectTool, MoveTool, EyedropperTool,
+                                    CropTool, TextTool, ShapesTool)
+    text = TextTool()
+    text._parent_widget = text_parent
+
+    return {
+        "Brush":      BrushTool(),
+        "Eraser":     EraserTool(),
+        "Fill":       FillTool(),
+        "Blur":       BlurTool(),
+        "Sharpen":    SharpenTool(),
+        "Smudge":     SmudgeTool(),
+        "Select":     SelectTool(),
+        "Move":       MoveTool(),
+        "Eyedropper": EyedropperTool(),
+        "Crop":       CropTool(),
+        "Text":       text,
+        "Shapes":     ShapesTool(),
+    }
+
+
+class MainWindow(QMainWindow):
+    def __init__(self):
+        super().__init__()
+        self.setWindowTitle("LinuxShop — untitled")
+
+        self._document = Document(800, 600, QColor(255, 255, 255))
+        self._history  = HistoryManager()
+        self._tools    = _build_tool_registry(self)
+        self._active_tool_name = "Brush"
+
+        self._build_ui()
+        self._wire_signals()
+        self._activate_tool("Brush")
+        self._refresh_layers()
+
+        # Initial history snapshot
+        self._push_history("New document")
+
+    # ================================================================== UI Build
+    def _build_ui(self):
+        from ui.styles import DARK_STYLE
+        self.setStyleSheet(DARK_STYLE)
+        self.resize(1300, 850)
+
+        # ── Menu bar ──────────────────────────────────────────────────────
+        self._build_menu_bar()
+
+        # ── Status bar ────────────────────────────────────────────────────
+        self._status = QStatusBar()
+        self.setStatusBar(self._status)
+        self._status.showMessage("Ready")
+
+        # ── Tool options bar (top, below menu) ────────────────────────────
+        self._opts_bar = ToolOptionsBar()
+
+        # ── Central area ─────────────────────────────────────────────────
+        central = QWidget()
+        self.setCentralWidget(central)
+        root_v = QVBoxLayout(central)
+        root_v.setContentsMargins(0, 0, 0, 0)
+        root_v.setSpacing(0)
+        root_v.addWidget(self._opts_bar)
+
+        # Main horizontal: toolbar | canvas | right panels
+        body = QWidget()
+        body_h = QHBoxLayout(body)
+        body_h.setContentsMargins(0, 0, 0, 0)
+        body_h.setSpacing(0)
+
+        # Left toolbar
+        self._toolbar = ToolBar()
+        body_h.addWidget(self._toolbar)
+
+        # Canvas (takes remaining space)
+        self._canvas = CanvasWidget()
+        self._canvas.set_document(self._document)
+
+        # Right panel: color + layers stacked vertically
+        right = QWidget()
+        right.setObjectName("panel")
+        right.setFixedWidth(220)
+        right_v = QVBoxLayout(right)
+        right_v.setContentsMargins(0, 0, 0, 0)
+        right_v.setSpacing(0)
+
+        self._color_panel  = ColorPanel()
+        self._layers_panel = LayersPanel()
+
+        right_v.addWidget(self._color_panel)
+        right_v.addWidget(self._layers_panel, 1)
+
+        body_h.addWidget(self._canvas, 1)
+        body_h.addWidget(right)
+
+        root_v.addWidget(body, 1)
+
+    # ================================================================= Menu Bar
+    def _build_menu_bar(self):
+        mb = self.menuBar()
+
+        # ── File ──────────────────────────────────────────────────────────
+        file_m = mb.addMenu("File")
+        self._act(file_m, "New…",          self._new_doc,    QKeySequence.StandardKey.New)
+        self._act(file_m, "Open…",         self._open_file,  QKeySequence.StandardKey.Open)
+        file_m.addSeparator()
+        self._act(file_m, "Save",          self._save,       QKeySequence.StandardKey.Save)
+        self._act(file_m, "Save As…",      self._save_as,    QKeySequence("Ctrl+Shift+S"))
+        self._act(file_m, "Export PNG…",   self._export_png)
+        file_m.addSeparator()
+        self._act(file_m, "Quit",          self.close,       QKeySequence.StandardKey.Quit)
+
+        # ── Edit ──────────────────────────────────────────────────────────
+        edit_m = mb.addMenu("Edit")
+        self._undo_act = self._act(edit_m, "Undo", self._undo, QKeySequence.StandardKey.Undo)
+        self._redo_act = self._act(edit_m, "Redo", self._redo, QKeySequence.StandardKey.Redo)
+        edit_m.addSeparator()
+        self._act(edit_m, "Cut",    self._cut,   QKeySequence.StandardKey.Cut)
+        self._act(edit_m, "Copy",   self._copy,  QKeySequence.StandardKey.Copy)
+        self._act(edit_m, "Paste as New Layer", self._paste, QKeySequence.StandardKey.Paste)
+        edit_m.addSeparator()
+        self._act(edit_m, "Clear Layer",   self._clear_layer, QKeySequence("Delete"))
+        self._act(edit_m, "Deselect",      self._deselect,    QKeySequence("Ctrl+D"))
+        self._act(edit_m, "Select All",    self._select_all,  QKeySequence.StandardKey.SelectAll)
+        edit_m.addSeparator()
+        self._act(edit_m, "Fill FG Color", self._fill_fg,     QKeySequence("Alt+Delete"))
+        self._act(edit_m, "Fill BG Color", self._fill_bg,     QKeySequence("Ctrl+Delete"))
+
+        # ── Image ─────────────────────────────────────────────────────────
+        img_m = mb.addMenu("Image")
+        self._act(img_m, "Flip Horizontal", self._flip_h)
+        self._act(img_m, "Flip Vertical",   self._flip_v)
+        img_m.addSeparator()
+        self._act(img_m, "Resize Canvas…",  self._resize_canvas)
+        img_m.addSeparator()
+        self._act(img_m, "Apply Crop",      self._apply_crop, QKeySequence("Return"))
+        img_m.addSeparator()
+        self._act(img_m, "Flatten Image",   self._flatten)
+
+        # ── Layer ─────────────────────────────────────────────────────────
+        layer_m = mb.addMenu("Layer")
+        self._act(layer_m, "New Layer",        self._add_layer,      QKeySequence("Ctrl+Shift+N"))
+        self._act(layer_m, "Duplicate Layer",  self._duplicate_layer,QKeySequence("Ctrl+J"))
+        self._act(layer_m, "Delete Layer",     self._delete_layer)
+        layer_m.addSeparator()
+        self._act(layer_m, "Move Up",   self._layer_up,   QKeySequence("Ctrl+]"))
+        self._act(layer_m, "Move Down", self._layer_down, QKeySequence("Ctrl+["))
+
+        # ── View ──────────────────────────────────────────────────────────
+        view_m = mb.addMenu("View")
+        self._act(view_m, "Zoom In",       lambda: self._canvas.zoom_in(),    QKeySequence.StandardKey.ZoomIn)
+        self._act(view_m, "Zoom Out",      lambda: self._canvas.zoom_out(),   QKeySequence.StandardKey.ZoomOut)
+        self._act(view_m, "Fit to Window", lambda: self._canvas.reset_zoom(), QKeySequence("Ctrl+0"))
+
+    def _act(self, menu: QMenu, label: str, slot, shortcut=None) -> QAction:
+        act = QAction(label, self)
+        if shortcut:
+            act.setShortcut(shortcut)
+        act.triggered.connect(slot)
+        menu.addAction(act)
+        return act
+
+    def _canvas_refresh(self):
+        """Инвалидировать кэш холста и перерисовать."""
+        self._canvas._cache_dirty = True
+        self._canvas.update()
+
+    # ================================================================ Signals
+    def _wire_signals(self):
+        # Toolbar
+        self._toolbar.tool_selected.connect(self._activate_tool)
+
+        # Canvas
+        self._canvas.document_changed.connect(self._on_doc_changed)
+        self._canvas.pixels_changed.connect(self._on_pixels_changed)
+        self._canvas.color_picked.connect(self._color_panel.set_fg)
+
+        # Color panel
+        self._color_panel.fg_changed.connect(self._on_fg_changed)
+        self._color_panel.bg_changed.connect(self._on_bg_changed)
+
+        # Tool options
+        self._opts_bar.option_changed.connect(self._on_opt_changed)
+        self._opts_bar.apply_styles_requested.connect(self._apply_text_styles)
+
+        # Layers panel
+        self._layers_panel.layer_selected.connect(self._on_layer_selected)
+        self._layers_panel.layer_added.connect(self._add_layer)
+        self._layers_panel.layer_duplicated.connect(self._duplicate_layer)
+        self._layers_panel.layer_deleted.connect(self._delete_layer)
+        self._layers_panel.layer_moved_up.connect(self._layer_up)
+        self._layers_panel.layer_moved_down.connect(self._layer_down)
+        self._layers_panel.layer_visibility.connect(self._on_layer_visibility)
+        self._layers_panel.layer_opacity.connect(self._on_layer_opacity)
+        self._layers_panel.layer_merged_down.connect(self._merge_down)
+        self._layers_panel.layer_flatten.connect(self._flatten)
+
+    # ================================================================ Tool activation
+    def _activate_tool(self, name: str):
+        self._active_tool_name = name
+        tool = self._tools.get(name)
+        if not tool:
+            return
+
+        # Wire eyedropper callback
+        from tools.other_tools import EyedropperTool
+        if isinstance(tool, EyedropperTool):
+            tool.color_picked_callback = lambda c: (
+                self._color_panel.set_fg(c),
+                self._canvas.__setattr__("fg_color", c),
+            )
+
+        self._canvas.active_tool = tool
+        self._canvas._update_cursor()
+        self._opts_bar.switch_to(name)
+        self._toolbar.set_active(name)
+
+    # ================================================================ Document events
+    def _on_pixels_changed(self):
+        """Вызывается на каждое движение кисти — только обновляем статус."""
+        self._update_status()
+
+    def _on_doc_changed(self):
+        """Вызывается один раз после завершения мазка или любой структурной операции."""
+        self._refresh_layers()
+        state = getattr(self._canvas, "_pre_stroke_state", None)
+        if state:
+            self._history.push(state)
+            self._canvas._pre_stroke_state = None
+        self._update_title()
+
+    def _push_history(self, description: str):
+        self._history.push(HistoryState(
+            description=description,
+            layers_snapshot=self._document.snapshot_layers(),
+            active_layer_index=self._document.active_layer_index,
+        ))
+
+    def _update_status(self, msg: str = ""):
+        doc = self._document
+        layer = doc.get_active_layer()
+        layer_name = layer.name if layer else "—"
+        z = int(self._canvas.zoom * 100)
+        self._status.showMessage(
+            f"  {doc.width} × {doc.height} px  |  Zoom: {z}%  |  Layer: {layer_name}"
+            + (f"  |  {msg}" if msg else "")
+        )
+
+    def _update_title(self):
+        self.setWindowTitle(f"LinuxShop — {self._document.width}×{self._document.height}")
+
+    # ================================================================ Colour
+    def _on_fg_changed(self, c: QColor):
+        self._canvas.fg_color = c
+
+    def _on_bg_changed(self, c: QColor):
+        self._canvas.bg_color = c
+
+    # ================================================================ Options
+    def _on_opt_changed(self, key: str, value):
+        self._canvas.tool_opts[key] = value
+
+    def _apply_text_styles(self):
+        """Перерисовать активный текстовый слой с текущими настройками стиля."""
+        from tools.other_tools import _render_text, TextTool
+        from PyQt6.QtCore import Qt
+        layer = self._document.get_active_layer()
+        if not layer or not getattr(layer, "text_data", None):
+            return
+        self._push_history("Apply text styles")
+        td   = layer.text_data
+        opts = self._canvas.tool_opts
+        layer.image.fill(Qt.GlobalColor.transparent)
+        sel = self._document.selection
+        _render_text(layer.image, td["x"], td["y"], td["text"], opts,
+                     sel if (sel and not sel.isEmpty()) else None)
+        layer.text_data = {**td, **TextTool._snap_opts(opts)}
+        self._canvas_refresh()
+        self._refresh_layers()
+
+    # ================================================================ Layer ops
+    def _refresh_layers(self):
+        self._layers_panel.refresh(self._document)
+        self._update_status()
+
+    def _on_layer_selected(self, index: int):
+        self._document.active_layer_index = index
+        self._refresh_layers()
+
+    def _on_layer_visibility(self, index: int, visible: bool):
+        self._document.layers[index].visible = visible
+        self._canvas_refresh()
+
+    def _on_layer_opacity(self, index: int, opacity: float):
+        self._document.layers[index].opacity = opacity
+        self._canvas_refresh()
+        self._refresh_layers()
+
+    def _add_layer(self):
+        self._push_history("Before add layer")
+        self._document.add_layer()
+        self._refresh_layers()
+        self._canvas_refresh()
+
+    def _duplicate_layer(self):
+        self._push_history("Before duplicate layer")
+        self._document.duplicate_layer(self._document.active_layer_index)
+        self._refresh_layers()
+        self._canvas_refresh()
+
+    def _delete_layer(self):
+        if len(self._document.layers) <= 1:
+            QMessageBox.warning(self, "Delete Layer", "Cannot delete the last layer.")
+            return
+        self._push_history("Before delete layer")
+        self._document.remove_layer(self._document.active_layer_index)
+        self._refresh_layers()
+        self._canvas_refresh()
+
+    def _layer_up(self):
+        i = self._document.active_layer_index
+        self._push_history("Layer move up")
+        self._document.move_layer(i, i + 1)
+        self._refresh_layers()
+        self._canvas_refresh()
+
+    def _layer_down(self):
+        i = self._document.active_layer_index
+        self._push_history("Layer move down")
+        self._document.move_layer(i, i - 1)
+        self._refresh_layers()
+        self._canvas_refresh()
+
+    def _merge_down(self):
+        i = self._document.active_layer_index
+        if i == 0:
+            return
+        self._push_history("Merge down")
+        from PyQt6.QtGui import QPainter
+        bottom = self._document.layers[i - 1]
+        top    = self._document.layers[i]
+        p = QPainter(bottom.image)
+        p.setOpacity(top.opacity)
+        p.drawImage(top.offset, top.image)
+        p.end()
+        self._document.remove_layer(i)
+        self._refresh_layers()
+        self._canvas_refresh()
+
+    def _flatten(self):
+        self._push_history("Flatten")
+        self._document.flatten()
+        self._refresh_layers()
+        self._canvas_refresh()
+
+    # ================================================================ Edit ops
+    def _undo(self):
+        state = self._history.undo()
+        if not state:
+            return
+        # Save current state to redo
+        self._history.save_for_redo(HistoryState(
+            description="redo",
+            layers_snapshot=self._document.snapshot_layers(),
+            active_layer_index=self._document.active_layer_index,
+        ))
+        self._document.restore_layers(state.layers_snapshot)
+        self._document.active_layer_index = state.active_layer_index
+        self._refresh_layers()
+        self._canvas_refresh()
+        self._status.showMessage(f"Undo: {state.description}")
+
+    def _redo(self):
+        state = self._history.redo()
+        if not state:
+            return
+        self._push_history("undo")
+        self._document.restore_layers(state.layers_snapshot)
+        self._document.active_layer_index = state.active_layer_index
+        self._refresh_layers()
+        self._canvas_refresh()
+
+    def _clear_layer(self):
+        layer = self._document.get_active_layer()
+        if not layer:
+            return
+        self._push_history("Clear layer")
+        layer.image.fill(Qt.GlobalColor.transparent)
+        self._canvas_refresh()
+
+    def _deselect(self):
+        self._document.selection = None
+        self._canvas_refresh()
+
+    def _select_all(self):
+        p = QPainterPath()
+        p.addRect(QRectF(0, 0, self._document.width, self._document.height))
+        self._document.selection = p
+        self._canvas_refresh()
+
+    def _cut(self):
+        self._copy()
+        layer = self._document.get_active_layer()
+        if not layer:
+            return
+        sel = self._document.selection
+        if sel and not sel.isEmpty():
+            self._push_history("Cut")
+            p = QPainter(layer.image)
+            p.setCompositionMode(QPainter.CompositionMode.CompositionMode_Clear)
+            p.setClipPath(sel)
+            p.fillRect(sel.boundingRect().toRect(), QColor(0, 0, 0, 0))
+            p.end()
+            self._canvas_refresh()
+
+    def _copy(self):
+        layer = self._document.get_active_layer()
+        if not layer:
+            return
+        sel = self._document.selection
+        if sel and not sel.isEmpty():
+            self._clipboard = layer.image.copy(sel.boundingRect().toRect())
+        else:
+            self._clipboard = layer.image.copy()
+
+    def _paste(self):
+        if not hasattr(self, "_clipboard") or self._clipboard is None:
+            return
+        self._push_history("Paste")
+        from core.layer import Layer
+        from PyQt6.QtCore import QPoint
+        new_layer = Layer(f"Pasted {len(self._document.layers)+1}",
+                          self._document.width, self._document.height)
+        # Вставляем по центру холста
+        cx = (self._document.width  - self._clipboard.width())  // 2
+        cy = (self._document.height - self._clipboard.height()) // 2
+        p = QPainter(new_layer.image)
+        p.drawImage(QPoint(cx, cy), self._clipboard)
+        p.end()
+        self._document.layers.append(new_layer)
+        self._document.active_layer_index = len(self._document.layers) - 1
+        self._refresh_layers()
+        self._canvas_refresh()
+
+    def _fill_fg(self):
+        self._fill_with(self._canvas.fg_color)
+
+    def _fill_bg(self):
+        self._fill_with(self._canvas.bg_color)
+
+    def _fill_with(self, color: QColor):
+        layer = self._document.get_active_layer()
+        if not layer:
+            return
+        self._push_history("Fill")
+        from PyQt6.QtGui import QPainter
+        p = QPainter(layer.image)
+        sel = self._document.selection
+        if sel and not sel.isEmpty():
+            p.setClipPath(sel)
+            p.fillRect(sel.boundingRect().toRect(), color)
+            p.setClipping(False)
+        else:
+            p.fillRect(layer.image.rect(), color)
+        p.end()
+        self._canvas_refresh()
+
+    # ================================================================ Image ops
+    def _flip_h(self):
+        layer = self._document.get_active_layer()
+        if not layer:
+            return
+        self._push_history("Flip H")
+        layer.image = layer.image.mirrored(horizontal=True, vertical=False)
+        self._canvas_refresh()
+
+    def _flip_v(self):
+        layer = self._document.get_active_layer()
+        if not layer:
+            return
+        self._push_history("Flip V")
+        layer.image = layer.image.mirrored(horizontal=False, vertical=True)
+        self._canvas_refresh()
+
+    def _resize_canvas(self):
+        from utils.new_document_dialog import NewDocumentDialog
+        dlg = NewDocumentDialog(self)
+        dlg.setWindowTitle("Resize Canvas")
+        dlg._width_spin.setValue(self._document.width)
+        dlg._height_spin.setValue(self._document.height)
+        if dlg.exec():
+            self._push_history("Resize canvas")
+            from PyQt6.QtGui import QPainter, QImage
+            new_w, new_h = dlg.get_width(), dlg.get_height()
+            for layer in self._document.layers:
+                new_img = QImage(new_w, new_h, QImage.Format.Format_ARGB32_Premultiplied)
+                new_img.fill(Qt.GlobalColor.transparent)
+                p = QPainter(new_img)
+                p.drawImage(0, 0, layer.image)
+                p.end()
+                layer.image = new_img
+            self._document.width  = new_w
+            self._document.height = new_h
+            self._canvas_refresh()
+            self._canvas.reset_zoom()
+            self._refresh_layers()
+
+    def _apply_crop(self):
+        from tools.other_tools import CropTool
+        tool = self._tools.get("Crop")
+        if isinstance(tool, CropTool) and tool.pending_rect:
+            self._push_history("Crop")
+            self._document.apply_crop(tool.pending_rect)
+            tool.pending_rect = None
+            self._canvas_refresh()
+            self._canvas.reset_zoom()
+            self._refresh_layers()
+
+    # ================================================================ File ops
+    def _new_doc(self):
+        from utils.new_document_dialog import NewDocumentDialog
+        dlg = NewDocumentDialog(self)
+        if dlg.exec():
+            self._document = Document(dlg.get_width(), dlg.get_height(), dlg.get_bg_color())
+            self._history.clear()
+            self._canvas.set_document(self._document)
+            self._refresh_layers()
+            self._push_history("New document")
+            self._update_title()
+            self._filepath = None
+
+    def _open_file(self):
+        path, _ = QFileDialog.getOpenFileName(
+            self, "Open Image", "",
+            "Images (*.png *.jpg *.jpeg *.bmp *.webp *.tiff);;All Files (*)")
+        if not path:
+            return
+        from PyQt6.QtGui import QImage
+        img = QImage(path)
+        if img.isNull():
+            QMessageBox.critical(self, "Error", f"Could not open:\n{path}")
+            return
+        img = img.convertToFormat(QImage.Format.Format_ARGB32_Premultiplied)
+        self._document = Document.__new__(Document)
+        self._document.width  = img.width()
+        self._document.height = img.height()
+        self._document.selection = None
+        from core.layer import Layer
+        layer = Layer.__new__(Layer)
+        layer.name = "Background"
+        layer.visible = True
+        layer.locked  = False
+        layer.opacity = 1.0
+        layer.blend_mode = "Normal"
+        from PyQt6.QtCore import QPoint
+        layer.offset = QPoint(0, 0)
+        layer.image  = img
+        self._document.layers = [layer]
+        self._document.active_layer_index = 0
+
+        self._history.clear()
+        self._canvas.set_document(self._document)
+        self._filepath = path
+        self._refresh_layers()
+        self.setWindowTitle(f"LinuxShop — {path.split('/')[-1]}")
+
+    def _save(self):
+        if hasattr(self, "_filepath") and self._filepath:
+            self._do_save(self._filepath)
+        else:
+            self._save_as()
+
+    def _save_as(self):
+        path, _ = QFileDialog.getSaveFileName(
+            self, "Save As", "untitled.png",
+            "PNG (*.png);;JPEG (*.jpg *.jpeg);;BMP (*.bmp);;All Files (*)")
+        if path:
+            self._filepath = path
+            self._do_save(path)
+
+    def _export_png(self):
+        path, _ = QFileDialog.getSaveFileName(
+            self, "Export PNG", "export.png", "PNG (*.png)")
+        if path:
+            self._do_save(path, flatten=True)
+
+    def _do_save(self, path: str, flatten: bool = False):
+        if flatten:
+            img = self._document.get_composite()
+        else:
+            layer = self._document.get_active_layer()
+            img = layer.image if layer else self._document.get_composite()
+        ok = img.save(path)
+        if ok:
+            self._status.showMessage(f"Saved: {path}")
+        else:
+            QMessageBox.critical(self, "Save Error", f"Could not save to:\n{path}")
