@@ -1,11 +1,19 @@
 from PyQt6.QtWidgets import QHBoxLayout, QLabel, QComboBox
 from PyQt6.QtGui import QImage
 
+from core.locale import tr
 from ui.adjustments_dialog import _to_argb32, _bits_ba, _from_ba, _AdjustDialog, _SliderRow
 
 
 _SC_RANGES = ("Reds", "Yellows", "Greens", "Cyans",
               "Blues", "Magentas", "Whites", "Neutrals", "Blacks")
+_SC_RANGE_KEYS = (
+    "adj.selective_color.reds",     "adj.selective_color.yellows",
+    "adj.selective_color.greens",   "adj.selective_color.cyans",
+    "adj.selective_color.blues",    "adj.selective_color.magentas",
+    "adj.selective_color.whites",   "adj.selective_color.neutrals",
+    "adj.selective_color.blacks",
+)
 
 
 def apply_selective_color(src: QImage, adjustments: dict) -> QImage:
@@ -130,7 +138,7 @@ def apply_selective_color(src: QImage, adjustments: dict) -> QImage:
 
 class SelectiveColorDialog(_AdjustDialog):
     def __init__(self, layer, canvas_refresh, parent=None):
-        super().__init__("Selective Color", layer, canvas_refresh, parent)
+        super().__init__(tr("adj.selective_color.title"), layer, canvas_refresh, parent)
         self.setMinimumWidth(400)
 
         self._values        = {name: [0, 0, 0, 0] for name in _SC_RANGES}
@@ -138,20 +146,21 @@ class SelectiveColorDialog(_AdjustDialog):
 
         # Range selector
         rng_row = QHBoxLayout()
-        rng_lbl = QLabel("Colors:")
+        rng_lbl = QLabel(tr("adj.selective_color.colors"))
         rng_lbl.setFixedWidth(90)
         self._rng_combo = QComboBox()
-        self._rng_combo.addItems(_SC_RANGES)
-        self._rng_combo.currentTextChanged.connect(self._switch_range)
+        self._rng_combo.addItems([tr(k) for k in _SC_RANGE_KEYS])
+        self._rng_combo.currentIndexChanged.connect(
+            lambda i: self._switch_range(_SC_RANGES[i] if 0 <= i < len(_SC_RANGES) else _SC_RANGES[0]))
         rng_row.addWidget(rng_lbl)
         rng_row.addWidget(self._rng_combo)
         rng_row.addStretch()
         self._vbox.addLayout(rng_row)
 
-        self._cyan    = _SliderRow("Cyan:",    -100, 100)
-        self._magenta = _SliderRow("Magenta:", -100, 100)
-        self._yellow  = _SliderRow("Yellow:",  -100, 100)
-        self._black   = _SliderRow("Black:",   -100, 100)
+        self._cyan    = _SliderRow(tr("adj.selective_color.cyan"),    -100, 100)
+        self._magenta = _SliderRow(tr("adj.selective_color.magenta"), -100, 100)
+        self._yellow  = _SliderRow(tr("adj.selective_color.yellow"),  -100, 100)
+        self._black   = _SliderRow(tr("adj.selective_color.black"),   -100, 100)
         for row in (self._cyan, self._magenta, self._yellow, self._black):
             self._add_row(row)
 

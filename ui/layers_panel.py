@@ -4,6 +4,8 @@ from PyQt6.QtWidgets import (QWidget, QVBoxLayout, QHBoxLayout, QLabel,
 from PyQt6.QtCore import Qt, pyqtSignal
 from PyQt6.QtGui import QColor, QIcon, QPixmap, QPainter
 
+from core.locale import tr
+
 
 def _make_eye_icon(visible: bool) -> QIcon:
     pix = QPixmap(20, 20)
@@ -43,7 +45,7 @@ class LayerItem(QWidget):
         self._vis_btn.setFixedSize(24, 24)
         self._vis_btn.setCheckable(True)
         self._vis_btn.setChecked(layer.visible)
-        self._vis_btn.setToolTip("Toggle visibility")
+        self._vis_btn.setToolTip(tr("layer.toggle_visibility"))
         self._vis_btn.clicked.connect(
             lambda checked: self.visibility_toggled.emit(index, checked))
         lo.addWidget(self._vis_btn)
@@ -76,7 +78,7 @@ class LayerItem(QWidget):
             t_lbl.setStyleSheet(
                 "color:#89b4fa; font-weight:bold; font-size:13px;")
             t_lbl.setFixedWidth(14)
-            t_lbl.setToolTip("Текстовый слой — кликните инструментом Text для редактирования")
+            t_lbl.setToolTip(tr("layer.text_tooltip"))
             lo.addWidget(t_lbl)
 
         # Lock indicator
@@ -114,16 +116,17 @@ class LayersPanel(QWidget):
         layout.setSpacing(0)
 
         # Title
-        title = QLabel("LAYERS")
-        title.setObjectName("panelTitle")
-        layout.addWidget(title)
+        self._title_lbl = QLabel(tr("panel.layers"))
+        self._title_lbl.setObjectName("panelTitle")
+        layout.addWidget(self._title_lbl)
 
         # Opacity slider for active layer
         op_widget = QWidget()
         op_lo = QHBoxLayout(op_widget)
         op_lo.setContentsMargins(8, 2, 8, 2)
         op_lo.setSpacing(6)
-        op_lo.addWidget(QLabel("Opacity:"))
+        self._opacity_lbl = QLabel(tr("panel.opacity"))
+        op_lo.addWidget(self._opacity_lbl)
         self._opacity_slider = QSlider(Qt.Orientation.Horizontal)
         self._opacity_slider.setRange(0, 100)
         self._opacity_slider.setValue(100)
@@ -150,25 +153,29 @@ class LayersPanel(QWidget):
         btn_lo.setContentsMargins(6, 4, 6, 6)
         btn_lo.setSpacing(4)
 
-        def _btn(text, tip, signal):
+        def _make_btn(text, tip_key, signal):
             b = QPushButton(text)
             b.setObjectName("smallBtn")
             b.setFixedHeight(26)
-            b.setToolTip(tip)
+            b.setToolTip(tr(tip_key))
             b.clicked.connect(signal.emit)
             return b
 
-        btn_lo.addWidget(_btn("+",  "New layer",       self.layer_added))
-        btn_lo.addWidget(_btn("⧉",  "Duplicate layer", self.layer_duplicated))
-        btn_lo.addWidget(_btn("↑",  "Move layer up",   self.layer_moved_up))
-        btn_lo.addWidget(_btn("↓",  "Move layer down", self.layer_moved_down))
+        self._add_btn  = _make_btn("+", "layer.btn.new",       self.layer_added)
+        self._dup_btn  = _make_btn("⧉", "layer.btn.duplicate", self.layer_duplicated)
+        self._up_btn   = _make_btn("↑", "layer.btn.up",        self.layer_moved_up)
+        self._down_btn = _make_btn("↓", "layer.btn.down",      self.layer_moved_down)
+        btn_lo.addWidget(self._add_btn)
+        btn_lo.addWidget(self._dup_btn)
+        btn_lo.addWidget(self._up_btn)
+        btn_lo.addWidget(self._down_btn)
 
-        del_btn = QPushButton("🗑")
-        del_btn.setObjectName("dangerBtn")
-        del_btn.setFixedHeight(26)
-        del_btn.setToolTip("Delete layer")
-        del_btn.clicked.connect(self.layer_deleted.emit)
-        btn_lo.addWidget(del_btn)
+        self._del_btn = QPushButton("🗑")
+        self._del_btn.setObjectName("dangerBtn")
+        self._del_btn.setFixedHeight(26)
+        self._del_btn.setToolTip(tr("layer.btn.delete"))
+        self._del_btn.clicked.connect(self.layer_deleted.emit)
+        btn_lo.addWidget(self._del_btn)
 
         layout.addWidget(btn_bar)
 
@@ -230,11 +237,21 @@ class LayersPanel(QWidget):
 
     def _context_menu(self, pos):
         menu = QMenu(self)
-        menu.addAction("Duplicate",    self.layer_duplicated.emit)
-        menu.addAction("Merge Down",   self.layer_merged_down.emit)
+        menu.addAction(tr("ctx.duplicate"),  self.layer_duplicated.emit)
+        menu.addAction(tr("ctx.merge_down"), self.layer_merged_down.emit)
         menu.addSeparator()
-        menu.addAction("Flatten Image", self.layer_flatten.emit)
+        menu.addAction(tr("ctx.flatten"),    self.layer_flatten.emit)
         menu.addSeparator()
-        del_act = menu.addAction("Delete")
+        del_act = menu.addAction(tr("ctx.delete"))
         del_act.triggered.connect(self.layer_deleted.emit)
         menu.exec(self._list.mapToGlobal(pos))
+
+    def retranslate(self):
+        """Update all static labels/tooltips to the current locale."""
+        self._title_lbl.setText(tr("panel.layers"))
+        self._opacity_lbl.setText(tr("panel.opacity"))
+        self._add_btn.setToolTip(tr("layer.btn.new"))
+        self._dup_btn.setToolTip(tr("layer.btn.duplicate"))
+        self._up_btn.setToolTip(tr("layer.btn.up"))
+        self._down_btn.setToolTip(tr("layer.btn.down"))
+        self._del_btn.setToolTip(tr("layer.btn.delete"))

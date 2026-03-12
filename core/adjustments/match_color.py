@@ -1,6 +1,7 @@
 from PyQt6.QtWidgets import QHBoxLayout, QLabel, QComboBox
 from PyQt6.QtGui import QImage
 
+from core.locale import tr
 from ui.adjustments_dialog import _to_argb32, _bits_ba, _from_ba, _AdjustDialog, _SliderRow
 
 
@@ -120,16 +121,16 @@ class MatchColorDialog(_AdjustDialog):
     """sources: list of (display_name, QImage) for the source dropdown."""
 
     def __init__(self, layer, sources: list, canvas_refresh, parent=None):
-        super().__init__("Match Color", layer, canvas_refresh, parent)
+        super().__init__(tr("adj.match_color.title"), layer, canvas_refresh, parent)
         self.setMinimumWidth(420)
         self._sources = sources          # [(name, QImage), ...]
 
         # Source selector
         src_row = QHBoxLayout()
-        src_lbl = QLabel("Source:")
+        src_lbl = QLabel(tr("adj.match_color.source"))
         src_lbl.setFixedWidth(90)
         self._src_combo = QComboBox()
-        self._src_combo.addItem("None")
+        self._src_combo.addItem(tr("adj.match_color.none"))
         for name, _ in sources:
             self._src_combo.addItem(name)
         self._src_combo.currentIndexChanged.connect(self._on_change)
@@ -138,9 +139,9 @@ class MatchColorDialog(_AdjustDialog):
         src_row.addStretch()
         self._vbox.addLayout(src_row)
 
-        self._lum  = _SliderRow("Luminance:",  1, 200, 100)
-        self._ci   = _SliderRow("Intensity:",  1, 200, 100)
-        self._fade = _SliderRow("Fade:",       0, 100,   0)
+        self._lum  = _SliderRow(tr("adj.match_color.luminance"),  1, 200, 100)
+        self._ci   = _SliderRow(tr("adj.match_color.intensity"),  1, 200, 100)
+        self._fade = _SliderRow(tr("adj.match_color.fade"),       0, 100,   0)
         for row in (self._lum, self._ci, self._fade):
             self._add_row(row)
 

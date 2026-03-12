@@ -1,5 +1,5 @@
 from PyQt6.QtGui import QImage, QColor
-from PyQt6.QtCore import QPoint
+from PyQt6.QtCore import QPoint, QPointF
 from tools.base_tool import BaseTool
 from collections import deque
 
@@ -14,13 +14,19 @@ class FillTool(BaseTool):
         if not layer or layer.locked:
             return
         tolerance = int(opts.get("fill_tolerance", 32))
-        self._flood_fill(layer.image, pos.x(), pos.y(), fg, tolerance)
+        sel = doc.selection if (doc.selection and not doc.selection.isEmpty()) else None
+        self._flood_fill(layer.image, pos.x(), pos.y(), fg, tolerance, sel)
 
     # ---------------------------------------------------------------- Algorithm
     @staticmethod
-    def _flood_fill(image: QImage, x: int, y: int, fill_color: QColor, tolerance: int):
+    def _flood_fill(image: QImage, x: int, y: int, fill_color: QColor,
+                    tolerance: int, selection=None):
         w, h = image.width(), image.height()
         if not (0 <= x < w and 0 <= y < h):
+            return
+
+        # If there's a selection, the seed point must be inside it
+        if selection is not None and not selection.contains(QPointF(x, y)):
             return
 
         target = image.pixel(x, y)
@@ -47,5 +53,6 @@ class FillTool(BaseTool):
             image.setPixel(cx, cy, fill_rgba)
             for nx, ny in ((cx + 1, cy), (cx - 1, cy), (cx, cy + 1), (cx, cy - 1)):
                 if 0 <= nx < w and 0 <= ny < h and (nx, ny) not in visited:
-                    visited.add((nx, ny))
-                    queue.append((nx, ny))
+                    if selection is None or selection.contains(QPointF(nx, ny)):
+                        visited.add((nx, ny))
+                        queue.append((nx, ny))

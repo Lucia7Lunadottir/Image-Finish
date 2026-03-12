@@ -3,6 +3,7 @@
 from PyQt6.QtWidgets import QHBoxLayout, QLabel, QPushButton, QFileDialog
 from PyQt6.QtGui import QImage
 
+from core.locale import tr
 from ui.adjustments_dialog import _to_argb32, _bits_ba, _from_ba, _AdjustDialog, _SliderRow
 
 
@@ -173,22 +174,22 @@ def apply_color_lookup(src: QImage, lut: dict, intensity: int) -> QImage:
 
 class ColorLookupDialog(_AdjustDialog):
     def __init__(self, layer, canvas_refresh, parent=None):
-        super().__init__("Color Lookup", layer, canvas_refresh, parent)
+        super().__init__(tr("adj.color_lookup.title"), layer, canvas_refresh, parent)
         self.setMinimumWidth(400)
         self._lut: dict | None = None
 
         # ── File picker row ───────────────────────────────────────────────────
         file_row = QHBoxLayout()
-        load_btn = QPushButton("Загрузить LUT файл…")
+        load_btn = QPushButton(tr("adj.color_lookup.load_btn"))
         load_btn.clicked.connect(self._load_lut)
-        self._file_lbl = QLabel("Файл не выбран")
+        self._file_lbl = QLabel(tr("adj.color_lookup.no_file"))
         self._file_lbl.setStyleSheet("color: #7f849c; font-size: 11px;")
         file_row.addWidget(load_btn)
         file_row.addWidget(self._file_lbl, 1)
         self._vbox.addLayout(file_row)
 
         # ── Intensity slider ──────────────────────────────────────────────────
-        self._intensity = _SliderRow("Intensity %:", 0, 100, 100)
+        self._intensity = _SliderRow(tr("adj.color_lookup.intensity"), 0, 100, 100)
         self._add_row(self._intensity)
 
         self._seal(reset_fn=self._do_reset)
@@ -197,13 +198,13 @@ class ColorLookupDialog(_AdjustDialog):
 
     def _load_lut(self):
         path, _ = QFileDialog.getOpenFileName(
-            self, "Открыть .cube LUT файл", "",
-            "CUBE LUT (*.cube);;All files (*)")
+            self, tr("adj.color_lookup.open_dlg"), "",
+            tr("adj.color_lookup.filter"))
         if not path:
             return
         lut = parse_cube(path)
         if lut is None:
-            self._file_lbl.setText("Ошибка чтения файла")
+            self._file_lbl.setText(tr("adj.color_lookup.error"))
             self._file_lbl.setStyleSheet("color: #f38ba8; font-size: 11px;")
             return
         self._lut = lut
@@ -215,7 +216,7 @@ class ColorLookupDialog(_AdjustDialog):
     def _do_reset(self):
         self._timer.stop()
         self._lut = None
-        self._file_lbl.setText("Файл не выбран")
+        self._file_lbl.setText(tr("adj.color_lookup.no_file"))
         self._file_lbl.setStyleSheet("color: #7f849c; font-size: 11px;")
         self._intensity.reset()
         self._apply_preview()

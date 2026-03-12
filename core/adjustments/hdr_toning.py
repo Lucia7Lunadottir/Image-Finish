@@ -15,6 +15,7 @@ Performance strategy (dialog):
 
 from PyQt6.QtGui import QImage
 
+from core.locale import tr
 from ui.adjustments_dialog import _to_argb32, _bits_ba, _from_ba, _AdjustDialog
 from core.adjustments._widgets import _FSliderRow
 
@@ -136,7 +137,7 @@ class HDRToningDialog(_AdjustDialog):
     """
 
     def __init__(self, layer, canvas_refresh, parent=None):
-        super().__init__("HDR Toning", layer, canvas_refresh, parent)
+        super().__init__(tr("adj.hdr.title"), layer, canvas_refresh, parent)
 
         # Pre-extract pixel data once (like _orig_argb32 in base class)
         self._np_ok = False
@@ -154,10 +155,10 @@ class HDRToningDialog(_AdjustDialog):
         self._blur_radius = None
         self._blur_cache  = None   # H×W×3 float32, blur of _orig_f
 
-        self._radius   = _FSliderRow("Radius:",    1, 500, 50,  1.0,   0)
-        self._strength = _FSliderRow("Strength:",  0, 100, 50,  1.0,   0)
-        self._gamma    = _FSliderRow("Gamma:",    10, 300, 100, 100.0, 2)
-        self._detail   = _FSliderRow("Detail:",    0, 100,  0,  1.0,   0)
+        self._radius   = _FSliderRow(tr("adj.hdr.radius"),    1, 500, 50,  1.0,   0)
+        self._strength = _FSliderRow(tr("adj.hdr.strength"),  0, 100, 50,  1.0,   0)
+        self._gamma    = _FSliderRow(tr("adj.hdr.gamma"),    10, 300, 100, 100.0, 2)
+        self._detail   = _FSliderRow(tr("adj.hdr.detail"),    0, 100,  0,  1.0,   0)
 
         for row in (self._radius, self._strength, self._gamma, self._detail):
             self._add_row(row)

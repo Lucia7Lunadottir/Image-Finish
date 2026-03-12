@@ -10,6 +10,7 @@ from PyQt6.QtCore import Qt, QTimer, QPoint, pyqtSignal
 from PyQt6.QtGui import (
     QImage, QPainter, QColor, QLinearGradient, QBrush, QPen, QPolygon,
 )
+from core.locale import tr
 from ui.adjustments_dialog import _to_argb32, _bits_ba, _from_ba
 
 
@@ -369,7 +370,7 @@ class LevelsDialog(QDialog):
 
     def __init__(self, layer, canvas_refresh, parent=None):
         super().__init__(parent)
-        self.setWindowTitle("Levels")
+        self.setWindowTitle(tr("adj.levels.title"))
         self.setModal(True)
         self.setMinimumWidth(460)
 
@@ -405,7 +406,7 @@ class LevelsDialog(QDialog):
             return l
 
         # ── Input spinboxes ────────────────────────────────────────────────
-        lo.addWidget(_lbl("Input Levels:"))
+        lo.addWidget(_lbl(tr("adj.levels.input")))
 
         spin_row = QHBoxLayout()
         self._black_sp = QSpinBox()
@@ -436,7 +437,7 @@ class LevelsDialog(QDialog):
 
         # ── Output spinboxes ───────────────────────────────────────────────
         lo.addSpacing(4)
-        lo.addWidget(_lbl("Output Levels:"))
+        lo.addWidget(_lbl(tr("adj.levels.output")))
 
         out_row = QHBoxLayout()
         self._out_min_sp = QSpinBox()
@@ -460,7 +461,7 @@ class LevelsDialog(QDialog):
         lo.addSpacing(4)
         btn_row = QHBoxLayout()
 
-        auto_btn = QPushButton("Auto")
+        auto_btn = QPushButton(tr("adj.levels.auto"))
         auto_btn.setObjectName("smallBtn")
         auto_btn.setFixedWidth(72)
         auto_btn.clicked.connect(self._auto)

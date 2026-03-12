@@ -1,6 +1,7 @@
 from PyQt6.QtCore import QPoint, QPointF, QRect, QRectF, Qt
 from PyQt6.QtGui import QColor, QPainter, QImage, QPainterPath
 from tools.base_tool import BaseTool
+from core.locale import tr
 
 
 # ═══════════════════════════════════════════════ SelectTool
@@ -256,7 +257,7 @@ class _TextDialog(QDialog):
                  layer_name: str = None, parent=None):
         super().__init__(parent)
         from PyQt6.QtWidgets import QFontComboBox, QSpinBox, QPushButton, QHBoxLayout
-        title = f"Редактировать: {layer_name}" if layer_name else "Новый текст"
+        title = tr("text_dlg.edit_title", name=layer_name) if layer_name else tr("text_dlg.new_title")
         self.setWindowTitle(title)
         self.setMinimumWidth(500)
         self._base_opts = dict(opts) if opts else {}   # локальная копия для превью
@@ -311,7 +312,7 @@ class _TextDialog(QDialog):
 
         # ── Редактор текста ────────────────────────────────────────────────
         self._edit = QPlainTextEdit(initial_text)
-        self._edit.setPlaceholderText("Введите текст (Enter — новая строка)…")
+        self._edit.setPlaceholderText(tr("text_dlg.placeholder"))
         lo.addWidget(self._edit, 1)
 
         btns = QDialogButtonBox(
@@ -340,7 +341,7 @@ class _TextDialog(QDialog):
         return opts
 
     def _update_preview(self, *_):
-        text = self._edit.toPlainText() or "Предпросмотр"
+        text = self._edit.toPlainText() or tr("text_dlg.preview")
         w, h = self._PREVIEW_W, self._PREVIEW_H - 2
         img = QImage(w, h, QImage.Format.Format_ARGB32_Premultiplied)
         img.fill(QColor(255, 255, 255))

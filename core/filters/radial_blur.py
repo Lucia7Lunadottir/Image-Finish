@@ -5,6 +5,7 @@ import math
 from PyQt6.QtWidgets import QHBoxLayout, QLabel, QComboBox
 from PyQt6.QtGui import QImage
 
+from core.locale import tr
 from ui.adjustments_dialog import _AdjustDialog, _SliderRow, _to_argb32, _from_ba, _bits_ba
 
 
@@ -97,26 +98,30 @@ def apply_radial_blur(src: QImage, mode: str, amount: int) -> QImage:
         return img.convertToFormat(QImage.Format.Format_ARGB32_Premultiplied)
 
 
+_RADIAL_MODES = ("Spin", "Zoom")
+_RADIAL_MODE_KEYS = ("flt.radial.spin", "flt.radial.zoom")
+
+
 # ── dialog ────────────────────────────────────────────────────────────────────
 
 class RadialBlurDialog(_AdjustDialog):
     """Radial Blur dialog: Type (Spin/Zoom) + Amount 1–100, live preview."""
 
     def __init__(self, layer, canvas_refresh, parent=None):
-        super().__init__("Radial Blur", layer, canvas_refresh, parent)
+        super().__init__(tr("flt.radial.title"), layer, canvas_refresh, parent)
 
         # Type row (ComboBox, not a slider)
         type_row = QHBoxLayout()
-        lbl = QLabel("Type:")
+        lbl = QLabel(tr("flt.radial.type"))
         lbl.setFixedWidth(90)
         self._type_combo = QComboBox()
-        self._type_combo.addItems(["Spin", "Zoom"])
+        self._type_combo.addItems([tr(k) for k in _RADIAL_MODE_KEYS])
         self._type_combo.currentIndexChanged.connect(self._on_change)
         type_row.addWidget(lbl)
         type_row.addWidget(self._type_combo, 1)
         self._vbox.addLayout(type_row)
 
-        self._amount = _SliderRow("Amount:", 1, 100, 10)
+        self._amount = _SliderRow(tr("flt.amount"), 1, 100, 10)
         self._add_row(self._amount)
         self._seal(reset_fn=self._reset)
 
@@ -127,9 +132,11 @@ class RadialBlurDialog(_AdjustDialog):
         self._canvas_refresh()
 
     def _apply_preview(self):
+        idx = self._type_combo.currentIndex()
+        mode = _RADIAL_MODES[idx] if 0 <= idx < len(_RADIAL_MODES) else _RADIAL_MODES[0]
         self._layer.image = apply_radial_blur(
             self._orig_argb32,
-            self._type_combo.currentText(),
+            mode,
             self._amount.value(),
         )
         self._canvas_refresh()

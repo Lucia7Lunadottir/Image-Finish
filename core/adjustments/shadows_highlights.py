@@ -1,5 +1,6 @@
 from PyQt6.QtGui import QImage
 
+from core.locale import tr
 from ui.adjustments_dialog import _to_argb32, _bits_ba, _from_ba, _AdjustDialog, _SliderRow
 
 
@@ -38,9 +39,9 @@ def apply_shadows_highlights(src: QImage, shadows: int,
 
 class ShadowsHighlightsDialog(_AdjustDialog):
     def __init__(self, layer, canvas_refresh, parent=None):
-        super().__init__("Shadows / Highlights", layer, canvas_refresh, parent)
-        self._shadows    = _SliderRow("Shadows:",    0, 100)
-        self._highlights = _SliderRow("Highlights:", 0, 100)
+        super().__init__(tr("adj.shadows_hl.title"), layer, canvas_refresh, parent)
+        self._shadows    = _SliderRow(tr("adj.shadows_hl.shadows"),    0, 100)
+        self._highlights = _SliderRow(tr("adj.shadows_hl.highlights"), 0, 100)
         self._add_row(self._shadows)
         self._add_row(self._highlights)
         self._seal(reset_fn=self._do_reset)

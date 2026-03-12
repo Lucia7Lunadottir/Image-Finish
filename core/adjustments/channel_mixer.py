@@ -1,6 +1,7 @@
 from PyQt6.QtWidgets import QHBoxLayout, QLabel, QCheckBox, QComboBox
 from PyQt6.QtGui import QImage
 
+from core.locale import tr
 from ui.adjustments_dialog import _to_argb32, _bits_ba, _from_ba, _AdjustDialog, _SliderRow
 
 
@@ -53,12 +54,13 @@ def apply_channel_mixer(src: QImage,
 
 
 _CM_CHANNELS = ("Red", "Green", "Blue")
+_CM_CHANNEL_KEYS = ("adj.channel_mixer.red", "adj.channel_mixer.green", "adj.channel_mixer.blue")
 _CM_DEFAULTS = ([100, 0, 0], [0, 100, 0], [0, 0, 100])
 
 
 class ChannelMixerDialog(_AdjustDialog):
     def __init__(self, layer, canvas_refresh, parent=None):
-        super().__init__("Channel Mixer", layer, canvas_refresh, parent)
+        super().__init__(tr("adj.channel_mixer.title"), layer, canvas_refresh, parent)
 
         # Stored mix values per output channel [R_src, G_src, B_src]
         self._values    = [list(d) for d in _CM_DEFAULTS]
@@ -66,23 +68,23 @@ class ChannelMixerDialog(_AdjustDialog):
 
         # Output channel selector
         ch_row = QHBoxLayout()
-        ch_lbl = QLabel("Output:")
+        ch_lbl = QLabel(tr("adj.channel_mixer.output"))
         ch_lbl.setFixedWidth(90)
         self._ch_combo = QComboBox()
-        self._ch_combo.addItems(_CM_CHANNELS)
+        self._ch_combo.addItems([tr(k) for k in _CM_CHANNEL_KEYS])
         self._ch_combo.currentIndexChanged.connect(self._switch_channel)
         ch_row.addWidget(ch_lbl)
         ch_row.addWidget(self._ch_combo)
         ch_row.addStretch()
         self._vbox.addLayout(ch_row)
 
-        self._src_r = _SliderRow("Red:",   -200, 200, 100)
-        self._src_g = _SliderRow("Green:", -200, 200,   0)
-        self._src_b = _SliderRow("Blue:",  -200, 200,   0)
+        self._src_r = _SliderRow(tr("adj.channel_mixer.src_red"),   -200, 200, 100)
+        self._src_g = _SliderRow(tr("adj.channel_mixer.src_green"), -200, 200,   0)
+        self._src_b = _SliderRow(tr("adj.channel_mixer.src_blue"),  -200, 200,   0)
         for row in (self._src_r, self._src_g, self._src_b):
             self._add_row(row)
 
-        self._mono = QCheckBox("Monochrome")
+        self._mono = QCheckBox(tr("adj.channel_mixer.mono"))
         self._mono.stateChanged.connect(self._on_mono)
         self._vbox.addWidget(self._mono)
 

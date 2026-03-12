@@ -7,6 +7,8 @@ from PyQt6.QtWidgets import (
 from PyQt6.QtCore import Qt, QTimer
 from PyQt6.QtGui import QImage, QMouseEvent
 
+from core.locale import tr
+
 
 # ── low-level pixel ops ──────────────────────────────────────────────────────
 
@@ -259,7 +261,7 @@ class _AdjustDialog(QDialog):
     def _seal(self, reset_fn=None):
         self._vbox.addSpacing(4)
         if reset_fn is not None:
-            reset_btn = QPushButton("Reset")
+            reset_btn = QPushButton(tr("adj.reset"))
             reset_btn.clicked.connect(reset_fn)
             self._btns.addButton(reset_btn, QDialogButtonBox.ButtonRole.ResetRole)
         self._vbox.addWidget(self._btns)
@@ -282,9 +284,9 @@ class _AdjustDialog(QDialog):
 
 class BrightnessContrastDialog(_AdjustDialog):
     def __init__(self, layer, canvas_refresh, parent=None):
-        super().__init__("Brightness / Contrast", layer, canvas_refresh, parent)
-        self._bright = _SliderRow("Brightness:", -100, 100)
-        self._contr  = _SliderRow("Contrast:",   -100, 100)
+        super().__init__(tr("adj.bc.title"), layer, canvas_refresh, parent)
+        self._bright = _SliderRow(tr("adj.bc.brightness"), -100, 100)
+        self._contr  = _SliderRow(tr("adj.bc.contrast"),   -100, 100)
         self._add_row(self._bright)
         self._add_row(self._contr)
         self._seal()
@@ -297,10 +299,10 @@ class BrightnessContrastDialog(_AdjustDialog):
 
 class HueSaturationDialog(_AdjustDialog):
     def __init__(self, layer, canvas_refresh, parent=None):
-        super().__init__("Hue / Saturation", layer, canvas_refresh, parent)
-        self._hue  = _SliderRow("Hue:",        -180, 180)
-        self._sat  = _SliderRow("Saturation:", -100, 100)
-        self._lght = _SliderRow("Lightness:",  -100, 100)
+        super().__init__(tr("adj.hs.title"), layer, canvas_refresh, parent)
+        self._hue  = _SliderRow(tr("adj.hs.hue"),        -180, 180)
+        self._sat  = _SliderRow(tr("adj.hs.saturation"), -100, 100)
+        self._lght = _SliderRow(tr("adj.hs.lightness"),  -100, 100)
         for row in (self._hue, self._sat, self._lght):
             self._add_row(row)
         self._seal()

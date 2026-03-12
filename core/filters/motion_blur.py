@@ -4,6 +4,7 @@ import math
 
 from PyQt6.QtGui import QImage
 
+from core.locale import tr
 from ui.adjustments_dialog import _AdjustDialog, _SliderRow, _to_argb32, _from_ba, _bits_ba
 
 
@@ -99,9 +100,9 @@ class MotionBlurDialog(_AdjustDialog):
     """Motion Blur dialog with live preview."""
 
     def __init__(self, layer, canvas_refresh, parent=None):
-        super().__init__("Motion Blur", layer, canvas_refresh, parent)
-        self._angle    = _SliderRow("Angle (°):",     0, 360, 0)
-        self._strength = _SliderRow("Strength (px):", 1, 999, 10)
+        super().__init__(tr("flt.motion.title"), layer, canvas_refresh, parent)
+        self._angle    = _SliderRow(tr("flt.motion.angle"),    0, 360, 0)
+        self._strength = _SliderRow(tr("flt.motion.strength"), 1, 999, 10)
         self._add_row(self._angle)
         self._add_row(self._strength)
         self._seal(reset_fn=self._reset)
