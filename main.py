@@ -1,5 +1,5 @@
 """
-LinuxShop — A PyQt6 image editor inspired by Photoshop.
+ImageFinish — A PyQt6 image editor inspired by Photoshop.
 
 Usage:
     python main.py
@@ -38,7 +38,7 @@ def _load_custom_fonts():
 
 def main():
     app = QApplication(sys.argv)
-    app.setApplicationName("LinuxShop")
+    app.setApplicationName("ImageFinish")
     app.setApplicationVersion("0.1.0")
 
     _load_custom_fonts()
