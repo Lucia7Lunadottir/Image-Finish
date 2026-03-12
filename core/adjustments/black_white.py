@@ -1,5 +1,6 @@
 from PyQt6.QtGui import QImage
 
+from core.locale import tr
 from ui.adjustments_dialog import _to_argb32, _bits_ba, _from_ba, _AdjustDialog, _SliderRow
 
 
@@ -79,13 +80,13 @@ def apply_black_white(src: QImage, reds: int, yellows: int, greens: int,
 
 class BlackWhiteDialog(_AdjustDialog):
     def __init__(self, layer, canvas_refresh, parent=None):
-        super().__init__("Black & White", layer, canvas_refresh, parent)
-        self._reds     = _SliderRow("Reds:",     0, 200, 100)
-        self._yellows  = _SliderRow("Yellows:",  0, 200, 100)
-        self._greens   = _SliderRow("Greens:",   0, 200, 100)
-        self._cyans    = _SliderRow("Cyans:",    0, 200, 100)
-        self._blues    = _SliderRow("Blues:",    0, 200, 100)
-        self._magentas = _SliderRow("Magentas:", 0, 200, 100)
+        super().__init__(tr("adj.bw.title"), layer, canvas_refresh, parent)
+        self._reds     = _SliderRow(tr("adj.bw.reds"),     0, 200, 100)
+        self._yellows  = _SliderRow(tr("adj.bw.yellows"),  0, 200, 100)
+        self._greens   = _SliderRow(tr("adj.bw.greens"),   0, 200, 100)
+        self._cyans    = _SliderRow(tr("adj.bw.cyans"),    0, 200, 100)
+        self._blues    = _SliderRow(tr("adj.bw.blues"),    0, 200, 100)
+        self._magentas = _SliderRow(tr("adj.bw.magentas"), 0, 200, 100)
         for row in (self._reds, self._yellows, self._greens,
                     self._cyans, self._blues, self._magentas):
             self._add_row(row)

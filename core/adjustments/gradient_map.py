@@ -1,6 +1,7 @@
 from PyQt6.QtWidgets import QHBoxLayout, QLabel, QPushButton
 from PyQt6.QtGui import QImage, QColor
 
+from core.locale import tr
 from ui.adjustments_dialog import _to_argb32, _bits_ba, _from_ba, _AdjustDialog
 from core.adjustments._widgets import _ColorButton, _GradientPreview
 
@@ -45,7 +46,7 @@ def apply_gradient_map(src: QImage,
 
 class GradientMapDialog(_AdjustDialog):
     def __init__(self, layer, canvas_refresh, parent=None):
-        super().__init__("Gradient Map", layer, canvas_refresh, parent)
+        super().__init__(tr("adj.gradient_map.title"), layer, canvas_refresh, parent)
         self.setMinimumWidth(420)
 
         # Gradient preview strip
@@ -55,17 +56,17 @@ class GradientMapDialog(_AdjustDialog):
 
         # Swatches row
         swatch_row = QHBoxLayout()
-        shad_lbl = QLabel("Shadows:")
+        shad_lbl = QLabel(tr("adj.gradient_map.shadows"))
         shad_lbl.setFixedWidth(70)
         self._shadow_btn = _ColorButton(QColor(0, 0, 0))
         self._shadow_btn.colorChanged.connect(self._on_swatch_change)
 
         swap_btn = QPushButton("\u21c4")      # ⇄
         swap_btn.setFixedWidth(30)
-        swap_btn.setToolTip("Swap shadow / highlight")
+        swap_btn.setToolTip(tr("adj.gradient_map.swap_tip"))
         swap_btn.clicked.connect(self._swap)
 
-        high_lbl = QLabel("Highlights:")
+        high_lbl = QLabel(tr("adj.gradient_map.highlights"))
         high_lbl.setFixedWidth(72)
         self._highlight_btn = _ColorButton(QColor(255, 255, 255))
         self._highlight_btn.colorChanged.connect(self._on_swatch_change)

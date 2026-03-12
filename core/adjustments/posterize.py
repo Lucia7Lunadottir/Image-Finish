@@ -1,5 +1,6 @@
 from PyQt6.QtGui import QImage
 
+from core.locale import tr
 from ui.adjustments_dialog import _to_argb32, _bits_ba, _from_ba, _AdjustDialog, _SliderRow
 
 
@@ -31,8 +32,8 @@ def apply_posterize(src: QImage, levels: int) -> QImage:
 
 class PosterizeDialog(_AdjustDialog):
     def __init__(self, layer, canvas_refresh, parent=None):
-        super().__init__("Posterize", layer, canvas_refresh, parent)
-        self._levels = _SliderRow("Levels:", 2, 255, 4)
+        super().__init__(tr("adj.posterize.title"), layer, canvas_refresh, parent)
+        self._levels = _SliderRow(tr("adj.posterize.levels"), 2, 255, 4)
         self._add_row(self._levels)
         self._seal()
 

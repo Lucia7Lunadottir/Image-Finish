@@ -1,6 +1,7 @@
 from PyQt6.QtWidgets import QHBoxLayout, QLabel, QCheckBox
 from PyQt6.QtGui import QImage, QColor
 
+from core.locale import tr
 from ui.adjustments_dialog import _to_argb32, _bits_ba, _from_ba, _AdjustDialog, _SliderRow
 from core.adjustments._widgets import _ColorButton
 
@@ -65,10 +66,10 @@ class PhotoFilterDialog(_AdjustDialog):
     _DEFAULT_DENSITY = 25
 
     def __init__(self, layer, canvas_refresh, parent=None):
-        super().__init__("Photo Filter", layer, canvas_refresh, parent)
+        super().__init__(tr("adj.photo_filter.title"), layer, canvas_refresh, parent)
 
         color_row = QHBoxLayout()
-        color_lbl = QLabel("Color:")
+        color_lbl = QLabel(tr("adj.photo_filter.color"))
         color_lbl.setFixedWidth(90)
         self._color_btn = _ColorButton(self._DEFAULT_COLOR)
         self._color_btn.colorChanged.connect(self._on_change)
@@ -77,10 +78,10 @@ class PhotoFilterDialog(_AdjustDialog):
         color_row.addStretch()
         self._vbox.addLayout(color_row)
 
-        self._density = _SliderRow("Density %:", 1, 100, self._DEFAULT_DENSITY)
+        self._density = _SliderRow(tr("adj.photo_filter.density"), 1, 100, self._DEFAULT_DENSITY)
         self._add_row(self._density)
 
-        self._preserve = QCheckBox("Preserve Luminosity")
+        self._preserve = QCheckBox(tr("adj.photo_filter.preserve"))
         self._preserve.setChecked(True)
         self._preserve.stateChanged.connect(self._on_change)
         self._vbox.addWidget(self._preserve)

@@ -1,5 +1,6 @@
 from PyQt6.QtGui import QImage
 
+from core.locale import tr
 from ui.adjustments_dialog import _to_argb32, _bits_ba, _from_ba, _AdjustDialog, _SliderRow
 
 
@@ -77,9 +78,9 @@ def apply_vibrance(src: QImage, vibrance: int, saturation: int) -> QImage:
 
 class VibranceDialog(_AdjustDialog):
     def __init__(self, layer, canvas_refresh, parent=None):
-        super().__init__("Vibrance", layer, canvas_refresh, parent)
-        self._vib = _SliderRow("Vibrance:",   -100, 100)
-        self._sat = _SliderRow("Saturation:", -100, 100)
+        super().__init__(tr("adj.vibrance.title"), layer, canvas_refresh, parent)
+        self._vib = _SliderRow(tr("adj.vibrance.vibrance"),   -100, 100)
+        self._sat = _SliderRow(tr("adj.vibrance.saturation"), -100, 100)
         self._add_row(self._vib)
         self._add_row(self._sat)
         self._seal()

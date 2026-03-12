@@ -1,5 +1,6 @@
 from PyQt6.QtGui import QImage
 
+from core.locale import tr
 from ui.adjustments_dialog import _to_argb32, _bits_ba, _from_ba, _AdjustDialog
 from core.adjustments._widgets import _FSliderRow
 
@@ -39,11 +40,11 @@ def apply_exposure(src: QImage, exposure: float, offset: float,
 
 class ExposureDialog(_AdjustDialog):
     def __init__(self, layer, canvas_refresh, parent=None):
-        super().__init__("Exposure", layer, canvas_refresh, parent)
+        super().__init__(tr("adj.exposure.title"), layer, canvas_refresh, parent)
         # Slider integers / 100 = actual float value
-        self._exp    = _FSliderRow("Exposure:",  -500, 500,   0, 100.0, 2)
-        self._offset = _FSliderRow("Offset:",     -50,  50,   0, 100.0, 2)
-        self._gamma  = _FSliderRow("Gamma:",       10, 999, 100, 100.0, 2)
+        self._exp    = _FSliderRow(tr("adj.exposure.exposure"),  -500, 500,   0, 100.0, 2)
+        self._offset = _FSliderRow(tr("adj.exposure.offset"),     -50,  50,   0, 100.0, 2)
+        self._gamma  = _FSliderRow(tr("adj.exposure.gamma"),       10, 999, 100, 100.0, 2)
         for row in (self._exp, self._offset, self._gamma):
             self._add_row(row)
         self._seal()

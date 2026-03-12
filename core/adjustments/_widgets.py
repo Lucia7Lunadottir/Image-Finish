@@ -4,6 +4,7 @@ from PyQt6.QtWidgets import QHBoxLayout, QLabel, QPushButton, QSizePolicy
 from PyQt6.QtCore import Qt, pyqtSignal
 from PyQt6.QtGui import QColor, QLinearGradient, QPainter
 
+from core.locale import tr
 from ui.adjustments_dialog import _JumpSlider
 
 
@@ -71,7 +72,7 @@ class _ColorButton(QPushButton):
 
     def _pick(self):
         from PyQt6.QtWidgets import QColorDialog
-        c = QColorDialog.getColor(self._color, self, "Choose Color")
+        c = QColorDialog.getColor(self._color, self, tr("adj.choose_color"))
         if c.isValid():
             self._color = c
             self._refresh_style()

@@ -12,6 +12,7 @@ from ui.color_panel      import ColorPanel
 
 from core.document  import Document
 from core.history   import HistoryManager, HistoryState
+from core.locale    import tr, available_languages, load as locale_load, current as locale_current
 
 
 # ── Tool registry ─────────────────────────────────────────────────────────────
@@ -55,12 +56,17 @@ def _build_tool_registry(text_parent):
 class MainWindow(QMainWindow):
     def __init__(self):
         super().__init__()
-        self.setWindowTitle("ImageFinish — untitled")
+        self.setWindowTitle(tr("title.untitled"))
 
         self._document = Document(800, 600, QColor(255, 255, 255))
         self._history  = HistoryManager()
         self._tools    = _build_tool_registry(self)
         self._active_tool_name = "Brush"
+
+        # Locale tracking
+        self._all_acts:  dict[str, QAction] = {}
+        self._all_menus: dict[str, QMenu]   = {}
+        self._lang_acts: dict[str, QAction] = {}
 
         self._build_ui()
         self._wire_signals()
@@ -68,7 +74,7 @@ class MainWindow(QMainWindow):
         self._refresh_layers()
 
         # Initial history snapshot
-        self._push_history("New document")
+        self._push_history(tr("history.new_document"))
 
     # ================================================================== UI Build
     def _build_ui(self):
@@ -82,7 +88,7 @@ class MainWindow(QMainWindow):
         # ── Status bar ────────────────────────────────────────────────────
         self._status = QStatusBar()
         self.setStatusBar(self._status)
-        self._status.showMessage("Ready")
+        self._status.showMessage(tr("status.ready"))
 
         # ── Tool options bar (top, below menu) ────────────────────────────
         self._opts_bar = ToolOptionsBar()
@@ -133,110 +139,159 @@ class MainWindow(QMainWindow):
         mb = self.menuBar()
 
         # ── File ──────────────────────────────────────────────────────────
-        file_m = mb.addMenu("File")
-        self._act(file_m, "New…",          self._new_doc,    QKeySequence.StandardKey.New)
-        self._act(file_m, "Open…",         self._open_file,  QKeySequence.StandardKey.Open)
+        file_m = self._menu(mb, "menu.file")
+        self._act(file_m, "menu.new",        self._new_doc,    QKeySequence.StandardKey.New)
+        self._act(file_m, "menu.open",       self._open_file,  QKeySequence.StandardKey.Open)
         file_m.addSeparator()
-        self._act(file_m, "Save",          self._save,       QKeySequence.StandardKey.Save)
-        self._act(file_m, "Save As…",      self._save_as,    QKeySequence("Ctrl+Shift+S"))
-        self._act(file_m, "Export PNG…",   self._export_png)
+        self._act(file_m, "menu.save",       self._save,       QKeySequence.StandardKey.Save)
+        self._act(file_m, "menu.save_as",    self._save_as,    QKeySequence("Ctrl+Shift+S"))
+        self._act(file_m, "menu.export_png", self._export_png)
         file_m.addSeparator()
-        self._act(file_m, "Quit",          self.close,       QKeySequence.StandardKey.Quit)
+        self._act(file_m, "menu.quit",       self.close,       QKeySequence.StandardKey.Quit)
 
         # ── Edit ──────────────────────────────────────────────────────────
-        edit_m = mb.addMenu("Edit")
-        self._undo_act = self._act(edit_m, "Undo", self._undo, QKeySequence.StandardKey.Undo)
-        self._redo_act = self._act(edit_m, "Redo", self._redo, QKeySequence.StandardKey.Redo)
+        edit_m = self._menu(mb, "menu.edit")
+        self._undo_act = self._act(edit_m, "menu.undo", self._undo, QKeySequence.StandardKey.Undo)
+        self._redo_act = self._act(edit_m, "menu.redo", self._redo, QKeySequence.StandardKey.Redo)
         edit_m.addSeparator()
-        self._act(edit_m, "Cut",    self._cut,   QKeySequence.StandardKey.Cut)
-        self._act(edit_m, "Copy",   self._copy,  QKeySequence.StandardKey.Copy)
-        self._act(edit_m, "Paste as New Layer", self._paste, QKeySequence.StandardKey.Paste)
+        self._act(edit_m, "menu.cut",             self._cut,   QKeySequence.StandardKey.Cut)
+        self._act(edit_m, "menu.copy",            self._copy,  QKeySequence.StandardKey.Copy)
+        self._act(edit_m, "menu.paste_new_layer", self._paste, QKeySequence.StandardKey.Paste)
         edit_m.addSeparator()
-        self._act(edit_m, "Clear Layer",   self._clear_layer, QKeySequence("Delete"))
-        self._act(edit_m, "Deselect",      self._deselect,    QKeySequence("Ctrl+D"))
-        self._act(edit_m, "Select All",    self._select_all,  QKeySequence.StandardKey.SelectAll)
+        self._act(edit_m, "menu.clear_layer",  self._clear_layer, QKeySequence("Delete"))
+        self._act(edit_m, "menu.deselect",     self._deselect,    QKeySequence("Ctrl+D"))
+        self._act(edit_m, "menu.select_all",   self._select_all,  QKeySequence.StandardKey.SelectAll)
         edit_m.addSeparator()
-        self._act(edit_m, "Fill FG Color", self._fill_fg,     QKeySequence("Alt+Delete"))
-        self._act(edit_m, "Fill BG Color", self._fill_bg,     QKeySequence("Ctrl+Delete"))
+        self._act(edit_m, "menu.fill_fg", self._fill_fg, QKeySequence("Alt+Delete"))
+        self._act(edit_m, "menu.fill_bg", self._fill_bg, QKeySequence("Ctrl+Delete"))
 
         # ── Image ─────────────────────────────────────────────────────────
-        img_m = mb.addMenu("Image")
+        img_m = self._menu(mb, "menu.image")
 
-        adj_m = img_m.addMenu("Adjustments")
-        self._act(adj_m, "Levels…",              self._levels,              QKeySequence("Ctrl+L"))
-        self._act(adj_m, "Brightness/Contrast…", self._brightness_contrast)
-        self._act(adj_m, "Hue/Saturation…",      self._hue_saturation)
-        self._act(adj_m, "Exposure…",            self._exposure)
-        self._act(adj_m, "Vibrance…",            self._vibrance)
+        adj_m = self._menu(img_m, "menu.adjustments")
+        self._act(adj_m, "menu.levels",              self._levels,              QKeySequence("Ctrl+L"))
+        self._act(adj_m, "menu.brightness_contrast", self._brightness_contrast)
+        self._act(adj_m, "menu.hue_saturation",      self._hue_saturation)
+        self._act(adj_m, "menu.exposure",            self._exposure)
+        self._act(adj_m, "menu.vibrance",            self._vibrance)
         adj_m.addSeparator()
-        self._act(adj_m, "Black & White…",       self._black_white)
-        self._act(adj_m, "Posterize…",           self._posterize)
-        self._act(adj_m, "Threshold…",           self._threshold)
+        self._act(adj_m, "menu.black_white",         self._black_white)
+        self._act(adj_m, "menu.posterize",           self._posterize)
+        self._act(adj_m, "menu.threshold",           self._threshold)
         adj_m.addSeparator()
-        self._act(adj_m, "Channel Mixer…",        self._channel_mixer)
-        self._act(adj_m, "Selective Color…",    self._selective_color)
-        self._act(adj_m, "Match Color…",        self._match_color)
+        self._act(adj_m, "menu.channel_mixer",       self._channel_mixer)
+        self._act(adj_m, "menu.selective_color",     self._selective_color)
+        self._act(adj_m, "menu.match_color",         self._match_color)
         adj_m.addSeparator()
-        self._act(adj_m, "Shadows/Highlights…",  self._shadows_highlights)
-        self._act(adj_m, "Replace Color…",      self._replace_color)
+        self._act(adj_m, "menu.shadows_highlights",  self._shadows_highlights)
+        self._act(adj_m, "menu.replace_color",       self._replace_color)
         adj_m.addSeparator()
-        self._act(adj_m, "Photo Filter…",        self._photo_filter)
-        self._act(adj_m, "Gradient Map…",        self._gradient_map)
-        self._act(adj_m, "Color Lookup…",        self._color_lookup)
-        self._act(adj_m, "Equalize",             self._equalize)
+        self._act(adj_m, "menu.photo_filter",        self._photo_filter)
+        self._act(adj_m, "menu.gradient_map",        self._gradient_map)
+        self._act(adj_m, "menu.color_lookup",        self._color_lookup)
+        self._act(adj_m, "menu.equalize",            self._equalize)
         adj_m.addSeparator()
-        self._act(adj_m, "HDR Toning…",          self._hdr_toning)
+        self._act(adj_m, "menu.hdr_toning",          self._hdr_toning)
         adj_m.addSeparator()
-        self._act(adj_m, "Invert",               self._invert, QKeySequence("Ctrl+I"))
+        self._act(adj_m, "menu.invert",              self._invert, QKeySequence("Ctrl+I"))
 
         img_m.addSeparator()
-        self._act(img_m, "Flip Horizontal", self._flip_h)
-        self._act(img_m, "Flip Vertical",   self._flip_v)
+        self._act(img_m, "menu.flip_h",        self._flip_h)
+        self._act(img_m, "menu.flip_v",        self._flip_v)
         img_m.addSeparator()
-        self._act(img_m, "Resize Canvas…",  self._resize_canvas)
+        self._act(img_m, "menu.resize_canvas", self._resize_canvas)
         img_m.addSeparator()
-        self._act(img_m, "Apply Crop",      self._apply_crop, QKeySequence("Return"))
+        self._act(img_m, "menu.apply_crop",    self._apply_crop, QKeySequence("Return"))
         img_m.addSeparator()
-        self._act(img_m, "Flatten Image",   self._flatten)
+        self._act(img_m, "menu.flatten",       self._flatten)
 
         # ── Layer ─────────────────────────────────────────────────────────
-        layer_m = mb.addMenu("Layer")
-        self._act(layer_m, "New Layer",        self._add_layer,      QKeySequence("Ctrl+Shift+N"))
-        self._act(layer_m, "Duplicate Layer",  self._duplicate_layer,QKeySequence("Ctrl+J"))
-        self._act(layer_m, "Delete Layer",     self._delete_layer)
+        layer_m = self._menu(mb, "menu.layer")
+        self._act(layer_m, "menu.new_layer",       self._add_layer,       QKeySequence("Ctrl+Shift+N"))
+        self._act(layer_m, "menu.duplicate_layer", self._duplicate_layer, QKeySequence("Ctrl+J"))
+        self._act(layer_m, "menu.delete_layer",    self._delete_layer)
         layer_m.addSeparator()
-        self._act(layer_m, "Move Up",   self._layer_up,   QKeySequence("Ctrl+]"))
-        self._act(layer_m, "Move Down", self._layer_down, QKeySequence("Ctrl+["))
+        self._act(layer_m, "menu.move_up",   self._layer_up,   QKeySequence("Ctrl+]"))
+        self._act(layer_m, "menu.move_down", self._layer_down, QKeySequence("Ctrl+["))
 
         # ── Filter ────────────────────────────────────────────────────────
-        filter_m = mb.addMenu("Filter")
-        blur_m = filter_m.addMenu("Blur")
-        self._act(blur_m, "Average",         self._blur_average)
-        self._act(blur_m, "Blur",            self._blur_simple)
-        self._act(blur_m, "Blur More",       self._blur_more)
+        filter_m = self._menu(mb, "menu.filter")
+        blur_m = self._menu(filter_m, "menu.blur")
+        self._act(blur_m, "menu.blur.average",  self._blur_average)
+        self._act(blur_m, "menu.blur.blur",     self._blur_simple)
+        self._act(blur_m, "menu.blur.more",     self._blur_more)
         blur_m.addSeparator()
-        self._act(blur_m, "Box Blur…",       self._box_blur)
-        self._act(blur_m, "Gaussian Blur…",  self._gaussian_blur)
-        self._act(blur_m, "Motion Blur…",    self._motion_blur)
-        self._act(blur_m, "Radial Blur…",    self._radial_blur)
-        self._act(blur_m, "Smart Blur…",     self._smart_blur)
-        self._act(blur_m, "Surface Blur…",   self._surface_blur)
-        self._act(blur_m, "Shape Blur…",     self._shape_blur)
-        self._act(blur_m, "Lens Blur…",      self._lens_blur)
+        self._act(blur_m, "menu.blur.box",      self._box_blur)
+        self._act(blur_m, "menu.blur.gaussian", self._gaussian_blur)
+        self._act(blur_m, "menu.blur.motion",   self._motion_blur)
+        self._act(blur_m, "menu.blur.radial",   self._radial_blur)
+        self._act(blur_m, "menu.blur.smart",    self._smart_blur)
+        self._act(blur_m, "menu.blur.surface",  self._surface_blur)
+        self._act(blur_m, "menu.blur.shape",    self._shape_blur)
+        self._act(blur_m, "menu.blur.lens",     self._lens_blur)
 
         # ── View ──────────────────────────────────────────────────────────
-        view_m = mb.addMenu("View")
-        self._act(view_m, "Zoom In",       lambda: self._canvas.zoom_in(),    QKeySequence.StandardKey.ZoomIn)
-        self._act(view_m, "Zoom Out",      lambda: self._canvas.zoom_out(),   QKeySequence.StandardKey.ZoomOut)
-        self._act(view_m, "Fit to Window", lambda: self._canvas.reset_zoom(), QKeySequence("Ctrl+0"))
+        view_m = self._menu(mb, "menu.view")
+        self._act(view_m, "menu.zoom_in",    lambda: self._canvas.zoom_in(),    QKeySequence.StandardKey.ZoomIn)
+        self._act(view_m, "menu.zoom_out",   lambda: self._canvas.zoom_out(),   QKeySequence.StandardKey.ZoomOut)
+        self._act(view_m, "menu.fit_window", lambda: self._canvas.reset_zoom(), QKeySequence("Ctrl+0"))
+        view_m.addSeparator()
+        self._build_language_menu(view_m)
 
-    def _act(self, menu: QMenu, label: str, slot, shortcut=None) -> QAction:
-        act = QAction(label, self)
+    def _act(self, menu: QMenu, key: str, slot, shortcut=None) -> QAction:
+        act = QAction(tr(key), self)
         if shortcut:
             act.setShortcut(shortcut)
         act.triggered.connect(slot)
         menu.addAction(act)
+        self._all_acts[key] = act
         return act
+
+    def _menu(self, parent, key: str) -> QMenu:
+        """Add a (sub)menu to parent (QMenuBar or QMenu) and register for live updates."""
+        m = parent.addMenu(tr(key))
+        self._all_menus[key] = m
+        return m
+
+    # ── Language menu ─────────────────────────────────────────────────────────
+    def _build_language_menu(self, parent_menu: QMenu):
+        lang_m = self._menu(parent_menu, "menu.language")
+        cur = locale_current()
+        for code, name in available_languages():
+            act = QAction(name, self, checkable=True)
+            act.setChecked(code == cur)
+            act.triggered.connect(lambda checked, c=code: self._set_language(c))
+            lang_m.addAction(act)
+            self._lang_acts[code] = act
+
+    def _set_language(self, code: str):
+        if code == locale_current():
+            return
+        locale_load(code)
+        self._apply_language()
+
+    def _apply_language(self):
+        """Update all menu labels and UI strings to current locale (live switch)."""
+        for key, act in self._all_acts.items():
+            act.setText(tr(key))
+        for key, menu in self._all_menus.items():
+            menu.setTitle(tr(key))
+        # Update language checkmarks
+        cur = locale_current()
+        for code, act in self._lang_acts.items():
+            act.setChecked(code == cur)
+        # Update window title
+        if hasattr(self, "_filepath") and self._filepath:
+            self.setWindowTitle(tr("title.with_file", name=self._filepath.split("/")[-1]))
+        else:
+            self.setWindowTitle(tr("title.untitled"))
+        # Update toolbar, options bar, and right panels
+        self._toolbar.retranslate()
+        self._opts_bar.retranslate()
+        self._layers_panel.retranslate()
+        self._color_panel.retranslate()
+        # Rebuild layer items (picks up new tooltip strings) + refresh status bar
+        self._refresh_layers()
 
     def _canvas_refresh(self):
         """Инвалидировать кэш холста и перерисовать."""
@@ -320,12 +375,12 @@ class MainWindow(QMainWindow):
         layer_name = layer.name if layer else "—"
         z = int(self._canvas.zoom * 100)
         self._status.showMessage(
-            f"  {doc.width} × {doc.height} px  |  Zoom: {z}%  |  Layer: {layer_name}"
+            tr("status.info", w=doc.width, h=doc.height, z=z, layer=layer_name)
             + (f"  |  {msg}" if msg else "")
         )
 
     def _update_title(self):
-        self.setWindowTitle(f"LinuxShop — {self._document.width}×{self._document.height}")
+        self.setWindowTitle(tr("title.canvas", w=self._document.width, h=self._document.height))
 
     # ================================================================ Colour
     def _on_fg_changed(self, c: QColor):
@@ -345,7 +400,7 @@ class MainWindow(QMainWindow):
         layer = self._document.get_active_layer()
         if not layer or not getattr(layer, "text_data", None):
             return
-        self._push_history("Apply text styles")
+        self._push_history(tr("history.apply_text"))
         td   = layer.text_data
         opts = self._canvas.tool_opts
         layer.image.fill(Qt.GlobalColor.transparent)
@@ -375,36 +430,36 @@ class MainWindow(QMainWindow):
         self._refresh_layers()
 
     def _add_layer(self):
-        self._push_history("Before add layer")
+        self._push_history(tr("history.add_layer"))
         self._document.add_layer()
         self._refresh_layers()
         self._canvas_refresh()
 
     def _duplicate_layer(self):
-        self._push_history("Before duplicate layer")
+        self._push_history(tr("history.duplicate_layer"))
         self._document.duplicate_layer(self._document.active_layer_index)
         self._refresh_layers()
         self._canvas_refresh()
 
     def _delete_layer(self):
         if len(self._document.layers) <= 1:
-            QMessageBox.warning(self, "Delete Layer", "Cannot delete the last layer.")
+            QMessageBox.warning(self, tr("err.title.delete_layer"), tr("err.delete_last_layer"))
             return
-        self._push_history("Before delete layer")
+        self._push_history(tr("history.delete_layer"))
         self._document.remove_layer(self._document.active_layer_index)
         self._refresh_layers()
         self._canvas_refresh()
 
     def _layer_up(self):
         i = self._document.active_layer_index
-        self._push_history("Layer move up")
+        self._push_history(tr("history.layer_up"))
         self._document.move_layer(i, i + 1)
         self._refresh_layers()
         self._canvas_refresh()
 
     def _layer_down(self):
         i = self._document.active_layer_index
-        self._push_history("Layer move down")
+        self._push_history(tr("history.layer_down"))
         self._document.move_layer(i, i - 1)
         self._refresh_layers()
         self._canvas_refresh()
@@ -413,7 +468,7 @@ class MainWindow(QMainWindow):
         i = self._document.active_layer_index
         if i == 0:
             return
-        self._push_history("Merge down")
+        self._push_history(tr("history.merge_down"))
         from PyQt6.QtGui import QPainter
         bottom = self._document.layers[i - 1]
         top    = self._document.layers[i]
@@ -426,7 +481,7 @@ class MainWindow(QMainWindow):
         self._canvas_refresh()
 
     def _flatten(self):
-        self._push_history("Flatten")
+        self._push_history(tr("history.flatten"))
         self._document.flatten()
         self._refresh_layers()
         self._canvas_refresh()
@@ -446,7 +501,7 @@ class MainWindow(QMainWindow):
         self._document.active_layer_index = state.active_layer_index
         self._refresh_layers()
         self._canvas_refresh()
-        self._status.showMessage(f"Undo: {state.description}")
+        self._status.showMessage(tr("status.undo", desc=state.description))
 
     def _redo(self):
         state = self._history.redo()
@@ -462,7 +517,7 @@ class MainWindow(QMainWindow):
         layer = self._document.get_active_layer()
         if not layer:
             return
-        self._push_history("Clear layer")
+        self._push_history(tr("history.clear_layer"))
         layer.image.fill(Qt.GlobalColor.transparent)
         self._canvas_refresh()
 
@@ -483,7 +538,7 @@ class MainWindow(QMainWindow):
             return
         sel = self._document.selection
         if sel and not sel.isEmpty():
-            self._push_history("Cut")
+            self._push_history(tr("history.cut"))
             p = QPainter(layer.image)
             p.setCompositionMode(QPainter.CompositionMode.CompositionMode_Clear)
             p.setClipPath(sel)
@@ -504,7 +559,7 @@ class MainWindow(QMainWindow):
     def _paste(self):
         if not hasattr(self, "_clipboard") or self._clipboard is None:
             return
-        self._push_history("Paste")
+        self._push_history(tr("history.paste"))
         from core.layer import Layer
         from PyQt6.QtCore import QPoint
         new_layer = Layer(f"Pasted {len(self._document.layers)+1}",
@@ -530,7 +585,7 @@ class MainWindow(QMainWindow):
         layer = self._document.get_active_layer()
         if not layer:
             return
-        self._push_history("Fill")
+        self._push_history(tr("history.fill"))
         from PyQt6.QtGui import QPainter
         p = QPainter(layer.image)
         sel = self._document.selection
@@ -549,7 +604,7 @@ class MainWindow(QMainWindow):
         if not layer:
             return
         from ui.levels_dialog import LevelsDialog
-        self._push_history("Before Levels")
+        self._push_history(tr("history.before_levels"))
         LevelsDialog(layer, self._canvas_refresh, self).exec()
 
     def _brightness_contrast(self):
@@ -557,7 +612,7 @@ class MainWindow(QMainWindow):
         if not layer:
             return
         from ui.adjustments_dialog import BrightnessContrastDialog
-        self._push_history("Before Brightness/Contrast")
+        self._push_history(tr("history.before_bc"))
         dlg = BrightnessContrastDialog(layer, self._canvas_refresh, self)
         dlg.exec()
 
@@ -566,7 +621,7 @@ class MainWindow(QMainWindow):
         if not layer:
             return
         from ui.adjustments_dialog import HueSaturationDialog
-        self._push_history("Before Hue/Saturation")
+        self._push_history(tr("history.before_hs"))
         dlg = HueSaturationDialog(layer, self._canvas_refresh, self)
         dlg.exec()
 
@@ -575,7 +630,7 @@ class MainWindow(QMainWindow):
         if not layer:
             return
         from ui.adjustments_dialog import apply_invert
-        self._push_history("Invert")
+        self._push_history(tr("history.invert"))
         layer.image = apply_invert(layer.image)
         self._canvas_refresh()
 
@@ -584,7 +639,7 @@ class MainWindow(QMainWindow):
         if not layer:
             return
         from ui.more_adjustments import ExposureDialog
-        self._push_history("Before Exposure")
+        self._push_history(tr("history.before_exposure"))
         ExposureDialog(layer, self._canvas_refresh, self).exec()
 
     def _vibrance(self):
@@ -592,7 +647,7 @@ class MainWindow(QMainWindow):
         if not layer:
             return
         from ui.more_adjustments import VibranceDialog
-        self._push_history("Before Vibrance")
+        self._push_history(tr("history.before_vibrance"))
         VibranceDialog(layer, self._canvas_refresh, self).exec()
 
     def _black_white(self):
@@ -600,7 +655,7 @@ class MainWindow(QMainWindow):
         if not layer:
             return
         from ui.more_adjustments import BlackWhiteDialog
-        self._push_history("Before Black & White")
+        self._push_history(tr("history.before_bw"))
         BlackWhiteDialog(layer, self._canvas_refresh, self).exec()
 
     def _posterize(self):
@@ -608,7 +663,7 @@ class MainWindow(QMainWindow):
         if not layer:
             return
         from ui.more_adjustments import PosterizeDialog
-        self._push_history("Before Posterize")
+        self._push_history(tr("history.before_posterize"))
         PosterizeDialog(layer, self._canvas_refresh, self).exec()
 
     def _threshold(self):
@@ -616,7 +671,7 @@ class MainWindow(QMainWindow):
         if not layer:
             return
         from ui.more_adjustments import ThresholdDialog
-        self._push_history("Before Threshold")
+        self._push_history(tr("history.before_threshold"))
         ThresholdDialog(layer, self._canvas_refresh, self).exec()
 
     def _channel_mixer(self):
@@ -624,7 +679,7 @@ class MainWindow(QMainWindow):
         if not layer:
             return
         from ui.more_adjustments import ChannelMixerDialog
-        self._push_history("Before Channel Mixer")
+        self._push_history(tr("history.before_mixer"))
         ChannelMixerDialog(layer, self._canvas_refresh, self).exec()
 
     def _selective_color(self):
@@ -632,7 +687,7 @@ class MainWindow(QMainWindow):
         if not layer:
             return
         from ui.more_adjustments import SelectiveColorDialog
-        self._push_history("Before Selective Color")
+        self._push_history(tr("history.before_sel_color"))
         SelectiveColorDialog(layer, self._canvas_refresh, self).exec()
 
     def _match_color(self):
@@ -646,7 +701,7 @@ class MainWindow(QMainWindow):
             for i, lyr in enumerate(self._document.layers)
             if i != active_idx
         ]
-        self._push_history("Before Match Color")
+        self._push_history(tr("history.before_match_color"))
         MatchColorDialog(layer, sources, self._canvas_refresh, self).exec()
 
     def _shadows_highlights(self):
@@ -654,7 +709,7 @@ class MainWindow(QMainWindow):
         if not layer:
             return
         from ui.more_adjustments import ShadowsHighlightsDialog
-        self._push_history("Before Shadows/Highlights")
+        self._push_history(tr("history.before_shadows_hl"))
         ShadowsHighlightsDialog(layer, self._canvas_refresh, self).exec()
 
     def _replace_color(self):
@@ -662,7 +717,7 @@ class MainWindow(QMainWindow):
         if not layer:
             return
         from ui.more_adjustments import ReplaceColorDialog
-        self._push_history("Before Replace Color")
+        self._push_history(tr("history.before_replace"))
         ReplaceColorDialog(layer, self._canvas_refresh, self).exec()
 
     def _photo_filter(self):
@@ -670,7 +725,7 @@ class MainWindow(QMainWindow):
         if not layer:
             return
         from ui.more_adjustments import PhotoFilterDialog
-        self._push_history("Before Photo Filter")
+        self._push_history(tr("history.before_photo_filter"))
         PhotoFilterDialog(layer, self._canvas_refresh, self).exec()
 
     def _gradient_map(self):
@@ -678,7 +733,7 @@ class MainWindow(QMainWindow):
         if not layer:
             return
         from ui.more_adjustments import GradientMapDialog
-        self._push_history("Before Gradient Map")
+        self._push_history(tr("history.before_gradient"))
         GradientMapDialog(layer, self._canvas_refresh, self).exec()
 
     def _color_lookup(self):
@@ -686,7 +741,7 @@ class MainWindow(QMainWindow):
         if not layer:
             return
         from ui.more_adjustments import ColorLookupDialog
-        self._push_history("Before Color Lookup")
+        self._push_history(tr("history.before_lookup"))
         ColorLookupDialog(layer, self._canvas_refresh, self).exec()
 
     def _equalize(self):
@@ -694,7 +749,7 @@ class MainWindow(QMainWindow):
         if not layer:
             return
         from ui.more_adjustments import apply_equalize
-        self._push_history("Equalize")
+        self._push_history(tr("history.equalize"))
         layer.image = apply_equalize(layer.image)
         self._canvas_refresh()
 
@@ -703,7 +758,7 @@ class MainWindow(QMainWindow):
         if not layer:
             return
         from core.adjustments.hdr_toning import HDRToningDialog
-        self._push_history("Before HDR Toning")
+        self._push_history(tr("history.before_hdr"))
         HDRToningDialog(layer, self._canvas_refresh, self).exec()
 
     # ================================================================ Filters
@@ -712,7 +767,7 @@ class MainWindow(QMainWindow):
         if not layer:
             return
         from core.filters.blur_filters import apply_average
-        self._push_history("Average")
+        self._push_history(tr("history.average"))
         layer.image = apply_average(layer.image)
         self._canvas_refresh()
 
@@ -721,7 +776,7 @@ class MainWindow(QMainWindow):
         if not layer:
             return
         from core.filters.blur_filters import apply_blur
-        self._push_history("Blur")
+        self._push_history(tr("history.blur"))
         layer.image = apply_blur(layer.image)
         self._canvas_refresh()
 
@@ -730,7 +785,7 @@ class MainWindow(QMainWindow):
         if not layer:
             return
         from core.filters.blur_filters import apply_blur_more
-        self._push_history("Blur More")
+        self._push_history(tr("history.blur_more"))
         layer.image = apply_blur_more(layer.image)
         self._canvas_refresh()
 
@@ -739,7 +794,7 @@ class MainWindow(QMainWindow):
         if not layer:
             return
         from core.filters.blur_filters import BoxBlurDialog
-        self._push_history("Before Box Blur")
+        self._push_history(tr("history.before_box_blur"))
         BoxBlurDialog(layer, self._canvas_refresh, self).exec()
 
     def _gaussian_blur(self):
@@ -747,7 +802,7 @@ class MainWindow(QMainWindow):
         if not layer:
             return
         from core.filters.blur_filters import GaussianBlurDialog
-        self._push_history("Before Gaussian Blur")
+        self._push_history(tr("history.before_gaussian"))
         GaussianBlurDialog(layer, self._canvas_refresh, self).exec()
 
     def _motion_blur(self):
@@ -755,7 +810,7 @@ class MainWindow(QMainWindow):
         if not layer:
             return
         from core.filters.motion_blur import MotionBlurDialog
-        self._push_history("Before Motion Blur")
+        self._push_history(tr("history.before_motion"))
         MotionBlurDialog(layer, self._canvas_refresh, self).exec()
 
     def _radial_blur(self):
@@ -763,7 +818,7 @@ class MainWindow(QMainWindow):
         if not layer:
             return
         from core.filters.radial_blur import RadialBlurDialog
-        self._push_history("Before Radial Blur")
+        self._push_history(tr("history.before_radial"))
         RadialBlurDialog(layer, self._canvas_refresh, self).exec()
 
     def _smart_blur(self):
@@ -771,7 +826,7 @@ class MainWindow(QMainWindow):
         if not layer:
             return
         from core.filters.blur_filters import SmartBlurDialog
-        self._push_history("Before Smart Blur")
+        self._push_history(tr("history.before_smart"))
         SmartBlurDialog(layer, self._canvas_refresh, self).exec()
 
     def _surface_blur(self):
@@ -779,7 +834,7 @@ class MainWindow(QMainWindow):
         if not layer:
             return
         from core.filters.blur_filters import SurfaceBlurDialog
-        self._push_history("Before Surface Blur")
+        self._push_history(tr("history.before_surface"))
         SurfaceBlurDialog(layer, self._canvas_refresh, self).exec()
 
     def _shape_blur(self):
@@ -787,7 +842,7 @@ class MainWindow(QMainWindow):
         if not layer:
             return
         from core.filters.blur_filters import ShapeBlurDialog
-        self._push_history("Before Shape Blur")
+        self._push_history(tr("history.before_shape"))
         ShapeBlurDialog(layer, self._canvas_refresh, self).exec()
 
     def _lens_blur(self):
@@ -795,7 +850,7 @@ class MainWindow(QMainWindow):
         if not layer:
             return
         from core.filters.blur_filters import LensBlurDialog
-        self._push_history("Before Lens Blur")
+        self._push_history(tr("history.before_lens"))
         LensBlurDialog(layer, self._canvas_refresh, self).exec()
 
     # ================================================================ Image ops
@@ -803,7 +858,7 @@ class MainWindow(QMainWindow):
         layer = self._document.get_active_layer()
         if not layer:
             return
-        self._push_history("Flip H")
+        self._push_history(tr("history.flip_h"))
         layer.image = layer.image.mirrored(horizontal=True, vertical=False)
         self._canvas_refresh()
 
@@ -811,18 +866,18 @@ class MainWindow(QMainWindow):
         layer = self._document.get_active_layer()
         if not layer:
             return
-        self._push_history("Flip V")
+        self._push_history(tr("history.flip_v"))
         layer.image = layer.image.mirrored(horizontal=False, vertical=True)
         self._canvas_refresh()
 
     def _resize_canvas(self):
         from utils.new_document_dialog import NewDocumentDialog
         dlg = NewDocumentDialog(self)
-        dlg.setWindowTitle("Resize Canvas")
+        dlg.setWindowTitle(tr("dlg.resize_canvas"))
         dlg._width_spin.setValue(self._document.width)
         dlg._height_spin.setValue(self._document.height)
         if dlg.exec():
-            self._push_history("Resize canvas")
+            self._push_history(tr("history.resize_canvas"))
             from PyQt6.QtGui import QPainter, QImage
             new_w, new_h = dlg.get_width(), dlg.get_height()
             for layer in self._document.layers:
@@ -842,7 +897,7 @@ class MainWindow(QMainWindow):
         from tools.other_tools import CropTool
         tool = self._tools.get("Crop")
         if isinstance(tool, CropTool) and tool.pending_rect:
-            self._push_history("Crop")
+            self._push_history(tr("history.crop"))
             self._document.apply_crop(tool.pending_rect)
             tool.pending_rect = None
             self._canvas_refresh()
@@ -858,20 +913,20 @@ class MainWindow(QMainWindow):
             self._history.clear()
             self._canvas.set_document(self._document)
             self._refresh_layers()
-            self._push_history("New document")
+            self._push_history(tr("history.new_document"))
             self._update_title()
             self._filepath = None
 
     def _open_file(self):
         path, _ = QFileDialog.getOpenFileName(
-            self, "Open Image", "",
-            "Images (*.png *.jpg *.jpeg *.bmp *.webp *.tiff);;All Files (*)")
+            self, tr("dlg.open_image"), "",
+            tr("dlg.open_filter"))
         if not path:
             return
         from PyQt6.QtGui import QImage
         img = QImage(path)
         if img.isNull():
-            QMessageBox.critical(self, "Error", f"Could not open:\n{path}")
+            QMessageBox.critical(self, tr("err.title.error"), tr("err.could_not_open", path=path))
             return
         img = img.convertToFormat(QImage.Format.Format_ARGB32_Premultiplied)
         self._document = Document.__new__(Document)
@@ -896,7 +951,7 @@ class MainWindow(QMainWindow):
         self._canvas.set_document(self._document)
         self._filepath = path
         self._refresh_layers()
-        self.setWindowTitle(f"ImageFinish — {path.split('/')[-1]}")
+        self.setWindowTitle(tr("title.with_file", name=path.split("/")[-1]))
 
     def _save(self):
         if hasattr(self, "_filepath") and self._filepath:
@@ -906,15 +961,15 @@ class MainWindow(QMainWindow):
 
     def _save_as(self):
         path, _ = QFileDialog.getSaveFileName(
-            self, "Save As", "untitled.png",
-            "PNG (*.png);;JPEG (*.jpg *.jpeg);;BMP (*.bmp);;All Files (*)")
+            self, tr("dlg.save_as"), "untitled.png",
+            tr("dlg.save_filter"))
         if path:
             self._filepath = path
             self._do_save(path)
 
     def _export_png(self):
         path, _ = QFileDialog.getSaveFileName(
-            self, "Export PNG", "export.png", "PNG (*.png)")
+            self, tr("dlg.export_png"), "export.png", "PNG (*.png)")
         if path:
             self._do_save(path, flatten=True)
 
@@ -926,6 +981,6 @@ class MainWindow(QMainWindow):
             img = layer.image if layer else self._document.get_composite()
         ok = img.save(path)
         if ok:
-            self._status.showMessage(f"Saved: {path}")
+            self._status.showMessage(tr("status.saved", path=path))
         else:
-            QMessageBox.critical(self, "Save Error", f"Could not save to:\n{path}")
+            QMessageBox.critical(self, tr("err.title.save_error"), tr("err.could_not_save", path=path))

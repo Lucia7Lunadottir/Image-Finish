@@ -1,6 +1,7 @@
 from PyQt6.QtWidgets import QHBoxLayout, QLabel
 from PyQt6.QtGui import QImage, QColor
 
+from core.locale import tr
 from ui.adjustments_dialog import _to_argb32, _bits_ba, _from_ba, _AdjustDialog, _SliderRow
 from core.adjustments._widgets import _ColorButton
 
@@ -111,12 +112,12 @@ class ReplaceColorDialog(_AdjustDialog):
     _DEFAULT_FUZZINESS = 40
 
     def __init__(self, layer, canvas_refresh, parent=None):
-        super().__init__("Replace Color", layer, canvas_refresh, parent)
+        super().__init__(tr("adj.replace_color.title"), layer, canvas_refresh, parent)
         self.setMinimumWidth(400)
 
         # Target colour row
         color_row = QHBoxLayout()
-        color_lbl = QLabel("Target Color:")
+        color_lbl = QLabel(tr("adj.replace_color.target"))
         color_lbl.setFixedWidth(90)
         self._color_btn = _ColorButton(self._DEFAULT_COLOR)
         self._color_btn.colorChanged.connect(self._on_change)
@@ -125,18 +126,18 @@ class ReplaceColorDialog(_AdjustDialog):
         color_row.addStretch()
         self._vbox.addLayout(color_row)
 
-        self._fuzz = _SliderRow("Fuzziness:", 1, 100, self._DEFAULT_FUZZINESS)
+        self._fuzz = _SliderRow(tr("adj.replace_color.fuzziness"), 1, 100, self._DEFAULT_FUZZINESS)
         self._add_row(self._fuzz)
 
         # Divider label
-        sep = QLabel("Replacement")
+        sep = QLabel(tr("adj.replace_color.replacement"))
         sep.setStyleSheet("color: #7f849c; font-size: 11px; font-weight: bold;"
                           " padding-top: 6px;")
         self._vbox.addWidget(sep)
 
-        self._hue   = _SliderRow("Hue:",        -180, 180)
-        self._sat   = _SliderRow("Saturation:", -100, 100)
-        self._light = _SliderRow("Lightness:",  -100, 100)
+        self._hue   = _SliderRow(tr("adj.replace_color.hue"),        -180, 180)
+        self._sat   = _SliderRow(tr("adj.replace_color.saturation"), -100, 100)
+        self._light = _SliderRow(tr("adj.replace_color.lightness"),  -100, 100)
         for row in (self._hue, self._sat, self._light):
             self._add_row(row)
 

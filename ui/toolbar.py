@@ -1,6 +1,8 @@
 from PyQt6.QtWidgets import QWidget, QVBoxLayout, QPushButton, QSizePolicy
 from PyQt6.QtCore import pyqtSignal, Qt
 
+from core.locale import tr
+
 
 class ToolBar(QWidget):
     """
@@ -10,22 +12,23 @@ class ToolBar(QWidget):
 
     tool_selected = pyqtSignal(str)
 
+    # (internal_name, icon, shortcut, tr_key)
     _TOOLS = [
-        ("Move",        "✋", "V"),
-        ("Brush",       "🖌️", "B"),
-        ("Eraser",      "🧹", "E"),
-        ("Fill",        "🪣", "G"),
-        ("Blur",        "💧", "R"),
-        ("Sharpen",     "🔺", "Y"),
-        ("Smudge",      "👆", "W"),
-        ("Select",      "⬜", "M"),
-        ("Shapes",      "🔷", "U"),
-        ("Text",        "T",  "T"),
-        ("TextV",       "Tv", ""),
-        ("TextHMask",   "Tm", ""),
-        ("TextVMask",   "Vm", ""),
-        ("Eyedropper",  "💉", "I"),
-        ("Crop",        "✂️", "C"),
+        ("Move",       "✋",  "V", "tool.move"),
+        ("Brush",      "🖌️", "B", "tool.brush"),
+        ("Eraser",     "🧹",  "E", "tool.eraser"),
+        ("Fill",       "🪣",  "G", "tool.fill"),
+        ("Blur",       "💧",  "R", "tool.blur"),
+        ("Sharpen",    "🔺",  "Y", "tool.sharpen"),
+        ("Smudge",     "👆",  "W", "tool.smudge"),
+        ("Select",     "⬜",  "M", "tool.select"),
+        ("Shapes",     "🔷",  "U", "tool.shapes"),
+        ("Text",       "T",   "T", "tool.text"),
+        ("TextV",      "Tv",  "",  "tool.text_v"),
+        ("TextHMask",  "Tm",  "",  "tool.text_h_mask"),
+        ("TextVMask",  "Vm",  "",  "tool.text_v_mask"),
+        ("Eyedropper", "💉",  "I", "tool.eyedropper"),
+        ("Crop",       "✂️",  "C", "tool.crop"),
     ]
 
     def __init__(self, parent=None):
@@ -40,10 +43,10 @@ class ToolBar(QWidget):
 
         self._buttons: dict[str, QPushButton] = {}
 
-        for name, icon, shortcut in self._TOOLS:
+        for name, icon, shortcut, key in self._TOOLS:
             btn = QPushButton(icon)
             btn.setObjectName("toolBtn")
-            btn.setToolTip(f"{name}  [{shortcut}]" if shortcut else name)
+            btn.setToolTip(self._make_tip(key, shortcut))
             btn.setCheckable(False)
             btn.setSizePolicy(QSizePolicy.Policy.Fixed, QSizePolicy.Policy.Fixed)
             btn.clicked.connect(lambda _, n=name: self._on_click(n))
@@ -52,8 +55,19 @@ class ToolBar(QWidget):
 
         layout.addStretch()
 
-        # Select "Move" by default
         self.set_active("Brush")
+
+    @staticmethod
+    def _make_tip(key: str, shortcut: str) -> str:
+        label = tr(key)
+        return f"{label}  [{shortcut}]" if shortcut else label
+
+    def retranslate(self):
+        """Update all button tooltips to the current locale."""
+        for name, _icon, shortcut, key in self._TOOLS:
+            btn = self._buttons.get(name)
+            if btn:
+                btn.setToolTip(self._make_tip(key, shortcut))
 
     def set_active(self, tool_name: str):
         for name, btn in self._buttons.items():

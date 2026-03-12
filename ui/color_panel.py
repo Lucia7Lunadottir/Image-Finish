@@ -3,6 +3,8 @@ from PyQt6.QtWidgets import (QWidget, QVBoxLayout, QHBoxLayout,
 from PyQt6.QtCore import Qt, pyqtSignal
 from PyQt6.QtGui import QColor, QPainter, QPen
 
+from core.locale import tr
+
 
 class ColorSwatch(QFrame):
     clicked = pyqtSignal()
@@ -48,9 +50,9 @@ class ColorPanel(QWidget):
         layout.setContentsMargins(8, 0, 8, 10)
         layout.setSpacing(6)
 
-        title = QLabel("COLOR")
-        title.setObjectName("panelTitle")
-        layout.addWidget(title)
+        self._title_lbl = QLabel(tr("panel.color"))
+        self._title_lbl.setObjectName("panelTitle")
+        layout.addWidget(self._title_lbl)
 
         swatch_container = QWidget()
         swatch_container.setFixedSize(120, 62)
@@ -65,21 +67,21 @@ class ColorPanel(QWidget):
         self._fg_swatch.clicked.connect(self._pick_fg)
         self._bg_swatch.clicked.connect(self._pick_bg)
 
-        swap_btn = QPushButton("⇄")
-        swap_btn.setObjectName("smallBtn")
-        swap_btn.setFixedSize(22, 22)
-        swap_btn.setToolTip("Swap FG/BG")
-        swap_btn.clicked.connect(self._swap)
-        swap_btn.setParent(swatch_container)
-        swap_btn.move(54, 38)
+        self._swap_btn = QPushButton("⇄")
+        self._swap_btn.setObjectName("smallBtn")
+        self._swap_btn.setFixedSize(22, 22)
+        self._swap_btn.setToolTip(tr("color.swap_tooltip"))
+        self._swap_btn.clicked.connect(self._swap)
+        self._swap_btn.setParent(swatch_container)
+        self._swap_btn.move(54, 38)
 
-        reset_btn = QPushButton("↺")
-        reset_btn.setObjectName("smallBtn")
-        reset_btn.setFixedSize(22, 22)
-        reset_btn.setToolTip("Сбросить в чёрный/белый")
-        reset_btn.clicked.connect(self._reset)
-        reset_btn.setParent(swatch_container)
-        reset_btn.move(78, 38)
+        self._reset_btn = QPushButton("↺")
+        self._reset_btn.setObjectName("smallBtn")
+        self._reset_btn.setFixedSize(22, 22)
+        self._reset_btn.setToolTip(tr("color.reset_tooltip"))
+        self._reset_btn.clicked.connect(self._reset)
+        self._reset_btn.setParent(swatch_container)
+        self._reset_btn.move(78, 38)
 
         layout.addWidget(swatch_container)
 
@@ -88,9 +90,9 @@ class ColorPanel(QWidget):
         self._hex_label.setStyleSheet("color: #7f849c; font-size: 11px;")
         layout.addWidget(self._hex_label)
 
-        palette_label = QLabel("Swatches")
-        palette_label.setStyleSheet("color: #7f849c; font-size: 11px; margin-top:4px;")
-        layout.addWidget(palette_label)
+        self._swatches_lbl = QLabel(tr("panel.swatches"))
+        self._swatches_lbl.setStyleSheet("color: #7f849c; font-size: 11px; margin-top:4px;")
+        layout.addWidget(self._swatches_lbl)
 
         palette_colors = [
             "#000000", "#ffffff", "#f38ba8", "#fab387",
@@ -123,16 +125,23 @@ class ColorPanel(QWidget):
 
     def _pick_fg(self):
         from .hsv_picker import ColorPickerDialog
-        c = ColorPickerDialog.get_color(self._fg_swatch.color(), self, "Foreground Color")
+        c = ColorPickerDialog.get_color(self._fg_swatch.color(), self, tr("color.fg_title"))
         if c:
             self._set_fg(c)
 
     def _pick_bg(self):
         from .hsv_picker import ColorPickerDialog
-        c = ColorPickerDialog.get_color(self._bg_swatch.color(), self, "Background Color")
+        c = ColorPickerDialog.get_color(self._bg_swatch.color(), self, tr("color.bg_title"))
         if c:
             self._bg_swatch.set_color(c)
             self.bg_changed.emit(c)
+
+    def retranslate(self):
+        """Update all static labels/tooltips to the current locale."""
+        self._title_lbl.setText(tr("panel.color"))
+        self._swatches_lbl.setText(tr("panel.swatches"))
+        self._swap_btn.setToolTip(tr("color.swap_tooltip"))
+        self._reset_btn.setToolTip(tr("color.reset_tooltip"))
 
     def _set_fg(self, c: QColor):
         self._fg_swatch.set_color(c)
