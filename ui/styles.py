@@ -120,8 +120,16 @@ QComboBox {
     min-width: 90px;
 }
 QComboBox::drop-down {
-    border: none;
+    subcontrol-origin: padding;
+    subcontrol-position: top right;
     width: 20px;
+    border-left: 1px solid #45475a;
+    border-radius: 0 3px 3px 0;
+}
+QComboBox::down-arrow {
+    image: url(ui/arrow_down.svg);
+    width: 10px;
+    height: 6px;
 }
 QComboBox QAbstractItemView {
     background-color: #24273a;

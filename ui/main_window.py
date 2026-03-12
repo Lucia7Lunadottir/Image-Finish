@@ -150,6 +150,35 @@ class MainWindow(QMainWindow):
 
         # ── Image ─────────────────────────────────────────────────────────
         img_m = mb.addMenu("Image")
+
+        adj_m = img_m.addMenu("Adjustments")
+        self._act(adj_m, "Levels…",              self._levels,              QKeySequence("Ctrl+L"))
+        self._act(adj_m, "Brightness/Contrast…", self._brightness_contrast)
+        self._act(adj_m, "Hue/Saturation…",      self._hue_saturation)
+        self._act(adj_m, "Exposure…",            self._exposure)
+        self._act(adj_m, "Vibrance…",            self._vibrance)
+        adj_m.addSeparator()
+        self._act(adj_m, "Black & White…",       self._black_white)
+        self._act(adj_m, "Posterize…",           self._posterize)
+        self._act(adj_m, "Threshold…",           self._threshold)
+        adj_m.addSeparator()
+        self._act(adj_m, "Channel Mixer…",        self._channel_mixer)
+        self._act(adj_m, "Selective Color…",    self._selective_color)
+        self._act(adj_m, "Match Color…",        self._match_color)
+        adj_m.addSeparator()
+        self._act(adj_m, "Shadows/Highlights…",  self._shadows_highlights)
+        self._act(adj_m, "Replace Color…",      self._replace_color)
+        adj_m.addSeparator()
+        self._act(adj_m, "Photo Filter…",        self._photo_filter)
+        self._act(adj_m, "Gradient Map…",        self._gradient_map)
+        self._act(adj_m, "Color Lookup…",        self._color_lookup)
+        self._act(adj_m, "Equalize",             self._equalize)
+        adj_m.addSeparator()
+        self._act(adj_m, "HDR Toning…",          self._hdr_toning)
+        adj_m.addSeparator()
+        self._act(adj_m, "Invert",               self._invert, QKeySequence("Ctrl+I"))
+
+        img_m.addSeparator()
         self._act(img_m, "Flip Horizontal", self._flip_h)
         self._act(img_m, "Flip Vertical",   self._flip_v)
         img_m.addSeparator()
@@ -487,6 +516,169 @@ class MainWindow(QMainWindow):
         p.end()
         self._canvas_refresh()
 
+    # ================================================================ Adjustments
+    def _levels(self):
+        layer = self._document.get_active_layer()
+        if not layer:
+            return
+        from ui.levels_dialog import LevelsDialog
+        self._push_history("Before Levels")
+        LevelsDialog(layer, self._canvas_refresh, self).exec()
+
+    def _brightness_contrast(self):
+        layer = self._document.get_active_layer()
+        if not layer:
+            return
+        from ui.adjustments_dialog import BrightnessContrastDialog
+        self._push_history("Before Brightness/Contrast")
+        dlg = BrightnessContrastDialog(layer, self._canvas_refresh, self)
+        dlg.exec()
+
+    def _hue_saturation(self):
+        layer = self._document.get_active_layer()
+        if not layer:
+            return
+        from ui.adjustments_dialog import HueSaturationDialog
+        self._push_history("Before Hue/Saturation")
+        dlg = HueSaturationDialog(layer, self._canvas_refresh, self)
+        dlg.exec()
+
+    def _invert(self):
+        layer = self._document.get_active_layer()
+        if not layer:
+            return
+        from ui.adjustments_dialog import apply_invert
+        self._push_history("Invert")
+        layer.image = apply_invert(layer.image)
+        self._canvas_refresh()
+
+    def _exposure(self):
+        layer = self._document.get_active_layer()
+        if not layer:
+            return
+        from ui.more_adjustments import ExposureDialog
+        self._push_history("Before Exposure")
+        ExposureDialog(layer, self._canvas_refresh, self).exec()
+
+    def _vibrance(self):
+        layer = self._document.get_active_layer()
+        if not layer:
+            return
+        from ui.more_adjustments import VibranceDialog
+        self._push_history("Before Vibrance")
+        VibranceDialog(layer, self._canvas_refresh, self).exec()
+
+    def _black_white(self):
+        layer = self._document.get_active_layer()
+        if not layer:
+            return
+        from ui.more_adjustments import BlackWhiteDialog
+        self._push_history("Before Black & White")
+        BlackWhiteDialog(layer, self._canvas_refresh, self).exec()
+
+    def _posterize(self):
+        layer = self._document.get_active_layer()
+        if not layer:
+            return
+        from ui.more_adjustments import PosterizeDialog
+        self._push_history("Before Posterize")
+        PosterizeDialog(layer, self._canvas_refresh, self).exec()
+
+    def _threshold(self):
+        layer = self._document.get_active_layer()
+        if not layer:
+            return
+        from ui.more_adjustments import ThresholdDialog
+        self._push_history("Before Threshold")
+        ThresholdDialog(layer, self._canvas_refresh, self).exec()
+
+    def _channel_mixer(self):
+        layer = self._document.get_active_layer()
+        if not layer:
+            return
+        from ui.more_adjustments import ChannelMixerDialog
+        self._push_history("Before Channel Mixer")
+        ChannelMixerDialog(layer, self._canvas_refresh, self).exec()
+
+    def _selective_color(self):
+        layer = self._document.get_active_layer()
+        if not layer:
+            return
+        from ui.more_adjustments import SelectiveColorDialog
+        self._push_history("Before Selective Color")
+        SelectiveColorDialog(layer, self._canvas_refresh, self).exec()
+
+    def _match_color(self):
+        layer = self._document.get_active_layer()
+        if not layer:
+            return
+        from ui.more_adjustments import MatchColorDialog
+        active_idx = self._document.active_layer_index
+        sources = [
+            (lyr.name, lyr.image)
+            for i, lyr in enumerate(self._document.layers)
+            if i != active_idx
+        ]
+        self._push_history("Before Match Color")
+        MatchColorDialog(layer, sources, self._canvas_refresh, self).exec()
+
+    def _shadows_highlights(self):
+        layer = self._document.get_active_layer()
+        if not layer:
+            return
+        from ui.more_adjustments import ShadowsHighlightsDialog
+        self._push_history("Before Shadows/Highlights")
+        ShadowsHighlightsDialog(layer, self._canvas_refresh, self).exec()
+
+    def _replace_color(self):
+        layer = self._document.get_active_layer()
+        if not layer:
+            return
+        from ui.more_adjustments import ReplaceColorDialog
+        self._push_history("Before Replace Color")
+        ReplaceColorDialog(layer, self._canvas_refresh, self).exec()
+
+    def _photo_filter(self):
+        layer = self._document.get_active_layer()
+        if not layer:
+            return
+        from ui.more_adjustments import PhotoFilterDialog
+        self._push_history("Before Photo Filter")
+        PhotoFilterDialog(layer, self._canvas_refresh, self).exec()
+
+    def _gradient_map(self):
+        layer = self._document.get_active_layer()
+        if not layer:
+            return
+        from ui.more_adjustments import GradientMapDialog
+        self._push_history("Before Gradient Map")
+        GradientMapDialog(layer, self._canvas_refresh, self).exec()
+
+    def _color_lookup(self):
+        layer = self._document.get_active_layer()
+        if not layer:
+            return
+        from ui.more_adjustments import ColorLookupDialog
+        self._push_history("Before Color Lookup")
+        ColorLookupDialog(layer, self._canvas_refresh, self).exec()
+
+    def _equalize(self):
+        layer = self._document.get_active_layer()
+        if not layer:
+            return
+        from ui.more_adjustments import apply_equalize
+        self._push_history("Equalize")
+        layer.image = apply_equalize(layer.image)
+        self._canvas_refresh()
+
+    def _hdr_toning(self):
+        layer = self._document.get_active_layer()
+        if not layer:
+            return
+        from core.adjustments.hdr_toning import HDRToningDialog
+        self._push_history("Before HDR Toning")
+        HDRToningDialog(layer, self._canvas_refresh, self).exec()
+
     # ================================================================ Image ops
     def _flip_h(self):
         layer = self._document.get_active_layer()
@@ -574,6 +766,7 @@ class MainWindow(QMainWindow):
         layer.locked  = False
         layer.opacity = 1.0
         layer.blend_mode = "Normal"
+        layer.text_data  = None
         from PyQt6.QtCore import QPoint
         layer.offset = QPoint(0, 0)
         layer.image  = img
