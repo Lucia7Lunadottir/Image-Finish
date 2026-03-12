@@ -1,0 +1,13 @@
+{
+  "permissions": {
+    "allow": [
+      "Bash(cd \"/home/lucial/Git Projects/linuxphotoshop\" && python3 -c \"from ui.more_adjustments import \\(ExposureDialog, VibranceDialog, BlackWhiteDialog, PosterizeDialog, ThresholdDialog, ChannelMixerDialog, SelectiveColorDialog, MatchColorDialog, ShadowsHighlightsDialog, ReplaceColorDialog, PhotoFilterDialog, GradientMapDialog, apply_equalize\\); print\\('All imports OK'\\)\" 2>&1)",
+      "Bash(cd \"/home/lucial/Git Projects/linuxphotoshop\" && timeout 5 python3 main.py 2>&1 || true)",
+      "Bash(cd \"/home/lucial/Git Projects/linuxphotoshop\" && python3 -c \"from ui.more_adjustments import ColorLookupDialog, apply_color_lookup, parse_cube; print\\('OK'\\)\" 2>&1)",
+      "Bash(cd \"/home/lucial/Git Projects/linuxphotoshop\" && python3 -c \"\nfrom core.adjustments.hdr_toning import apply_hdr_toning, HDRToningDialog\nfrom core.adjustments import apply_hdr_toning as fn2, HDRToningDialog as D2\nfrom ui.more_adjustments import HDRToningDialog as D3\nprint\\('imports OK:', fn2, D2, D3\\)\n\")",
+      "Bash(cd \"/home/lucial/Git Projects/linuxphotoshop\" && timeout 6 python3 main.py 2>&1; echo \"exit:$?\")",
+      "Bash(cd \"/home/lucial/Git Projects/linuxphotoshop\" && python3 -c \"\nfrom core.adjustments.hdr_toning import apply_hdr_toning, HDRToningDialog\nprint\\('import OK'\\)\n\n# Smoke-test the algorithm on a tiny synthetic image\nfrom PyQt6.QtGui import QImage, QColor\nimg = QImage\\(20, 20, QImage.Format.Format_ARGB32_Premultiplied\\)\nimg.fill\\(QColor\\(120, 80, 200\\)\\)\nout = apply_hdr_toning\\(img, radius=5, strength=0.6, gamma=1.2, detail=0.3\\)\nprint\\('apply_hdr_toning OK, format:', out.format\\(\\)\\)\n\")",
+      "Bash(cd \"/home/lucial/Git Projects/linuxphotoshop\" && python3 -c \"\nfrom PyQt6.QtGui import QImage, QColor\nfrom core.adjustments.hdr_toning import apply_hdr_toning, HDRToningDialog\n\nimg = QImage\\(40, 30, QImage.Format.Format_ARGB32_Premultiplied\\)\nimg.fill\\(QColor\\(120, 80, 200\\)\\)\n\nout = apply_hdr_toning\\(img, radius=5, strength=0.6, gamma=1.2, detail=0.3\\)\nprint\\('apply OK, format:', out.format\\(\\)\\)\n\n# Check caching: simulate dialog usage\nimport numpy as np\nfrom ui.adjustments_dialog import _bits_ba, _to_argb32\nsrc = _to_argb32\\(img\\)\nba, arr = _bits_ba\\(src\\)\norig_f = arr[:,:,:3].astype\\(np.float32\\)/255.0\n\nfrom core.adjustments.hdr_toning import _gauss_blur, _hdr_combine\nblurred = _gauss_blur\\(orig_f, 5\\)\nprint\\('blur shape:', blurred.shape, 'dtype:', blurred.dtype\\)\nres = _hdr_combine\\(np, orig_f, blurred, 0.5, 1.0, 0.2\\)\nprint\\('combine shape:', res.shape, 'dtype:', res.dtype\\)\nprint\\('All OK'\\)\n\")"
+    ]
+  }
+}

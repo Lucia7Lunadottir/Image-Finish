@@ -248,21 +248,60 @@ from PyQt6.QtGui import QFont, QFontMetrics, QBrush, QPen as _QPen, QPixmap
 
 
 class _TextDialog(QDialog):
-    """Диалог ввода многострочного текста с превью стилей."""
-    _PREVIEW_H = 90
+    """Диалог ввода многострочного текста с выбором шрифта и превью."""
+    _PREVIEW_H = 80
+    _PREVIEW_W = 480
 
     def __init__(self, initial_text: str = "", opts: dict = None,
                  layer_name: str = None, parent=None):
         super().__init__(parent)
+        from PyQt6.QtWidgets import QFontComboBox, QSpinBox, QPushButton, QHBoxLayout
         title = f"Редактировать: {layer_name}" if layer_name else "Новый текст"
         self.setWindowTitle(title)
-        self.setMinimumSize(420, 260)
-        self._opts = opts or {}
+        self.setMinimumWidth(500)
+        self._base_opts = dict(opts) if opts else {}   # локальная копия для превью
 
         lo = QVBoxLayout(self)
         lo.setSpacing(6)
 
-        # Превью
+        # ── Строка шрифта ──────────────────────────────────────────────────
+        font_row = QHBoxLayout()
+        font_row.setSpacing(6)
+
+        self._font_combo = QFontComboBox()
+        self._font_combo.setFixedWidth(300)
+        self._font_combo.setCurrentFont(
+            QFont(self._base_opts.get("font_family", "Sans Serif")))
+
+        self._size_sp = QSpinBox()
+        self._size_sp.setRange(4, 500)
+        self._size_sp.setValue(int(self._base_opts.get("font_size", 24)))
+        self._size_sp.setFixedWidth(60)
+        self._size_sp.setSuffix(" pt")
+
+        bold_f = QFont(); bold_f.setBold(True)
+        ital_f = QFont(); ital_f.setItalic(True)
+
+        self._btn_b = QPushButton("B")
+        self._btn_b.setFont(bold_f)
+        self._btn_b.setCheckable(True)
+        self._btn_b.setChecked(bool(self._base_opts.get("font_bold", False)))
+        self._btn_b.setFixedSize(28, 28)
+
+        self._btn_i = QPushButton("I")
+        self._btn_i.setFont(ital_f)
+        self._btn_i.setCheckable(True)
+        self._btn_i.setChecked(bool(self._base_opts.get("font_italic", False)))
+        self._btn_i.setFixedSize(28, 28)
+
+        font_row.addWidget(self._font_combo)
+        font_row.addWidget(self._size_sp)
+        font_row.addWidget(self._btn_b)
+        font_row.addWidget(self._btn_i)
+        font_row.addStretch()
+        lo.addLayout(font_row)
+
+        # ── Превью ─────────────────────────────────────────────────────────
         self._preview = QLabel()
         self._preview.setFixedHeight(self._PREVIEW_H)
         self._preview.setAlignment(Qt.AlignmentFlag.AlignCenter)
@@ -270,7 +309,7 @@ class _TextDialog(QDialog):
             "background:#ffffff; border:1px solid #45475a; border-radius:4px;")
         lo.addWidget(self._preview)
 
-        # Редактор текста
+        # ── Редактор текста ────────────────────────────────────────────────
         self._edit = QPlainTextEdit(initial_text)
         self._edit.setPlaceholderText("Введите текст (Enter — новая строка)…")
         lo.addWidget(self._edit, 1)
@@ -282,24 +321,45 @@ class _TextDialog(QDialog):
         btns.rejected.connect(self.reject)
         lo.addWidget(btns)
 
+        self._font_combo.currentFontChanged.connect(self._update_preview)
+        self._size_sp.valueChanged.connect(self._update_preview)
+        self._btn_b.toggled.connect(self._update_preview)
+        self._btn_i.toggled.connect(self._update_preview)
         self._edit.textChanged.connect(self._update_preview)
+
         self._update_preview()
         self._edit.setFocus()
 
-    def _update_preview(self):
+    def _current_opts(self) -> dict:
+        """Объединяет базовые opts с текущими значениями контролов диалога."""
+        opts = dict(self._base_opts)
+        opts["font_family"] = self._font_combo.currentFont().family()
+        opts["font_size"]   = self._size_sp.value()
+        opts["font_bold"]   = self._btn_b.isChecked()
+        opts["font_italic"] = self._btn_i.isChecked()
+        return opts
+
+    def _update_preview(self, *_):
         text = self._edit.toPlainText() or "Предпросмотр"
-        w, h = 416, self._PREVIEW_H - 2
+        w, h = self._PREVIEW_W, self._PREVIEW_H - 2
         img = QImage(w, h, QImage.Format.Format_ARGB32_Premultiplied)
         img.fill(QColor(255, 255, 255))
-        # clamp font size so preview fits
-        preview_opts = dict(self._opts)
-        sz = int(preview_opts.get("font_size", 24))
-        preview_opts["font_size"] = min(sz, h - 16)
-        _render_text(img, 8, 8, text, preview_opts)
+        cur_opts = self._current_opts()
+        cur_opts["font_size"] = min(cur_opts["font_size"], h - 16)
+        _render_text(img, 8, 8, text, cur_opts)
         self._preview.setPixmap(QPixmap.fromImage(img))
 
     def get_text(self) -> str:
         return self._edit.toPlainText()
+
+    def get_font_opts(self) -> dict:
+        """Возвращает параметры шрифта, выбранные в диалоге."""
+        return {
+            "font_family": self._font_combo.currentFont().family(),
+            "font_size":   self._size_sp.value(),
+            "font_bold":   self._btn_b.isChecked(),
+            "font_italic": self._btn_i.isChecked(),
+        }
 
 
 def _build_font(opts: dict) -> QFont:
@@ -371,7 +431,7 @@ class TextTool(BaseTool):
 
     def on_press(self, pos, doc, fg, bg, opts):
         layer    = doc.get_active_layer()
-        re_edit  = layer and layer.text_data is not None
+        re_edit  = layer and getattr(layer, "text_data", None) is not None
         layer_name = layer.name if re_edit else None
 
         initial = layer.text_data.get("text", "") if re_edit else ""
@@ -381,6 +441,9 @@ class TextTool(BaseTool):
         text = dlg.get_text().strip()
         if not text:
             return
+
+        # Применяем шрифт, выбранный прямо в диалоге
+        opts.update(dlg.get_font_opts())
 
         if re_edit:
             # Перерисовываем существующий текстовый слой

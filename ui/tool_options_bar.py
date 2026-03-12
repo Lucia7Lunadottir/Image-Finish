@@ -39,8 +39,7 @@ class ToolOptionsBar(QWidget):
         outer.setSpacing(0)
 
         self._stack = QStackedWidget()
-        outer.addWidget(self._stack)
-        outer.addStretch()
+        outer.addWidget(self._stack, 1)   # stretch=1 → занимает всю ширину бара
 
         self._pages: dict[str, QWidget] = {}
         self._size_spins: dict[str, QSpinBox] = {}
@@ -260,7 +259,7 @@ class ToolOptionsBar(QWidget):
 
         # ── Шрифт ──────────────────────────────────────────────────────────
         font_combo = QFontComboBox()
-        font_combo.setFixedWidth(150)
+        font_combo.setFixedWidth(250)
         font_combo.setCurrentFont(QFont("Sans Serif"))
         font_combo.currentFontChanged.connect(
             lambda f: self.option_changed.emit("font_family", f.family()))
