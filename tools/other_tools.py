@@ -481,6 +481,191 @@ class TextTool(BaseTool):
         return Qt.CursorShape.IBeamCursor
 
 
+# ─────────────────────────────────── vertical render + path helpers
+
+def _render_text_vertical(image, x: int, y: int, text: str, opts: dict, clip_path=None):
+    font    = _build_font(opts)
+    metrics = QFontMetrics(font)
+    col_w   = metrics.maxWidth() + 4
+    char_h  = metrics.height()
+    cols    = text.split("\n")
+
+    text_color   = opts.get("text_color",       QColor(0, 0, 0))
+    stroke_w     = int(opts.get("text_stroke_w",   0))
+    stroke_color = opts.get("text_stroke_color", QColor(0, 0, 0))
+    shadow       = bool(opts.get("text_shadow",  False))
+    shadow_color = opts.get("text_shadow_color", QColor(0, 0, 0, 160))
+    sdx          = int(opts.get("text_shadow_dx", 3))
+    sdy          = int(opts.get("text_shadow_dy", 3))
+
+    def make_path(dx=0, dy=0) -> QPainterPath:
+        path = QPainterPath()
+        for ci, col_text in enumerate(cols):
+            cx = x + dx + ci * col_w
+            for ri, ch in enumerate(col_text):
+                if ch.strip():
+                    cy = y + dy + metrics.ascent() + ri * char_h
+                    path.addText(cx, cy, font, ch)
+        return path
+
+    painter = QPainter(image)
+    painter.setRenderHint(QPainter.RenderHint.Antialiasing)
+    if clip_path and not clip_path.isEmpty():
+        painter.setClipPath(clip_path)
+
+    if shadow:
+        painter.fillPath(make_path(sdx, sdy), QBrush(shadow_color))
+
+    main_path = make_path()
+    if stroke_w > 0:
+        pen = _QPen(stroke_color, stroke_w * 2,
+                    Qt.PenStyle.SolidLine,
+                    Qt.PenCapStyle.RoundCap,
+                    Qt.PenJoinStyle.RoundJoin)
+        painter.strokePath(main_path, pen)
+
+    painter.fillPath(main_path, QBrush(text_color))
+    painter.end()
+
+
+def _text_path_h(pos, text: str, opts: dict) -> QPainterPath:
+    font     = _build_font(opts)
+    metrics  = QFontMetrics(font)
+    line_h   = metrics.lineSpacing()
+    lines    = text.split("\n")
+    x, y     = pos.x(), pos.y()
+    path     = QPainterPath()
+    baseline = metrics.ascent()
+    for i, line in enumerate(lines):
+        if line:
+            path.addText(x, y + baseline + i * line_h, font, line)
+    return path
+
+
+def _text_path_v(pos, text: str, opts: dict) -> QPainterPath:
+    font    = _build_font(opts)
+    metrics = QFontMetrics(font)
+    col_w   = metrics.maxWidth() + 4
+    char_h  = metrics.height()
+    cols    = text.split("\n")
+    x, y    = pos.x(), pos.y()
+    path    = QPainterPath()
+    for ci, col_text in enumerate(cols):
+        cx = x + ci * col_w
+        for ri, ch in enumerate(col_text):
+            if ch.strip():
+                cy = y + metrics.ascent() + ri * char_h
+                path.addText(cx, cy, font, ch)
+    return path
+
+
+# ═══════════════════════════════════════════════ VerticalTypeTool
+
+class VerticalTypeTool(BaseTool):
+    name = "TextV"
+    icon = "Tv"
+    shortcut = ""
+    needs_immediate_commit = True
+
+    def __init__(self):
+        self._parent_widget = None
+
+    def on_press(self, pos, doc, fg, bg, opts):
+        layer    = doc.get_active_layer()
+        re_edit  = (layer and getattr(layer, "text_data", None) is not None
+                    and layer.text_data.get("vertical", False))
+        layer_name = layer.name if re_edit else None
+        initial    = layer.text_data.get("text", "") if re_edit else ""
+
+        dlg = _TextDialog(initial, opts, layer_name, self._parent_widget)
+        if dlg.exec() != QDialog.DialogCode.Accepted:
+            return
+        text = dlg.get_text().strip()
+        if not text:
+            return
+
+        opts.update(dlg.get_font_opts())
+        clip = doc.selection if (doc.selection and not doc.selection.isEmpty()) else None
+
+        if re_edit:
+            layer.image.fill(Qt.GlobalColor.transparent)
+            td = layer.text_data
+            _render_text_vertical(layer.image, td["x"], td["y"], text, opts, clip)
+            layer.text_data = {**td, "text": text, "vertical": True,
+                               **TextTool._snap_opts(opts)}
+        else:
+            from core.layer import Layer as _Layer
+            n = sum(1 for l in doc.layers if l.text_data) + 1
+            new_layer = _Layer(f"Text {n}", doc.width, doc.height)
+            _render_text_vertical(new_layer.image, pos.x(), pos.y(), text, opts, clip)
+            new_layer.text_data = {"text": text, "x": pos.x(), "y": pos.y(),
+                                   "vertical": True, **TextTool._snap_opts(opts)}
+            doc.layers.append(new_layer)
+            doc.active_layer_index = len(doc.layers) - 1
+
+    def needs_history_push(self):
+        return True
+
+    def cursor(self):
+        return Qt.CursorShape.IBeamCursor
+
+
+# ═══════════════════════════════════════════════ HorizontalTypeMaskTool
+
+class HorizontalTypeMaskTool(BaseTool):
+    name = "TextHMask"
+    icon = "Tm"
+    shortcut = ""
+    needs_immediate_commit = True
+
+    def __init__(self):
+        self._parent_widget = None
+
+    def on_press(self, pos, doc, fg, bg, opts):
+        dlg = _TextDialog("", opts, None, self._parent_widget)
+        if dlg.exec() != QDialog.DialogCode.Accepted:
+            return
+        text = dlg.get_text().strip()
+        if not text:
+            return
+        opts.update(dlg.get_font_opts())
+        doc.selection = _text_path_h(pos, text, opts)
+
+    def needs_history_push(self):
+        return False
+
+    def cursor(self):
+        return Qt.CursorShape.IBeamCursor
+
+
+# ═══════════════════════════════════════════════ VerticalTypeMaskTool
+
+class VerticalTypeMaskTool(BaseTool):
+    name = "TextVMask"
+    icon = "Vm"
+    shortcut = ""
+    needs_immediate_commit = True
+
+    def __init__(self):
+        self._parent_widget = None
+
+    def on_press(self, pos, doc, fg, bg, opts):
+        dlg = _TextDialog("", opts, None, self._parent_widget)
+        if dlg.exec() != QDialog.DialogCode.Accepted:
+            return
+        text = dlg.get_text().strip()
+        if not text:
+            return
+        opts.update(dlg.get_font_opts())
+        doc.selection = _text_path_v(pos, text, opts)
+
+    def needs_history_push(self):
+        return False
+
+    def cursor(self):
+        return Qt.CursorShape.IBeamCursor
+
+
 # ═══════════════════════════════════════════════ ShapesTool
 from PyQt6.QtGui import QPen, QBrush
 

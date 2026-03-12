@@ -53,6 +53,9 @@ class ToolOptionsBar(QWidget):
         self._add_select_page()
         self._add_shapes_page()
         self._add_text_page()
+        self._pages["TextV"]     = self._pages["Text"]
+        self._pages["TextHMask"] = self._pages["Text"]
+        self._pages["TextVMask"] = self._pages["Text"]
         self._add_empty_page("Move")
         self._add_empty_page("Eyedropper")
         self._add_crop_page()

@@ -21,6 +21,9 @@ class ToolBar(QWidget):
         ("Select",      "⬜", "M"),
         ("Shapes",      "🔷", "U"),
         ("Text",        "T",  "T"),
+        ("TextV",       "Tv", ""),
+        ("TextHMask",   "Tm", ""),
+        ("TextVMask",   "Vm", ""),
         ("Eyedropper",  "💉", "I"),
         ("Crop",        "✂️", "C"),
     ]
@@ -40,7 +43,7 @@ class ToolBar(QWidget):
         for name, icon, shortcut in self._TOOLS:
             btn = QPushButton(icon)
             btn.setObjectName("toolBtn")
-            btn.setToolTip(f"{name}  [{shortcut}]")
+            btn.setToolTip(f"{name}  [{shortcut}]" if shortcut else name)
             btn.setCheckable(False)
             btn.setSizePolicy(QSizePolicy.Policy.Fixed, QSizePolicy.Policy.Fixed)
             btn.clicked.connect(lambda _, n=name: self._on_click(n))

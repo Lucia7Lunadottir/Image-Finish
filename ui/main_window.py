@@ -21,9 +21,17 @@ def _build_tool_registry(text_parent):
     from tools.fill_tool    import FillTool
     from tools.effect_tools import BlurTool, SharpenTool, SmudgeTool
     from tools.other_tools  import (SelectTool, MoveTool, EyedropperTool,
-                                    CropTool, TextTool, ShapesTool)
+                                    CropTool, TextTool, ShapesTool,
+                                    VerticalTypeTool, HorizontalTypeMaskTool,
+                                    VerticalTypeMaskTool)
     text = TextTool()
     text._parent_widget = text_parent
+    textv = VerticalTypeTool()
+    textv._parent_widget = text_parent
+    texthm = HorizontalTypeMaskTool()
+    texthm._parent_widget = text_parent
+    textvm = VerticalTypeMaskTool()
+    textvm._parent_widget = text_parent
 
     return {
         "Brush":      BrushTool(),
@@ -37,6 +45,9 @@ def _build_tool_registry(text_parent):
         "Eyedropper": EyedropperTool(),
         "Crop":       CropTool(),
         "Text":       text,
+        "TextV":      textv,
+        "TextHMask":  texthm,
+        "TextVMask":  textvm,
         "Shapes":     ShapesTool(),
     }
 
@@ -196,6 +207,22 @@ class MainWindow(QMainWindow):
         layer_m.addSeparator()
         self._act(layer_m, "Move Up",   self._layer_up,   QKeySequence("Ctrl+]"))
         self._act(layer_m, "Move Down", self._layer_down, QKeySequence("Ctrl+["))
+
+        # ── Filter ────────────────────────────────────────────────────────
+        filter_m = mb.addMenu("Filter")
+        blur_m = filter_m.addMenu("Blur")
+        self._act(blur_m, "Average",         self._blur_average)
+        self._act(blur_m, "Blur",            self._blur_simple)
+        self._act(blur_m, "Blur More",       self._blur_more)
+        blur_m.addSeparator()
+        self._act(blur_m, "Box Blur…",       self._box_blur)
+        self._act(blur_m, "Gaussian Blur…",  self._gaussian_blur)
+        self._act(blur_m, "Motion Blur…",    self._motion_blur)
+        self._act(blur_m, "Radial Blur…",    self._radial_blur)
+        self._act(blur_m, "Smart Blur…",     self._smart_blur)
+        self._act(blur_m, "Surface Blur…",   self._surface_blur)
+        self._act(blur_m, "Shape Blur…",     self._shape_blur)
+        self._act(blur_m, "Lens Blur…",      self._lens_blur)
 
         # ── View ──────────────────────────────────────────────────────────
         view_m = mb.addMenu("View")
@@ -678,6 +705,98 @@ class MainWindow(QMainWindow):
         from core.adjustments.hdr_toning import HDRToningDialog
         self._push_history("Before HDR Toning")
         HDRToningDialog(layer, self._canvas_refresh, self).exec()
+
+    # ================================================================ Filters
+    def _blur_average(self):
+        layer = self._document.get_active_layer()
+        if not layer:
+            return
+        from core.filters.blur_filters import apply_average
+        self._push_history("Average")
+        layer.image = apply_average(layer.image)
+        self._canvas_refresh()
+
+    def _blur_simple(self):
+        layer = self._document.get_active_layer()
+        if not layer:
+            return
+        from core.filters.blur_filters import apply_blur
+        self._push_history("Blur")
+        layer.image = apply_blur(layer.image)
+        self._canvas_refresh()
+
+    def _blur_more(self):
+        layer = self._document.get_active_layer()
+        if not layer:
+            return
+        from core.filters.blur_filters import apply_blur_more
+        self._push_history("Blur More")
+        layer.image = apply_blur_more(layer.image)
+        self._canvas_refresh()
+
+    def _box_blur(self):
+        layer = self._document.get_active_layer()
+        if not layer:
+            return
+        from core.filters.blur_filters import BoxBlurDialog
+        self._push_history("Before Box Blur")
+        BoxBlurDialog(layer, self._canvas_refresh, self).exec()
+
+    def _gaussian_blur(self):
+        layer = self._document.get_active_layer()
+        if not layer:
+            return
+        from core.filters.blur_filters import GaussianBlurDialog
+        self._push_history("Before Gaussian Blur")
+        GaussianBlurDialog(layer, self._canvas_refresh, self).exec()
+
+    def _motion_blur(self):
+        layer = self._document.get_active_layer()
+        if not layer:
+            return
+        from core.filters.motion_blur import MotionBlurDialog
+        self._push_history("Before Motion Blur")
+        MotionBlurDialog(layer, self._canvas_refresh, self).exec()
+
+    def _radial_blur(self):
+        layer = self._document.get_active_layer()
+        if not layer:
+            return
+        from core.filters.radial_blur import RadialBlurDialog
+        self._push_history("Before Radial Blur")
+        RadialBlurDialog(layer, self._canvas_refresh, self).exec()
+
+    def _smart_blur(self):
+        layer = self._document.get_active_layer()
+        if not layer:
+            return
+        from core.filters.blur_filters import SmartBlurDialog
+        self._push_history("Before Smart Blur")
+        SmartBlurDialog(layer, self._canvas_refresh, self).exec()
+
+    def _surface_blur(self):
+        layer = self._document.get_active_layer()
+        if not layer:
+            return
+        from core.filters.blur_filters import SurfaceBlurDialog
+        self._push_history("Before Surface Blur")
+        SurfaceBlurDialog(layer, self._canvas_refresh, self).exec()
+
+    def _shape_blur(self):
+        layer = self._document.get_active_layer()
+        if not layer:
+            return
+        from core.filters.blur_filters import ShapeBlurDialog
+        self._push_history("Before Shape Blur")
+        ShapeBlurDialog(layer, self._canvas_refresh, self).exec()
+
+    def _lens_blur(self):
+        layer = self._document.get_active_layer()
+        if not layer:
+            return
+        from core.filters.blur_filters import LensBlurDialog
+        self._push_history("Before Lens Blur")
+        LensBlurDialog(layer, self._canvas_refresh, self).exec()
 
     # ================================================================ Image ops
     def _flip_h(self):
