@@ -88,4 +88,4 @@ linuxshop/
 ### Add a new filter / effect
 Add a menu action in `MainWindow._build_menu_bar()` and implement it
 using `QPainter` or numpy operations on `layer.image`.
-# Linux-Photoshop
+# ImageFinish

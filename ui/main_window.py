@@ -55,7 +55,7 @@ def _build_tool_registry(text_parent):
 class MainWindow(QMainWindow):
     def __init__(self):
         super().__init__()
-        self.setWindowTitle("LinuxShop — untitled")
+        self.setWindowTitle("ImageFinish — untitled")
 
         self._document = Document(800, 600, QColor(255, 255, 255))
         self._history  = HistoryManager()
@@ -896,7 +896,7 @@ class MainWindow(QMainWindow):
         self._canvas.set_document(self._document)
         self._filepath = path
         self._refresh_layers()
-        self.setWindowTitle(f"LinuxShop — {path.split('/')[-1]}")
+        self.setWindowTitle(f"ImageFinish — {path.split('/')[-1]}")
 
     def _save(self):
         if hasattr(self, "_filepath") and self._filepath:
