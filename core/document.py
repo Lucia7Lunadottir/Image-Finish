@@ -1,5 +1,5 @@
-from PyQt6.QtGui import QImage, QPainter, QColor, QPainterPath, QLinearGradient, QBrush, qAlpha
-from PyQt6.QtCore import Qt, QRect, QRectF, QPoint
+from PyQt6.QtGui import QImage, QPainter, QColor, QPainterPath, QLinearGradient, QBrush, qAlpha, QPolygonF, QTransform
+from PyQt6.QtCore import Qt, QRect, QRectF, QPoint, QPointF
 from .layer import Layer
 
 
@@ -151,6 +151,73 @@ class Document:
             layer.offset = QPoint(0, 0)
         self.width = rect.width()
         self.height = rect.height()
+        self.selection = None
+
+    def apply_perspective_crop(self, quad: QPolygonF):
+        if quad.isEmpty() or quad.count() < 4:
+            return
+
+        # Извлекаем 4 точки
+        pts = [quad[i] for i in range(4)]
+
+        # Сортируем точки: находим две верхние (с минимальным Y) и две нижние
+        pts.sort(key=lambda p: p.y())
+        top_pts = pts[:2]
+        bottom_pts = pts[2:]
+
+        # Сортируем их по оси X (слева направо)
+        top_pts.sort(key=lambda p: p.x())
+        bottom_pts.sort(key=lambda p: p.x())
+
+        # Получаем строгий порядок: Лево-Верх, Право-Верх, Лево-Низ, Право-Низ
+        tl, tr = top_pts
+        bl, br = bottom_pts
+
+        # Вспомогательная функция для расчета расстояния (чтобы не импортировать math)
+        def _dist(p1, p2):
+            return ((p1.x() - p2.x())**2 + (p1.y() - p2.y())**2) ** 0.5
+
+        # Вычисляем реальные размеры будущего холста без растяжений
+        new_w = int(max(_dist(tl, tr), _dist(bl, br)))
+        new_h = int(max(_dist(tl, bl), _dist(tr, br)))
+
+        if new_w <= 0 or new_h <= 0:
+            return
+
+        # Создаем отсортированный многоугольник-источник (строго по часовой)
+        sorted_quad = QPolygonF([tl, tr, br, bl])
+
+        # Явно задаем 4 точки приемника (в том же порядке TL, TR, BR, BL)
+        dst_quad = QPolygonF([
+            QPointF(0, 0),
+            QPointF(new_w, 0),
+            QPointF(new_w, new_h),
+            QPointF(0, new_h)
+        ])
+
+        for layer in self.layers:
+            new_img = QImage(new_w, new_h, QImage.Format.Format_ARGB32_Premultiplied)
+            new_img.fill(Qt.GlobalColor.transparent)
+
+            p = QPainter(new_img)
+            p.setRenderHint(QPainter.RenderHint.SmoothPixmapTransform)
+
+            src_quad = QPolygonF(sorted_quad)
+            src_quad.translate(QPointF(-layer.offset))
+
+            xform = QTransform()
+            ok = QTransform.quadToQuad(src_quad, dst_quad, xform)
+            if ok:
+                p.setTransform(xform)
+                p.drawImage(0, 0, layer.image)
+
+            p.end()
+            layer.image = new_img
+            layer.offset = QPoint(0, 0)
+
+        # Обновляем размеры самого документа
+        self.width = new_w
+        self.height = new_h
         self.selection = None
 
     # ------------------------------------------------------------------- Trim / Reveal All

@@ -3,10 +3,10 @@ import math
 from PyQt6.QtWidgets import QWidget
 from PyQt6.QtCore import Qt, QPoint, QPointF, QRect, QRectF, pyqtSignal
 from PyQt6.QtGui import (QPainter, QColor, QPixmap, QBrush,
-                         QPen, QImage, QCursor, QRadialGradient, QPainterPath, QPolygon)
+                         QPen, QImage, QCursor, QRadialGradient, QPainterPath, QPolygon, QPolygonF)
 
 from tools.other_tools import (SelectTool, CropTool, ShapesTool,
-                               HandTool, ZoomTool, RotateViewTool, GradientTool)
+                               HandTool, ZoomTool, RotateViewTool, GradientTool, PerspectiveCropTool)
 
 # Инструменты с кистью — для них показываем кружок-курсор
 _BRUSH_TOOLS = {"Brush", "Eraser", "Blur", "Sharpen", "Smudge"}
@@ -313,14 +313,54 @@ class CanvasWidget(QWidget):
             painter.save()
             painter.translate(self._pan)
             painter.scale(self.zoom, self.zoom)
-            painter.fillRect(0, 0, self.document.width, self.document.height,
-                             QColor(0, 0, 0, 100))
-            painter.setCompositionMode(QPainter.CompositionMode.CompositionMode_Clear)
-            painter.fillRect(cr, QColor(0, 0, 0, 0))
-            painter.setCompositionMode(QPainter.CompositionMode.CompositionMode_SourceOver)
+            
+            path = QPainterPath()
+            path.addRect(QRectF(0, 0, self.document.width, self.document.height))
+            path.addRect(QRectF(cr))
+            path.setFillRule(Qt.FillRule.OddEvenFill)
+            painter.fillPath(path, QColor(0, 0, 0, 100))
+            
             painter.setPen(QPen(QColor(255, 200, 0), max(1, 1 / self.zoom)))
             painter.setBrush(Qt.BrushStyle.NoBrush)
             painter.drawRect(cr)
+            painter.restore()
+
+        # 6.1. Превью перспективного кропа
+        if isinstance(self.active_tool, PerspectiveCropTool):
+            painter.save()
+            painter.translate(self._pan)
+            painter.scale(self.zoom, self.zoom)
+
+            # Если собраны все 4 точки - рисуем затемнение фона и основную желтую рамку
+            if self.active_tool.pending_quad:
+                quad = self.active_tool.pending_quad
+                path = QPainterPath()
+                path.addRect(QRectF(0, 0, self.document.width, self.document.height))
+                path.addPolygon(QPolygonF([QPointF(p) for p in quad]))
+                path.setFillRule(Qt.FillRule.OddEvenFill)
+                painter.fillPath(path, QColor(0, 0, 0, 100))
+
+                painter.setPen(QPen(QColor(255, 200, 0), max(1, 1 / self.zoom)))
+                painter.setBrush(Qt.BrushStyle.NoBrush)
+                painter.drawPolygon(quad)
+
+            # Отрисовка узлов и направляющих линий (показываем всегда, пока есть точки)
+            if self.active_tool.points:
+                painter.setRenderHint(QPainter.RenderHint.Antialiasing)
+                pen = QPen(QColor(255, 255, 255), max(1.0, 1.5 / self.zoom))
+                pen.setStyle(Qt.PenStyle.DashLine)
+                painter.setPen(pen)
+                painter.setBrush(QColor(255, 255, 255, 180))
+
+                pts = self.active_tool.points
+                # Радиус точек тоже должен зависеть от зума, иначе при отдалении их не увидеть
+                r = max(4.0, 6.0 / self.zoom)
+                for i, p in enumerate(pts):
+                    painter.drawEllipse(QPointF(p), r, r)
+                    # Рисуем линии соединения, пока фигура не замкнута
+                    if i > 0 and not self.active_tool.pending_quad:
+                        painter.drawLine(pts[i-1], pts[i])
+
             painter.restore()
 
         # 6.5. Превью фигуры (ShapesTool)

@@ -4,6 +4,7 @@ from tools.select_tool      import SelectTool, EllipticalSelectTool
 from tools.move_tool        import MoveTool
 from tools.eyedropper_tool  import EyedropperTool
 from tools.crop_tool        import CropTool
+from tools.perspective_crop_tool import PerspectiveCropTool
 from tools.text_tool        import (TextTool, VerticalTypeTool,
                                     HorizontalTypeMaskTool, VerticalTypeMaskTool,
                                     _render_text, _render_text_vertical,
@@ -12,7 +13,7 @@ from tools.shapes_tool      import ShapesTool
 from tools.nav_tools        import HandTool, ZoomTool, RotateViewTool
 
 __all__ = [
-    "SelectTool", "EllipticalSelectTool", "MoveTool", "EyedropperTool", "CropTool",
+    "SelectTool", "EllipticalSelectTool", "MoveTool", "EyedropperTool", "CropTool", "PerspectiveCropTool",
     "TextTool", "VerticalTypeTool", "HorizontalTypeMaskTool", "VerticalTypeMaskTool",
     "_render_text", "_render_text_vertical", "_text_path_h", "_text_path_v", "_build_font",
     "ShapesTool",

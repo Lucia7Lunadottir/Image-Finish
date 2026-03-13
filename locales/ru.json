@@ -49,6 +49,7 @@
   "menu.trim":              "Тримминг",
   "menu.reveal_all":        "Показать всё",
   "menu.apply_crop":         "Применить кадрирование",
+  "menu.apply_perspective_crop": "Применить перспективное кадрирование",
   "menu.flatten":            "Свести изображение",
 
   "menu.layer":            "Слой",
@@ -128,6 +129,7 @@
   "history.merge_down":         "Объединить вниз",
   "history.flatten":            "Сведение",
   "history.crop":               "Кадрирование",
+  "history.perspective_crop":   "Перспективное кадрирование",
   "history.trim":               "Тримминг",
   "history.reveal_all":         "Показать всё",
   "history.fill":               "Заливка",
@@ -275,6 +277,7 @@
   "tool.text_v_mask": "Маска текста (В)",
   "tool.eyedropper":  "Пипетка",
   "tool.crop":        "Кадрирование",
+  "tool.perspective_crop": "Перспективное кадрирование",
   "tool.gradient":    "Градиент",
   "tool.hand":        "Рука",
   "tool.zoom":        "Масштаб",

@@ -40,6 +40,7 @@ class ToolBar(QWidget):
         "TextVMask":     _ToolDef("TextVMask",     "Vm",  "",  "tool.text_v_mask"),
         "Eyedropper":    _ToolDef("Eyedropper",    "💉",  "I", "tool.eyedropper"),
         "Crop":          _ToolDef("Crop",          "✂️",  "C", "tool.crop"),
+        "Perspective Crop": _ToolDef("Perspective Crop", "📐", "", "tool.perspective_crop"),
         "Hand":          _ToolDef("Hand",          "🖐",  "H", "tool.hand"),
         "Zoom":          _ToolDef("Zoom",          "🔍",  "Z", "tool.zoom"),
         "RotateView":    _ToolDef("RotateView",    "🔄",  "",  "tool.rotate_view"),
@@ -57,7 +58,7 @@ class ToolBar(QWidget):
         "Shapes",
         ("Type", ["Text", "TextV", "TextHMask", "TextVMask"]),
         "Eyedropper",
-        "Crop",
+        ("Crop", ["Crop", "Perspective Crop"]),
         ("Nav", ["Hand", "Zoom", "RotateView"]),
     ]
 

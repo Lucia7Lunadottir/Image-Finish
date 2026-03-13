@@ -49,6 +49,7 @@
   "menu.trim":              "Trim",
   "menu.reveal_all":        "Reveal All",
   "menu.apply_crop":         "Apply Crop",
+  "menu.apply_perspective_crop": "Apply Perspective Crop",
   "menu.flatten":            "Flatten Image",
 
   "menu.layer":            "Layer",
@@ -128,6 +129,7 @@
   "history.merge_down":         "Merge down",
   "history.flatten":            "Flatten",
   "history.crop":               "Crop",
+  "history.perspective_crop":   "Perspective Crop",
   "history.trim":               "Trim",
   "history.reveal_all":         "Reveal All",
   "history.fill":               "Fill",
@@ -275,6 +277,7 @@
   "tool.text_v_mask": "Vertical Text Mask",
   "tool.eyedropper":  "Eyedropper",
   "tool.crop":        "Crop",
+  "tool.perspective_crop": "Perspective Crop",
   "tool.gradient":    "Gradient",
   "tool.hand":        "Hand",
   "tool.zoom":        "Zoom",

@@ -1,5 +1,5 @@
-from PyQt6.QtCore import Qt
-from PyQt6.QtGui import QPainter, QImage
+from PyQt6.QtCore import Qt, QPointF
+from PyQt6.QtGui import QPainter, QImage, QPolygonF
 from core.locale import tr
 
 
@@ -77,6 +77,18 @@ class ImageActionsMixin:
             self._push_history(tr("history.crop"))
             self._document.apply_crop(tool.pending_rect)
             tool.pending_rect = None
+            self._canvas_refresh()
+            self._canvas.reset_zoom()
+            self._refresh_layers()
+
+    def _apply_perspective_crop(self):
+        from tools.other_tools import PerspectiveCropTool
+        tool = self._tools.get("Perspective Crop")
+        if isinstance(tool, PerspectiveCropTool) and tool.pending_quad:
+            self._push_history(tr("history.perspective_crop"))
+            self._document.apply_perspective_crop(QPolygonF([QPointF(p) for p in tool.pending_quad]))
+            tool.pending_quad = None
+            tool.points = []
             self._canvas_refresh()
             self._canvas.reset_zoom()
             self._refresh_layers()

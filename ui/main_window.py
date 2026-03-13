@@ -33,7 +33,7 @@ def _build_tool_registry(text_parent):
                                     VerticalTypeTool, HorizontalTypeMaskTool,
                                     VerticalTypeMaskTool,
                                     HandTool, ZoomTool, RotateViewTool,
-                                    GradientTool)
+                                    GradientTool, PerspectiveCropTool)
     text = TextTool();  text._parent_widget  = text_parent
     textv = VerticalTypeTool(); textv._parent_widget = text_parent
     texthm = HorizontalTypeMaskTool(); texthm._parent_widget = text_parent
@@ -50,6 +50,7 @@ def _build_tool_registry(text_parent):
         "Move":       MoveTool(),
         "Eyedropper": EyedropperTool(),
         "Crop":       CropTool(),
+        "Perspective Crop": PerspectiveCropTool(),
         "Text":       text,
         "TextV":      textv,
         "TextHMask":  texthm,
@@ -207,7 +208,8 @@ class MainWindow(QMainWindow,
         self._act(img_m, "menu.trim",       self._trim)
         self._act(img_m, "menu.reveal_all", self._reveal_all)
         img_m.addSeparator()
-        self._act(img_m, "menu.apply_crop",    self._apply_crop, QKeySequence("Return"))
+        self._act(img_m, "menu.apply_crop",    self._apply_crop)
+        self._act(img_m, "menu.apply_perspective_crop", self._apply_perspective_crop)
         img_m.addSeparator()
         self._act(img_m, "menu.flatten",       self._flatten)
 
@@ -321,6 +323,7 @@ class MainWindow(QMainWindow,
         self._color_panel.bg_changed.connect(self._on_bg_changed)
         self._opts_bar.option_changed.connect(self._on_opt_changed)
         self._opts_bar.apply_styles_requested.connect(self._apply_text_styles)
+        self._opts_bar.apply_crop_requested.connect(self._on_apply_crop_requested)
         self._layers_panel.layer_selected.connect(self._on_layer_selected)
         self._layers_panel.layer_added.connect(self._add_layer)
         self._layers_panel.layer_duplicated.connect(self._duplicate_layer)
@@ -337,6 +340,7 @@ class MainWindow(QMainWindow,
 
     # ================================================================= Tools
     def _activate_tool(self, name: str):
+        print(f"Activating tool: {name}")
         self._active_tool_name = name
         tool = self._tools.get(name)
         if not tool:
@@ -399,6 +403,20 @@ class MainWindow(QMainWindow,
             self._canvas.reset_rotation()
             return
         self._canvas.tool_opts[key] = value
+
+    def _on_apply_crop_requested(self):
+        if self._active_tool_name == "Crop":
+            self._apply_crop()
+        elif self._active_tool_name == "Perspective Crop":
+            self._apply_perspective_crop()
+
+    def keyPressEvent(self, e):
+        if e.key() == Qt.Key.Key_Return or e.key() == Qt.Key.Key_Enter:
+            if self._active_tool_name == "Crop":
+                self._apply_crop()
+            elif self._active_tool_name == "Perspective Crop":
+                self._apply_perspective_crop()
+        super().keyPressEvent(e)
 
     def _apply_text_styles(self):
         from tools.other_tools import _render_text, TextTool
