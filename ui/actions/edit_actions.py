@@ -66,14 +66,41 @@ class EditActionsMixin:
         self._canvas_refresh()
 
     def _deselect(self):
+        # Сохраняем текущее выделение для функции Reselect
+        if self._document.selection and not self._document.selection.isEmpty():
+            self._last_selection = QPainterPath(self._document.selection)
+            self._push_history(tr("history.deselect"))
+
         self._document.selection = None
         self._canvas_refresh()
 
     def _select_all(self):
+        self._push_history(tr("history.select_all"))
         p = QPainterPath()
         p.addRect(QRectF(0, 0, self._document.width, self._document.height))
         self._document.selection = p
         self._canvas_refresh()
+
+    def _reselect(self):
+        # Восстанавливаем последнее снятое выделение
+        if hasattr(self, "_last_selection") and self._last_selection:
+            self._push_history(tr("history.reselect"))
+            self._document.selection = QPainterPath(self._last_selection)
+            self._canvas_refresh()
+
+    def _inverse_selection(self):
+        self._push_history(tr("history.inverse"))
+        sel = self._document.selection
+
+        if not sel or sel.isEmpty():
+            # Если ничего не выделено, инверсия выделяет весь холст
+            self._select_all()
+        else:
+            # Вычитаем текущее выделение из площади всего холста
+            full_rect = QPainterPath()
+            full_rect.addRect(QRectF(0, 0, self._document.width, self._document.height))
+            self._document.selection = full_rect.subtracted(sel)
+            self._canvas_refresh()
 
     def _cut(self):
         self._copy()
