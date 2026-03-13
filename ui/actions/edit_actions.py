@@ -15,9 +15,11 @@ class EditActionsMixin:
             active_layer_index=self._document.active_layer_index,
             doc_width=self._document.width,
             doc_height=self._document.height,
+            selection_snapshot=QPainterPath(self._document.selection) if self._document.selection else None,
         ))
         self._document.restore_layers(state.layers_snapshot)
         self._document.active_layer_index = state.active_layer_index
+        self._document.selection = QPainterPath(state.selection_snapshot) if state.selection_snapshot else None
         if state.doc_width and state.doc_height:
             dims_changed = (self._document.width != state.doc_width or
                             self._document.height != state.doc_height)
@@ -40,9 +42,11 @@ class EditActionsMixin:
             active_layer_index=self._document.active_layer_index,
             doc_width=self._document.width,
             doc_height=self._document.height,
+            selection_snapshot=QPainterPath(self._document.selection) if self._document.selection else None,
         ))
         self._document.restore_layers(state.layers_snapshot)
         self._document.active_layer_index = state.active_layer_index
+        self._document.selection = QPainterPath(state.selection_snapshot) if state.selection_snapshot else None
         if state.doc_width and state.doc_height:
             dims_changed = (self._document.width != state.doc_width or
                             self._document.height != state.doc_height)

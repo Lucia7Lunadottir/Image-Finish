@@ -80,3 +80,19 @@ class ImageActionsMixin:
             self._canvas_refresh()
             self._canvas.reset_zoom()
             self._refresh_layers()
+
+    def _trim(self):
+        self._push_history(tr("history.trim"))
+        changed = self._document.trim_transparent()
+        if changed:
+            self._canvas_refresh()
+            self._canvas.reset_zoom()
+            self._refresh_layers()
+
+    def _reveal_all(self):
+        self._push_history(tr("history.reveal_all"))
+        changed = self._document.reveal_all()
+        if changed:
+            self._canvas_refresh()
+            self._canvas.reset_zoom()
+            self._refresh_layers()

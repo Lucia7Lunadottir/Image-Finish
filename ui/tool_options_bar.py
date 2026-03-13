@@ -86,6 +86,7 @@ class ToolOptionsBar(QWidget):
         self._add_fill_page()
         self._add_gradient_page()
         self._add_select_page()
+        self._pages["EllipseSelect"] = self._pages["Select"]
         self._add_shapes_page()
         self._add_text_page()
         self._pages["TextV"]     = self._pages["Text"]

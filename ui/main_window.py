@@ -28,6 +28,7 @@ def _build_tool_registry(text_parent):
     from tools.fill_tool    import FillTool
     from tools.effect_tools import BlurTool, SharpenTool, SmudgeTool
     from tools.other_tools  import (SelectTool, MoveTool, EyedropperTool,
+                                    EllipticalSelectTool,
                                     CropTool, TextTool, ShapesTool,
                                     VerticalTypeTool, HorizontalTypeMaskTool,
                                     VerticalTypeMaskTool,
@@ -45,6 +46,7 @@ def _build_tool_registry(text_parent):
         "Sharpen":    SharpenTool(),
         "Smudge":     SmudgeTool(),
         "Select":     SelectTool(),
+        "EllipseSelect": EllipticalSelectTool(),
         "Move":       MoveTool(),
         "Eyedropper": EyedropperTool(),
         "Crop":       CropTool(),
@@ -201,6 +203,9 @@ class MainWindow(QMainWindow,
         img_m.addSeparator()
         self._act(img_m, "menu.image_size",    self._image_size,    QKeySequence("Ctrl+Alt+I"))
         self._act(img_m, "menu.resize_canvas", self._resize_canvas)
+        img_m.addSeparator()
+        self._act(img_m, "menu.trim",       self._trim)
+        self._act(img_m, "menu.reveal_all", self._reveal_all)
         img_m.addSeparator()
         self._act(img_m, "menu.apply_crop",    self._apply_crop, QKeySequence("Return"))
         img_m.addSeparator()
@@ -366,6 +371,7 @@ class MainWindow(QMainWindow,
             active_layer_index=self._document.active_layer_index,
             doc_width=self._document.width,
             doc_height=self._document.height,
+            selection_snapshot=QPainterPath(self._document.selection) if self._document.selection else None,
         ))
 
     def _update_status(self, msg: str = ""):

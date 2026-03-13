@@ -253,7 +253,23 @@ class CanvasWidget(QWidget):
             painter.restore()
 
         # 4.5. Превью subtract-drag
-        if isinstance(self.active_tool, SelectTool):
+        if self.active_tool and hasattr(self.active_tool, "sub_drag_path"):
+            sub_p = self.active_tool.sub_drag_path()
+            if sub_p:
+                painter.save()
+                painter.translate(self._pan)
+                painter.scale(self.zoom, self.zoom)
+                painter.setClipPath(sub_p)
+                painter.fillRect(sub_p.boundingRect().toRect(), QColor(255, 80, 80, 50))
+                painter.setClipping(False)
+                pw = max(1.0, 1.0 / self.zoom)
+                pen = QPen(QColor(220, 60, 60), pw)
+                pen.setStyle(Qt.PenStyle.DashLine)
+                painter.setPen(pen)
+                painter.setBrush(Qt.BrushStyle.NoBrush)
+                painter.drawPath(sub_p)
+                painter.restore()
+        elif isinstance(self.active_tool, SelectTool):
             sub_r = self.active_tool.sub_drag_rect()
             if sub_r:
                 painter.save()
@@ -276,6 +292,18 @@ class CanvasWidget(QWidget):
                 painter.save()
                 painter.translate(self._pan)
                 painter.scale(self.zoom, self.zoom)
+                painter.drawImage(tl, img)
+                painter.restore()
+
+        # 5.2 Live stroke preview (BrushTool-style)
+        if self.active_tool and hasattr(self.active_tool, "stroke_preview"):
+            sp = self.active_tool.stroke_preview()
+            if sp:
+                img, tl, op = sp
+                painter.save()
+                painter.translate(self._pan)
+                painter.scale(self.zoom, self.zoom)
+                painter.setOpacity(max(0.0, min(1.0, float(op))))
                 painter.drawImage(tl, img)
                 painter.restore()
 
@@ -451,6 +479,7 @@ class CanvasWidget(QWidget):
             mods = ev.modifiers()
             self.tool_opts["_shift"] = bool(mods & Qt.KeyboardModifier.ShiftModifier)
             self.tool_opts["_ctrl"]  = bool(mods & Qt.KeyboardModifier.ControlModifier)
+            self.tool_opts["_alt"]   = bool(mods & Qt.KeyboardModifier.AltModifier)
 
             if self.active_tool.needs_history_push():
                 from core.history import HistoryState
@@ -460,6 +489,7 @@ class CanvasWidget(QWidget):
                     active_layer_index=self.document.active_layer_index,
                     doc_width=self.document.width,
                     doc_height=self.document.height,
+                    selection_snapshot=QPainterPath(self.document.selection) if self.document.selection else None,
                 )
 
             doc_pos = self.to_doc(ev.position())
@@ -500,12 +530,16 @@ class CanvasWidget(QWidget):
         # Перерисовываем курсор / overlay
         if self._show_brush_cursor:
             self.update()
-        elif isinstance(self.active_tool, (SelectTool, ShapesTool, RotateViewTool, GradientTool)):
+        elif isinstance(self.active_tool, (SelectTool, ShapesTool, RotateViewTool, GradientTool)) or (
+                self.active_tool and hasattr(self.active_tool, "sub_drag_path")):
             self.update()
 
         if (ev.buttons() & Qt.MouseButton.LeftButton
                 and self._stroke_in_progress and self.active_tool):
-            self.tool_opts["_shift"] = bool(ev.modifiers() & Qt.KeyboardModifier.ShiftModifier)
+            mods = ev.modifiers()
+            self.tool_opts["_shift"] = bool(mods & Qt.KeyboardModifier.ShiftModifier)
+            self.tool_opts["_ctrl"]  = bool(mods & Qt.KeyboardModifier.ControlModifier)
+            self.tool_opts["_alt"]   = bool(mods & Qt.KeyboardModifier.AltModifier)
             doc_pos = self.to_doc(ev.position())
             self.active_tool.on_move(doc_pos, self.document,
                                      self.fg_color, self.bg_color, self.tool_opts)

@@ -1,5 +1,6 @@
 from dataclasses import dataclass, field
 from core.layer import Layer
+from PyQt6.QtGui import QPainterPath
 
 
 @dataclass
@@ -9,6 +10,7 @@ class HistoryState:
     active_layer_index: int
     doc_width:  int = 0
     doc_height: int = 0
+    selection_snapshot: QPainterPath | None = None
 
 
 class HistoryManager:

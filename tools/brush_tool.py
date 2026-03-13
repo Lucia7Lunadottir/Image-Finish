@@ -74,9 +74,22 @@ class BrushTool(BaseTool):
     def __init__(self):
         self._last_pos: QPoint | None = None
         self._stamp_cache: tuple | None = None   # (size, hardness, mask, QImage)
+        self._stroke_layer = None
+        self._stroke_img: QImage | None = None
+        self._stroke_opacity: float = 1.0
+        self._stroke_clip = None  # QPainterPath | None
 
     def on_press(self, pos, doc, fg, bg, opts):
         self._last_pos = pos
+        layer = doc.get_active_layer()
+        if not layer or layer.locked:
+            return
+        self._stroke_layer = layer
+        self._stroke_img = QImage(layer.image.size(), QImage.Format.Format_ARGB32_Premultiplied)
+        self._stroke_img.fill(Qt.GlobalColor.transparent)
+        self._stroke_opacity = float(opts.get("brush_opacity", 1.0))
+        sel = doc.selection
+        self._stroke_clip = sel if (sel and not sel.isEmpty()) else None
         self._paint(pos, pos, doc, fg, opts)
 
     def on_move(self, pos, doc, fg, bg, opts):
@@ -85,22 +98,42 @@ class BrushTool(BaseTool):
         self._last_pos = pos
 
     def on_release(self, pos, doc, fg, bg, opts):
+        # Apply stroke buffer once (opacity per stroke)
+        if self._stroke_layer and self._stroke_img is not None and not self._stroke_layer.locked:
+            painter = QPainter(self._stroke_layer.image)
+            painter.setRenderHint(QPainter.RenderHint.Antialiasing)
+            if self._stroke_clip is not None:
+                painter.setClipPath(self._stroke_clip)
+            painter.setCompositionMode(QPainter.CompositionMode.CompositionMode_SourceOver)
+            painter.setOpacity(max(0.0, min(1.0, float(self._stroke_opacity))))
+            painter.drawImage(0, 0, self._stroke_img)
+            painter.end()
         self._last_pos = None
+        self._stroke_layer = None
+        self._stroke_img = None
+        self._stroke_clip = None
+        self._stroke_opacity = 1.0
+
+    def stroke_preview(self):
+        """Return (QImage, top_left: QPoint, opacity: float) for live canvas overlay."""
+        if self._stroke_img is None:
+            return None
+        return (self._stroke_img, QPoint(0, 0), float(self._stroke_opacity))
 
     # ── рисование штампами вдоль отрезка ────────────────────────────────────
     def _paint(self, p1: QPoint, p2: QPoint, doc, color: QColor, opts: dict):
-        layer = doc.get_active_layer()
-        if not layer or layer.locked:
+        layer = self._stroke_layer
+        if not layer or layer.locked or self._stroke_img is None:
             return
 
         size     = max(1, int(opts.get("brush_size", 10)))
-        opacity  = float(opts.get("brush_opacity", 1.0))
+        # Opacity is applied once on release; keep full-strength within the stroke.
         hardness = float(opts.get("brush_hardness", 1.0))
         mask     = opts.get("brush_mask", "round")
 
         # Для очень жёстких круглых кистей — быстрый QPen
         if mask == "round" and hardness >= 0.98:
-            self._paint_fast(p1, p2, layer, doc, color, size, opacity)
+            self._paint_fast(p1, p2, layer, color, size)
             return
 
         # Штамп-кисть: рисуем вдоль отрезка с шагом size/3
@@ -112,12 +145,11 @@ class BrushTool(BaseTool):
         steps = max(1, int(dist / step))
 
         c = QColor(color)
-        c.setAlphaF(c.alphaF() * opacity)
 
-        painter = QPainter(layer.image)
+        painter = QPainter(self._stroke_img)
         painter.setRenderHint(QPainter.RenderHint.Antialiasing)
-        if doc.selection and not doc.selection.isEmpty():
-            painter.setClipPath(doc.selection)
+        if self._stroke_clip is not None:
+            painter.setClipPath(self._stroke_clip)
         painter.setCompositionMode(QPainter.CompositionMode.CompositionMode_SourceOver)
 
         for i in range(steps + 1):
@@ -127,8 +159,6 @@ class BrushTool(BaseTool):
             # Тонируем штамп в цвет кисти
             painter.save()
             painter.translate(sx, sy)
-            # Сначала рисуем цвет через маску
-            painter.setOpacity(opacity)
             # Применяем alpha-маску штампа
             colored = QImage(stamp.size(), QImage.Format.Format_ARGB32)
             colored.fill(c)
@@ -142,14 +172,13 @@ class BrushTool(BaseTool):
 
         painter.end()
 
-    def _paint_fast(self, p1, p2, layer, doc, color, size, opacity):
+    def _paint_fast(self, p1, p2, layer, color, size):
         """Быстрый путь: QPen без штампа."""
         c = QColor(color)
-        c.setAlphaF(c.alphaF() * opacity)
-        painter = QPainter(layer.image)
+        painter = QPainter(self._stroke_img)
         painter.setRenderHint(QPainter.RenderHint.Antialiasing)
-        if doc.selection and not doc.selection.isEmpty():
-            painter.setClipPath(doc.selection)
+        if self._stroke_clip is not None:
+            painter.setClipPath(self._stroke_clip)
         pen = QPen(c, size, Qt.PenStyle.SolidLine,
                    Qt.PenCapStyle.RoundCap, Qt.PenJoinStyle.RoundJoin)
         painter.setPen(pen)

@@ -1,4 +1,4 @@
-from PyQt6.QtGui import QImage, QPainter, QColor, QPainterPath, QLinearGradient, QBrush
+from PyQt6.QtGui import QImage, QPainter, QColor, QPainterPath, QLinearGradient, QBrush, qAlpha
 from PyQt6.QtCore import Qt, QRect, QRectF, QPoint
 from .layer import Layer
 
@@ -139,17 +139,91 @@ class Document:
     def apply_crop(self, rect: QRect):
         if rect.isEmpty():
             return
+        tl = rect.topLeft()
         for layer in self.layers:
             new_img = QImage(rect.width(), rect.height(), QImage.Format.Format_ARGB32_Premultiplied)
             new_img.fill(Qt.GlobalColor.transparent)
             p = QPainter(new_img)
-            p.drawImage(0, 0, layer.image, rect.x(), rect.y(), rect.width(), rect.height())
+            # Re-render layer into the cropped coordinate system (doc-space aware)
+            p.drawImage(layer.offset - tl, layer.image)
             p.end()
             layer.image = new_img
             layer.offset = QPoint(0, 0)
         self.width = rect.width()
         self.height = rect.height()
         self.selection = None
+
+    # ------------------------------------------------------------------- Trim / Reveal All
+    @staticmethod
+    def _nontransparent_bounds(img: QImage) -> QRect:
+        """Bounding rect of pixels with alpha > 0. Returns empty QRect if none."""
+        w, h = img.width(), img.height()
+        if w <= 0 or h <= 0:
+            return QRect()
+
+        min_x, min_y = w, h
+        max_x, max_y = -1, -1
+
+        for y in range(h):
+            row_has = False
+            for x in range(w):
+                if qAlpha(img.pixel(x, y)) != 0:
+                    row_has = True
+                    if x < min_x: min_x = x
+                    if y < min_y: min_y = y
+                    if x > max_x: max_x = x
+                    if y > max_y: max_y = y
+            if row_has:
+                # Small optimization: nothing else for this row
+                pass
+
+        if max_x < 0:
+            return QRect()
+        return QRect(min_x, min_y, (max_x - min_x + 1), (max_y - min_y + 1))
+
+    def trim_transparent(self) -> bool:
+        """Trim document to non-transparent pixels of the composite."""
+        comp = self.get_composite()
+        br = self._nontransparent_bounds(comp)
+        if br.isEmpty() or (br.width() == self.width and br.height() == self.height and br.topLeft() == QPoint(0, 0)):
+            return False
+        self.apply_crop(br)
+        return True
+
+    def reveal_all(self) -> bool:
+        """Expand canvas so all layer pixels (incl. offsets) fit inside."""
+        bounds: QRect | None = None
+        for layer in self.layers:
+            # Adjustment layers don't contribute pixels; fill layers typically cover current canvas.
+            ltype = getattr(layer, "layer_type", "raster")
+            if ltype == "adjustment":
+                continue
+            br = self._nontransparent_bounds(layer.image)
+            if br.isEmpty():
+                continue
+            br = br.translated(layer.offset)
+            bounds = br if bounds is None else bounds.united(br)
+
+        if bounds is None or bounds.isEmpty():
+            return False
+
+        # If everything already fits in current canvas (0..w,h), nothing to do.
+        canvas = QRect(0, 0, self.width, self.height)
+        if canvas.contains(bounds):
+            return False
+
+        # New canvas = union of current canvas and pixel bounds
+        new_bounds = canvas.united(bounds)
+        shift = new_bounds.topLeft()
+
+        # Move all layers so new_bounds top-left becomes (0,0)
+        for layer in self.layers:
+            layer.offset = layer.offset - shift
+
+        self.width = new_bounds.width()
+        self.height = new_bounds.height()
+        self.selection = None
+        return True
 
     # ------------------------------------------------------------------ Flatten
     def flatten(self):
