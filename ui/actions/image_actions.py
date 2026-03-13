@@ -16,11 +16,13 @@ class ImageActionsMixin:
             return
         self._push_history(tr("history.image_size"))
         for layer in self._document.layers:
-            layer.image = layer.image.scaled(
-                new_w, new_h,
-                Qt.AspectRatioMode.IgnoreAspectRatio,
-                mode,
-            )
+            src = (layer.smart_data["original"]
+                   if getattr(layer, "smart_data", None) else layer.image)
+            scaled = src.scaled(new_w, new_h,
+                                Qt.AspectRatioMode.IgnoreAspectRatio, mode)
+            layer.image = scaled
+            if getattr(layer, "smart_data", None):
+                layer.smart_data["original"] = src
         self._document.width  = new_w
         self._document.height = new_h
         self._canvas_refresh()

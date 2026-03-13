@@ -212,6 +212,20 @@ class MainWindow(QMainWindow,
         self._act(layer_m, "menu.duplicate_layer", self._duplicate_layer, QKeySequence("Ctrl+J"))
         self._act(layer_m, "menu.delete_layer",    self._delete_layer)
         layer_m.addSeparator()
+
+        adj_m = self._menu(layer_m, "menu.new_adj_layer")
+        self._act(adj_m, "menu.new_adj_bc",     lambda: self._new_adj_layer("brightness_contrast"))
+        self._act(adj_m, "menu.new_adj_hs",     lambda: self._new_adj_layer("hue_saturation"))
+        self._act(adj_m, "menu.new_adj_invert", lambda: self._new_adj_layer("invert"))
+
+        fill_m = self._menu(layer_m, "menu.new_fill_layer")
+        self._act(fill_m, "menu.new_fill_solid",    lambda: self._new_fill_layer("solid"))
+        self._act(fill_m, "menu.new_fill_gradient", lambda: self._new_fill_layer("gradient"))
+
+        layer_m.addSeparator()
+        self._act(layer_m, "menu.smart_object",   self._new_smart_object)
+        self._act(layer_m, "menu.rasterize_layer", self._rasterize_layer)
+        layer_m.addSeparator()
         self._act(layer_m, "menu.move_up",   self._layer_up,   QKeySequence("Ctrl+]"))
         self._act(layer_m, "menu.move_down", self._layer_down, QKeySequence("Ctrl+["))
 
@@ -312,6 +326,9 @@ class MainWindow(QMainWindow,
         self._layers_panel.layer_opacity.connect(self._on_layer_opacity)
         self._layers_panel.layer_merged_down.connect(self._merge_down)
         self._layers_panel.layer_flatten.connect(self._flatten)
+        self._layers_panel.layer_edit.connect(self._on_edit_layer)
+        self._layers_panel.layer_smart_object.connect(self._new_smart_object)
+        self._layers_panel.layer_rasterize.connect(self._rasterize_layer)
 
     # ================================================================= Tools
     def _activate_tool(self, name: str):

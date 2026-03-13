@@ -72,14 +72,23 @@ class LayerItem(QWidget):
         op_lbl.setFixedWidth(36)
         lo.addWidget(op_lbl)
 
-        # Text layer indicator
-        if getattr(layer, "text_data", None) is not None:
-            t_lbl = QLabel("T")
-            t_lbl.setStyleSheet(
-                "color:#89b4fa; font-weight:bold; font-size:13px;")
-            t_lbl.setFixedWidth(14)
-            t_lbl.setToolTip(tr("layer.text_tooltip"))
-            lo.addWidget(t_lbl)
+        # Layer type badge
+        ltype = getattr(layer, "layer_type", "raster")
+        _BADGES = {
+            "text":        ("T", "#89b4fa", "layer.type.text"),
+            "vector":      ("V", "#a6e3a1", "layer.type.vector"),
+            "adjustment":  ("A", "#fab387", "layer.type.adjustment"),
+            "fill":        ("F", "#cba6f7", "layer.type.fill"),
+            "smart_object":("S", "#f9e2af", "layer.type.smart_object"),
+        }
+        if ltype in _BADGES:
+            badge_text, badge_color, tip_key = _BADGES[ltype]
+            b_lbl = QLabel(badge_text)
+            b_lbl.setStyleSheet(
+                f"color:{badge_color}; font-weight:bold; font-size:13px;")
+            b_lbl.setFixedWidth(14)
+            b_lbl.setToolTip(tr(tip_key))
+            lo.addWidget(b_lbl)
 
         # Lock indicator
         if layer.locked:
@@ -94,16 +103,19 @@ class LayersPanel(QWidget):
     Emits signals to let the app modify the document.
     """
 
-    layer_selected     = pyqtSignal(int)
-    layer_added        = pyqtSignal()
-    layer_duplicated   = pyqtSignal()
-    layer_deleted      = pyqtSignal()
-    layer_moved_up     = pyqtSignal()
-    layer_moved_down   = pyqtSignal()
-    layer_visibility   = pyqtSignal(int, bool)
-    layer_opacity      = pyqtSignal(int, float)
-    layer_merged_down  = pyqtSignal()
-    layer_flatten      = pyqtSignal()
+    layer_selected      = pyqtSignal(int)
+    layer_added         = pyqtSignal()
+    layer_duplicated    = pyqtSignal()
+    layer_deleted       = pyqtSignal()
+    layer_moved_up      = pyqtSignal()
+    layer_moved_down    = pyqtSignal()
+    layer_visibility    = pyqtSignal(int, bool)
+    layer_opacity       = pyqtSignal(int, float)
+    layer_merged_down   = pyqtSignal()
+    layer_flatten       = pyqtSignal()
+    layer_edit          = pyqtSignal()
+    layer_smart_object  = pyqtSignal()
+    layer_rasterize     = pyqtSignal()
 
     def __init__(self, parent=None):
         super().__init__(parent)
@@ -244,6 +256,22 @@ class LayersPanel(QWidget):
         menu.addSeparator()
         del_act = menu.addAction(tr("ctx.delete"))
         del_act.triggered.connect(self.layer_deleted.emit)
+
+        layer = (self._document.get_active_layer()
+                 if self._document else None)
+        ltype = getattr(layer, "layer_type", "raster") if layer else "raster"
+
+        menu.addSeparator()
+        if ltype in ("adjustment", "fill"):
+            edit_act = menu.addAction(tr("ctx.edit_layer"))
+            edit_act.triggered.connect(self.layer_edit.emit)
+        if ltype in ("raster", "text", "vector"):
+            so_act = menu.addAction(tr("ctx.smart_object"))
+            so_act.triggered.connect(self.layer_smart_object.emit)
+        if ltype != "raster":
+            rast_act = menu.addAction(tr("ctx.rasterize"))
+            rast_act.triggered.connect(self.layer_rasterize.emit)
+
         menu.exec(self._list.mapToGlobal(pos))
 
     def retranslate(self):

@@ -179,26 +179,46 @@ class ShapesTool(BaseTool):
         self._preview_end = None
         if self._start is None:
             return
-        layer = doc.get_active_layer()
-        if not layer or layer.locked:
-            self._start = None
-            return
 
         end   = self._constrain(self._start, pos) if bool(opts.get("_shift", False)) else pos
         rect  = QRect(self._start, end).normalized()
+        if rect.isEmpty():
+            self._start = None
+            return
+
         size  = int(opts.get("brush_size", 3))
         shape = opts.get("shape_type", "rect")
-        fill  = opts.get("shape_fill", False)
+        fill  = bool(opts.get("shape_fill", False))
         sides = int(opts.get("shape_sides", 6))
         angle = int(opts.get("shape_angle", 0))
 
-        painter = QPainter(layer.image)
+        from core.layer import Layer
+        n = sum(1 for l in doc.layers if getattr(l, "layer_type", "raster") == "vector") + 1
+        new_layer = Layer(f"Shape {n}", doc.width, doc.height)
+        new_layer.layer_type = "vector"
+
+        painter = QPainter(new_layer.image)
         painter.setRenderHint(QPainter.RenderHint.Antialiasing)
         if doc.selection and not doc.selection.isEmpty():
             painter.setClipPath(doc.selection)
         self._draw_shape(painter, shape, rect, self._start, end, sides, angle, fill, fg, bg, size)
         painter.end()
+
+        new_layer.shape_data = {
+            "shape": shape,
+            "rect":  (rect.x(), rect.y(), rect.width(), rect.height()),
+            "start": (int(self._start.x()), int(self._start.y())),
+            "end":   (int(end.x()), int(end.y())),
+            "sides": sides, "angle": angle, "fill": fill, "size": size,
+            "fg":    fg.name(), "bg": bg.name(),
+        }
+
+        doc.layers.append(new_layer)
+        doc.active_layer_index = len(doc.layers) - 1
         self._start = None
+
+    def needs_history_push(self) -> bool:
+        return True
 
     def cursor(self):
         return Qt.CursorShape.CrossCursor

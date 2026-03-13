@@ -169,7 +169,11 @@ class CanvasWidget(QWidget):
     # ──────────────────────────────────────── отрисовка
     def paintEvent(self, _event):
         painter = QPainter(self)
-        painter.setRenderHint(QPainter.RenderHint.SmoothPixmapTransform)
+        if self.zoom > 0.9:
+            painter.setRenderHint(QPainter.RenderHint.SmoothPixmapTransform, False)
+        else:
+            painter.setRenderHint(QPainter.RenderHint.SmoothPixmapTransform)
+
         painter.fillRect(self.rect(), QColor(30, 30, 40))
 
         if not self.document:

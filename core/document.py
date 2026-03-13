@@ -1,6 +1,43 @@
-from PyQt6.QtGui import QImage, QPainter, QColor, QPainterPath
+from PyQt6.QtGui import QImage, QPainter, QColor, QPainterPath, QLinearGradient, QBrush
 from PyQt6.QtCore import Qt, QRect, QRectF, QPoint
 from .layer import Layer
+
+
+def _apply_layer_adjustment(image: QImage, layer) -> QImage:
+    d = layer.adjustment_data or {}
+    t = d.get("type", "")
+    try:
+        from ui.adjustments_dialog import (apply_brightness_contrast,
+                                           apply_hue_saturation, apply_invert)
+        if t == "brightness_contrast":
+            return apply_brightness_contrast(image, d.get("brightness", 0), d.get("contrast", 0))
+        if t == "hue_saturation":
+            return apply_hue_saturation(image, d.get("hue", 0),
+                                        d.get("saturation", 0), d.get("lightness", 0))
+        if t == "invert":
+            return apply_invert(image)
+    except Exception:
+        pass
+    return image
+
+
+def _render_fill_layer(layer, w: int, h: int) -> QImage:
+    img = QImage(w, h, QImage.Format.Format_ARGB32_Premultiplied)
+    img.fill(Qt.GlobalColor.transparent)
+    d = layer.fill_data or {}
+    p = QPainter(img)
+    ft = d.get("type", "solid")
+    if ft == "solid":
+        p.fillRect(img.rect(), d.get("color", QColor(128, 128, 128)))
+    elif ft == "gradient":
+        c1 = d.get("color1", QColor(0, 0, 0))
+        c2 = d.get("color2", QColor(255, 255, 255))
+        grad = QLinearGradient(0, 0, w, 0)
+        grad.setColorAt(0, c1)
+        grad.setColorAt(1, c2)
+        p.fillRect(img.rect(), QBrush(grad))
+    p.end()
+    return img
 
 
 class Document:
@@ -64,7 +101,6 @@ class Document:
 
     # ---------------------------------------------------------------- Composite
     def get_composite(self) -> QImage:
-        """Merge all visible layers into a single QImage."""
         result = QImage(self.width, self.height, QImage.Format.Format_ARGB32_Premultiplied)
         result.fill(Qt.GlobalColor.transparent)
 
@@ -72,9 +108,24 @@ class Document:
         for layer in self.layers:  # bottom → top
             if not layer.visible:
                 continue
-            painter.setOpacity(layer.opacity)
-            painter.drawImage(layer.offset, layer.image)
-        painter.end()
+            ltype = getattr(layer, "layer_type", "raster")
+
+            if ltype == "adjustment":
+                painter.end()
+                result = _apply_layer_adjustment(result, layer)
+                painter = QPainter(result)
+
+            elif ltype == "fill":
+                fill_img = _render_fill_layer(layer, self.width, self.height)
+                painter.setOpacity(layer.opacity)
+                painter.drawImage(layer.offset, fill_img)
+
+            else:
+                painter.setOpacity(layer.opacity)
+                painter.drawImage(layer.offset, layer.image)
+
+        if painter.isActive():
+            painter.end()
         return result
 
     # ----------------------------------------------------------------- History

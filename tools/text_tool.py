@@ -275,6 +275,7 @@ class TextTool(BaseTool):
             from core.layer import Layer as _Layer
             n = sum(1 for l in doc.layers if l.text_data) + 1
             new_layer = _Layer(f"Text {n}", doc.width, doc.height)
+            new_layer.layer_type = "text"
             _render_text(new_layer.image, pos.x(), pos.y(), text, opts,
                          doc.selection if (doc.selection and not doc.selection.isEmpty()) else None)
             new_layer.text_data = {"text": text, "x": pos.x(), "y": pos.y(),
@@ -334,6 +335,7 @@ class VerticalTypeTool(BaseTool):
             from core.layer import Layer as _Layer
             n = sum(1 for l in doc.layers if l.text_data) + 1
             new_layer = _Layer(f"Text {n}", doc.width, doc.height)
+            new_layer.layer_type = "text"
             _render_text_vertical(new_layer.image, pos.x(), pos.y(), text, opts, clip)
             new_layer.text_data = {"text": text, "x": pos.x(), "y": pos.y(),
                                    "vertical": True, **TextTool._snap_opts(opts)}
