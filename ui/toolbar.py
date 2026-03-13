@@ -29,6 +29,9 @@ class ToolBar(QWidget):
         ("TextVMask",  "Vm",  "",  "tool.text_v_mask"),
         ("Eyedropper", "💉",  "I", "tool.eyedropper"),
         ("Crop",       "✂️",  "C", "tool.crop"),
+        ("Hand",       "🖐",  "H", "tool.hand"),
+        ("Zoom",       "🔍",  "Z", "tool.zoom"),
+        ("RotateView", "🔄",  "",  "tool.rotate_view"),
     ]
 
     def __init__(self, parent=None):
