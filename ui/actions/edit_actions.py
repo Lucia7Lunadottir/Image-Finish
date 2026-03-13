@@ -13,20 +13,43 @@ class EditActionsMixin:
             description="redo",
             layers_snapshot=self._document.snapshot_layers(),
             active_layer_index=self._document.active_layer_index,
+            doc_width=self._document.width,
+            doc_height=self._document.height,
         ))
         self._document.restore_layers(state.layers_snapshot)
         self._document.active_layer_index = state.active_layer_index
+        if state.doc_width and state.doc_height:
+            dims_changed = (self._document.width != state.doc_width or
+                            self._document.height != state.doc_height)
+            self._document.width  = state.doc_width
+            self._document.height = state.doc_height
+            if dims_changed:
+                self._canvas.reset_zoom()
         self._refresh_layers()
         self._canvas_refresh()
         self._status.showMessage(tr("status.undo", desc=state.description))
 
     def _redo(self):
+        from core.history import HistoryState
         state = self._history.redo()
         if not state:
             return
-        self._push_history("undo")
+        self._history.push(HistoryState(
+            description="undo",
+            layers_snapshot=self._document.snapshot_layers(),
+            active_layer_index=self._document.active_layer_index,
+            doc_width=self._document.width,
+            doc_height=self._document.height,
+        ))
         self._document.restore_layers(state.layers_snapshot)
         self._document.active_layer_index = state.active_layer_index
+        if state.doc_width and state.doc_height:
+            dims_changed = (self._document.width != state.doc_width or
+                            self._document.height != state.doc_height)
+            self._document.width  = state.doc_width
+            self._document.height = state.doc_height
+            if dims_changed:
+                self._canvas.reset_zoom()
         self._refresh_layers()
         self._canvas_refresh()
 

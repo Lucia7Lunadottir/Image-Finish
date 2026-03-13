@@ -31,7 +31,8 @@ def _build_tool_registry(text_parent):
                                     CropTool, TextTool, ShapesTool,
                                     VerticalTypeTool, HorizontalTypeMaskTool,
                                     VerticalTypeMaskTool,
-                                    HandTool, ZoomTool, RotateViewTool)
+                                    HandTool, ZoomTool, RotateViewTool,
+                                    GradientTool)
     text = TextTool();  text._parent_widget  = text_parent
     textv = VerticalTypeTool(); textv._parent_widget = text_parent
     texthm = HorizontalTypeMaskTool(); texthm._parent_widget = text_parent
@@ -52,6 +53,7 @@ def _build_tool_registry(text_parent):
         "TextHMask":  texthm,
         "TextVMask":  textvm,
         "Shapes":     ShapesTool(),
+        "Gradient":   GradientTool(),
         "Hand":       HandTool(),
         "Zoom":       ZoomTool(),
         "RotateView": RotateViewTool(),
@@ -197,6 +199,7 @@ class MainWindow(QMainWindow,
         self._act(img_m, "menu.flip_h",        self._flip_h)
         self._act(img_m, "menu.flip_v",        self._flip_v)
         img_m.addSeparator()
+        self._act(img_m, "menu.image_size",    self._image_size,    QKeySequence("Ctrl+Alt+I"))
         self._act(img_m, "menu.resize_canvas", self._resize_canvas)
         img_m.addSeparator()
         self._act(img_m, "menu.apply_crop",    self._apply_crop, QKeySequence("Return"))
@@ -344,6 +347,8 @@ class MainWindow(QMainWindow,
             description=description,
             layers_snapshot=self._document.snapshot_layers(),
             active_layer_index=self._document.active_layer_index,
+            doc_width=self._document.width,
+            doc_height=self._document.height,
         ))
 
     def _update_status(self, msg: str = ""):

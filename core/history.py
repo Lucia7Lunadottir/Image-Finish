@@ -7,6 +7,8 @@ class HistoryState:
     description: str
     layers_snapshot: list[Layer]
     active_layer_index: int
+    doc_width:  int = 0
+    doc_height: int = 0
 
 
 class HistoryManager:

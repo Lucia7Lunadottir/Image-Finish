@@ -41,7 +41,10 @@
       "Bash(cd \"/home/lucial/Git Projects/linuxphotoshop\" && python -c \"import tools.shapes_tool; import ui.tool_options_bar; print\\('OK'\\)\" 2>&1)",
       "Bash(cd \"/home/lucial/Git Projects/linuxphotoshop\" && python -c \"import json; json.load\\(open\\('locales/en.json'\\)\\); json.load\\(open\\('locales/ru.json'\\)\\); print\\('JSON OK'\\)\" 2>&1)",
       "Bash(cd \"/home/lucial/Git Projects/linuxphotoshop\" && python -c \"import tools.shapes_tool; import ui.tool_options_bar; import json; json.load\\(open\\('locales/en.json'\\)\\); json.load\\(open\\('locales/ru.json'\\)\\); print\\('OK'\\)\" 2>&1)",
-      "Bash(cd \"/home/lucial/Git Projects/linuxphotoshop\" && python -c \"\nimport tools.nav_tools\nimport tools.other_tools\nimport ui.canvas_widget\nimport ui.toolbar\nimport ui.tool_options_bar\nimport json\njson.load\\(open\\('locales/en.json'\\)\\)\njson.load\\(open\\('locales/ru.json'\\)\\)\nprint\\('All OK'\\)\n\" 2>&1)"
+      "Bash(cd \"/home/lucial/Git Projects/linuxphotoshop\" && python -c \"\nimport tools.nav_tools\nimport tools.other_tools\nimport ui.canvas_widget\nimport ui.toolbar\nimport ui.tool_options_bar\nimport json\njson.load\\(open\\('locales/en.json'\\)\\)\njson.load\\(open\\('locales/ru.json'\\)\\)\nprint\\('All OK'\\)\n\" 2>&1)",
+      "Bash(cd \"/home/lucial/Git Projects/linuxphotoshop\" && python -c \"from tools.gradient_tool import GradientTool; print\\('OK'\\)\")",
+      "Bash(cd \"/home/lucial/Git Projects/linuxphotoshop\" && python -c \"\nfrom tools.fill_tool import FillTool\nfrom tools.gradient_tool import GradientTool\nfrom tools.other_tools import GradientTool as GT\nimport ui.tool_options_bar, ui.toolbar\nimport json\njson.load\\(open\\('locales/en.json'\\)\\)\njson.load\\(open\\('locales/ru.json'\\)\\)\nassert FillTool.shortcut == 'K'\nassert GradientTool.shortcut == 'G'\nprint\\('All OK'\\)\n\")",
+      "Bash(cd \"/home/lucial/Git Projects/linuxphotoshop\" && python -c \"\nfrom ui.image_size_dialog import ImageSizeDialog\nimport json\njson.load\\(open\\('locales/en.json'\\)\\)\njson.load\\(open\\('locales/ru.json'\\)\\)\nfrom core.locale import tr, load\nload\\('en'\\)\n# simulate dialog creation \\(no display\\)\nprint\\('title key:', tr\\('image_size.title'\\)\\)\nprint\\('All OK'\\)\n\")"
     ]
   }
 }

@@ -82,6 +82,7 @@ class ToolOptionsBar(QWidget):
         self._add_brush_page()
         self._add_eraser_page()
         self._add_fill_page()
+        self._add_gradient_page()
         self._add_select_page()
         self._add_shapes_page()
         self._add_text_page()
@@ -206,6 +207,61 @@ class ToolOptionsBar(QWidget):
 
         self._stack.addWidget(page)
         self._pages["Fill"] = page
+
+    def _add_gradient_page(self):
+        _GTYPE_VALUES = ("linear", "radial")
+        _GTYPE_KEYS   = ("opts.gradient.linear", "opts.gradient.radial")
+        _GMODE_VALUES = ("fg_bg", "fg_transparent", "bg_fg")
+        _GMODE_KEYS   = ("opts.gradient.fg_bg",
+                         "opts.gradient.fg_transparent",
+                         "opts.gradient.bg_fg")
+
+        page = QWidget()
+        lo = QHBoxLayout(page)
+        lo.setContentsMargins(0, 0, 0, 0)
+        lo.setSpacing(14)
+
+        type_combo = QComboBox()
+        type_combo.addItems([tr(k) for k in _GTYPE_KEYS])
+        type_combo.currentIndexChanged.connect(
+            lambda i: self.option_changed.emit(
+                "gradient_type", _GTYPE_VALUES[i] if 0 <= i < len(_GTYPE_VALUES) else "linear"))
+        self._combo_keys(type_combo, _GTYPE_KEYS)
+
+        mode_combo = QComboBox()
+        mode_combo.addItems([tr(k) for k in _GMODE_KEYS])
+        mode_combo.currentIndexChanged.connect(
+            lambda i: self.option_changed.emit(
+                "gradient_mode", _GMODE_VALUES[i] if 0 <= i < len(_GMODE_VALUES) else "fg_bg"))
+        self._combo_keys(mode_combo, _GMODE_KEYS)
+
+        op_sl = _hslider(1, 100, 100)
+        op_sp = QSpinBox()
+        op_sp.setRange(1, 100)
+        op_sp.setValue(100)
+        op_sp.setSuffix("%")
+        op_sl.valueChanged.connect(op_sp.setValue)
+        op_sp.valueChanged.connect(op_sl.setValue)
+        op_sp.valueChanged.connect(
+            lambda v: self.option_changed.emit("gradient_opacity", v))
+
+        rev_cb = QCheckBox(tr("opts.gradient.reverse"))
+        rev_cb.setChecked(False)
+        rev_cb.toggled.connect(lambda v: self.option_changed.emit("gradient_reverse", v))
+        self._reg(lambda c=rev_cb: c.setText(tr("opts.gradient.reverse")))
+
+        lo.addWidget(self._lbl("opts.gradient.type"))
+        lo.addWidget(type_combo)
+        lo.addWidget(self._lbl("opts.gradient.mode"))
+        lo.addWidget(mode_combo)
+        lo.addWidget(self._lbl("opts.opacity"))
+        lo.addWidget(op_sl)
+        lo.addWidget(op_sp)
+        lo.addWidget(rev_cb)
+        lo.addStretch()
+
+        self._stack.addWidget(page)
+        self._pages["Gradient"] = page
 
     def _add_select_page(self):
         page = QWidget()

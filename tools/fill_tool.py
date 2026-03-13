@@ -7,7 +7,7 @@ from collections import deque
 class FillTool(BaseTool):
     name = "Fill"
     icon = "🪣"
-    shortcut = "G"
+    shortcut = "K"
 
     def on_press(self, pos, doc, fg, bg, opts):
         layer = doc.get_active_layer()

@@ -454,6 +454,8 @@ class CanvasWidget(QWidget):
                     description=self.active_tool.name,
                     layers_snapshot=self.document.snapshot_layers(),
                     active_layer_index=self.document.active_layer_index,
+                    doc_width=self.document.width,
+                    doc_height=self.document.height,
                 )
 
             doc_pos = self.to_doc(ev.position())
