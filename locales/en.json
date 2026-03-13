@@ -434,5 +434,11 @@
   "flt.radial.title":     "Radial Blur",
   "flt.radial.type":      "Type:",
   "flt.radial.spin":      "Spin",
-  "flt.radial.zoom":      "Zoom"
+  "flt.radial.zoom":      "Zoom",
+
+  "gradient_editor.title":    "Gradient Editor",
+  "gradient_editor.position": "Position:",
+  "gradient_editor.color":    "Color:",
+  "gradient_editor.delete":   "Delete",
+  "gradient_editor.presets":  "Presets:"
 }

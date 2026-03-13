@@ -4,6 +4,8 @@ from PyQt6.QtWidgets import (QWidget, QHBoxLayout, QLabel,
 from PyQt6.QtCore import Qt, pyqtSignal
 from PyQt6.QtGui import QColor, QFont
 
+from ui.gradient_editor import GradientPreviewWidget, GradientEditorDialog
+
 from core.locale import tr
 
 # Internal values for combo boxes — independent of displayed text
@@ -576,3 +578,70 @@ class ToolOptionsBar(QWidget):
             sp = self._size_spins.get(tool_name)
             if sp:
                 self.option_changed.emit("brush_size", sp.value())
+
+
+
+    def _add_gradient_page(self):
+        _GTYPE_VALUES = ("linear", "radial")
+        _GTYPE_KEYS   = ("opts.gradient.linear", "opts.gradient.radial")
+
+        page = QWidget()
+        lo = QHBoxLayout(page)
+        lo.setContentsMargins(0, 0, 0, 0)
+        lo.setSpacing(14)
+
+        # Тип градиента (Линейный / Радиальный)
+        type_combo = QComboBox()
+        type_combo.addItems([tr(k) for k in _GTYPE_KEYS])
+        type_combo.currentIndexChanged.connect(
+            lambda i: self.option_changed.emit(
+                "gradient_type", _GTYPE_VALUES[i] if 0 <= i < len(_GTYPE_VALUES) else "linear"))
+        self._combo_keys(type_combo, _GTYPE_KEYS)
+
+        # Виджет предпросмотра градиента вместо старого ComboBox (mode_combo)
+        self._grad_preview = GradientPreviewWidget()
+
+        # Функция для открытия окна редактора
+        def _open_gradient_editor():
+            # Достаем текущие цвета fg/bg из холста для работы пресетов в редакторе
+            mw = self.window()
+            fg = getattr(mw._canvas, 'fg_color', QColor(0,0,0)) if hasattr(mw, '_canvas') else QColor(0,0,0)
+            bg = getattr(mw._canvas, 'bg_color', QColor(255,255,255)) if hasattr(mw, '_canvas') else QColor(255,255,255)
+
+            dlg = GradientEditorDialog(self._grad_preview._stops, fg, bg, self)
+            if dlg.exec():
+                stops = dlg.result_stops()
+                self._grad_preview.set_stops(stops)
+                self.option_changed.emit("gradient_stops", stops)
+
+        self._grad_preview.clicked.connect(_open_gradient_editor)
+
+        # Непрозрачность
+        op_sl = _hslider(1, 100, 100)
+        op_sp = QSpinBox()
+        op_sp.setRange(1, 100)
+        op_sp.setValue(100)
+        op_sp.setSuffix("%")
+        op_sl.valueChanged.connect(op_sp.setValue)
+        op_sp.valueChanged.connect(op_sl.setValue)
+        op_sp.valueChanged.connect(
+            lambda v: self.option_changed.emit("gradient_opacity", v))
+
+        # Инверсия
+        rev_cb = QCheckBox(tr("opts.gradient.reverse"))
+        rev_cb.setChecked(False)
+        rev_cb.toggled.connect(lambda v: self.option_changed.emit("gradient_reverse", v))
+        self._reg(lambda c=rev_cb: c.setText(tr("opts.gradient.reverse")))
+
+        # Сборка интерфейса панели
+        lo.addWidget(self._lbl("opts.gradient.type"))
+        lo.addWidget(type_combo)
+        lo.addWidget(self._grad_preview) # Наш новый кликабельный виджет!
+        lo.addWidget(self._lbl("opts.opacity"))
+        lo.addWidget(op_sl)
+        lo.addWidget(op_sp)
+        lo.addWidget(rev_cb)
+        lo.addStretch()
+
+        self._stack.addWidget(page)
+        self._pages["Gradient"] = page

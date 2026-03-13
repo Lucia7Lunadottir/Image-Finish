@@ -45,13 +45,16 @@ class GradientTool(BaseTool):
             return
 
         gtype   = opts.get("gradient_type",    "linear")
-        mode    = opts.get("gradient_mode",    "fg_bg")
         opacity = float(opts.get("gradient_opacity", 100)) / 100
         reverse = bool(opts.get("gradient_reverse",  False))
 
-        c1, c2 = self._make_colors(mode, fg, bg)
+        # Получаем список точек градиента. Если мы еще ни разу не открывали
+        # редактор, берем дефолтные текущие цвета (от fg до bg)
+        stops = opts.get("gradient_stops", [(0.0, fg), (1.0, bg)])
+
         if reverse:
-            c1, c2 = c2, c1
+            # Инвертируем позиции и порядок: точка на 0.1 станет 0.9 и т.д.
+            stops = [(1.0 - pos, color) for pos, color in reversed(stops)]
 
         painter = QPainter(layer.image)
         painter.setOpacity(opacity)
@@ -60,36 +63,28 @@ class GradientTool(BaseTool):
 
         self._apply_gradient(painter, gtype,
                              layer.image.width(), layer.image.height(),
-                             sx, sy, ex, ey, c1, c2)
+                             sx, sy, ex, ey, stops)
         painter.end()
         self._start = None
-
-    @staticmethod
-    def _make_colors(mode: str, fg: QColor, bg: QColor) -> tuple[QColor, QColor]:
-        if mode == "fg_transparent":
-            return QColor(fg), QColor(fg.red(), fg.green(), fg.blue(), 0)
-        if mode == "bg_fg":
-            return QColor(bg), QColor(fg)
-        return QColor(fg), QColor(bg)  # fg_bg
 
     @staticmethod
     def _apply_gradient(painter: QPainter, gtype: str,
                         w: int, h: int,
                         sx: int, sy: int, ex: int, ey: int,
-                        c1: QColor, c2: QColor):
+                        stops: list):
         rect = QRectF(0, 0, w, h)
 
         if gtype == "radial":
             r    = math.hypot(ex - sx, ey - sy)
             grad = QRadialGradient(QPointF(sx, sy), max(r, 1))
-            grad.setColorAt(0.0, c1)
-            grad.setColorAt(1.0, c2)
-            grad.setSpread(QGradient.Spread.PadSpread)
         else:  # linear
             grad = QLinearGradient(QPointF(sx, sy), QPointF(ex, ey))
-            grad.setColorAt(0.0, c1)
-            grad.setColorAt(1.0, c2)
-            grad.setSpread(QGradient.Spread.PadSpread)
+
+        # Применяем все цветовые точки из списка
+        for pos, color in stops:
+            grad.setColorAt(pos, color)
+
+        grad.setSpread(QGradient.Spread.PadSpread)
 
         painter.fillRect(rect, QBrush(grad))
 
