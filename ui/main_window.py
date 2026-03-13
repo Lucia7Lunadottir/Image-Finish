@@ -34,6 +34,7 @@ def _build_tool_registry(text_parent):
                                     VerticalTypeMaskTool,
                                     HandTool, ZoomTool, RotateViewTool,
                                     GradientTool, PerspectiveCropTool)
+    from tools.lasso_tools import LassoTool, PolygonalLassoTool, MagneticLassoTool
     text = TextTool();  text._parent_widget  = text_parent
     textv = VerticalTypeTool(); textv._parent_widget = text_parent
     texthm = HorizontalTypeMaskTool(); texthm._parent_widget = text_parent
@@ -60,6 +61,9 @@ def _build_tool_registry(text_parent):
         "Hand":       HandTool(),
         "Zoom":       ZoomTool(),
         "RotateView": RotateViewTool(),
+        "Lasso":          LassoTool(),
+        "PolygonalLasso": PolygonalLassoTool(),
+        "MagneticLasso":  MagneticLassoTool(),
     }
 
 
@@ -164,8 +168,12 @@ class MainWindow(QMainWindow,
         self._act(edit_m, "menu.paste_new_layer", self._paste, QKeySequence.StandardKey.Paste)
         edit_m.addSeparator()
         self._act(edit_m, "menu.clear_layer",  self._clear_layer, QKeySequence("Delete"))
-        self._act(edit_m, "menu.deselect",     self._deselect,    QKeySequence("Ctrl+D"))
-        self._act(edit_m, "menu.select_all",   self._select_all,  QKeySequence.StandardKey.SelectAll)
+        # Select
+        select_m = self._menu(mb, "menu.select")
+        self._act(select_m, "menu.select_all", self._select_all, QKeySequence.StandardKey.SelectAll) # Ctrl+A
+        self._act(select_m, "menu.deselect",   self._deselect,   QKeySequence("Ctrl+D"))
+        self._act(select_m, "menu.reselect",   self._reselect,   QKeySequence("Shift+Ctrl+D"))
+        self._act(select_m, "menu.inverse",    self._inverse_selection, QKeySequence("Shift+Ctrl+I"))
         edit_m.addSeparator()
         self._act(edit_m, "menu.fill_fg", self._fill_fg, QKeySequence("Alt+Delete"))
         self._act(edit_m, "menu.fill_bg", self._fill_bg, QKeySequence("Ctrl+Delete"))

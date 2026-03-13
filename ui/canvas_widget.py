@@ -284,6 +284,43 @@ class CanvasWidget(QWidget):
                 painter.drawRect(sub_r)
                 painter.restore()
 
+    # 4.6. Превью Lasso Tools
+        if self.active_tool and hasattr(self.active_tool, "lasso_preview"):
+            preview_data = self.active_tool.lasso_preview()
+            if preview_data:
+                painter.save()
+                painter.translate(self._pan)
+                painter.scale(self.zoom, self.zoom)
+
+                painter.setRenderHint(QPainter.RenderHint.Antialiasing)
+                pw = max(1.0, 1.0 / self.zoom)
+
+                # Черно-белая пунктирная линия для лучшей видимости
+                pen1 = QPen(QColor(0, 0, 0), pw)
+                pen2 = QPen(QColor(255, 255, 255), pw)
+                pen2.setStyle(Qt.PenStyle.DashLine)
+
+                # Распаковка данных в зависимости от инструмента
+                points = preview_data[0] if isinstance(preview_data, tuple) else preview_data
+                current_pos = preview_data[1] if isinstance(preview_data, tuple) else None
+
+                if len(points) > 0:
+                    poly = QPolygonF(points)
+                    painter.setPen(pen1)
+                    painter.drawPolyline(poly)
+                    painter.setPen(pen2)
+                    painter.drawPolyline(poly)
+
+                    # Для полигонального рисуем линию тянущуюся за курсором
+                    if current_pos:
+                        painter.setPen(pen1)
+                        painter.drawLine(points[-1], current_pos)
+                        painter.setPen(pen2)
+                        painter.drawLine(points[-1], current_pos)
+
+                painter.restore()
+
+
         # 5. Floating preview (MoveTool)
         if self.active_tool and hasattr(self.active_tool, "floating_preview"):
             fp = self.active_tool.floating_preview()

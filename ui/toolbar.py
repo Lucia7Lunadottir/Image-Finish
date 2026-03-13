@@ -44,6 +44,9 @@ class ToolBar(QWidget):
         "Hand":          _ToolDef("Hand",          "🖐",  "H", "tool.hand"),
         "Zoom":          _ToolDef("Zoom",          "🔍",  "Z", "tool.zoom"),
         "RotateView":    _ToolDef("RotateView",    "🔄",  "",  "tool.rotate_view"),
+        "Lasso":          _ToolDef("Lasso",          "➰", "L", "tool.lasso"),
+        "PolygonalLasso": _ToolDef("PolygonalLasso", "⬡",  "",  "tool.poly_lasso"),
+        "MagneticLasso":  _ToolDef("MagneticLasso",  "🧲", "",  "tool.mag_lasso"),
     }
 
     # Order/structure of the toolbar. Groups behave like Photoshop dropdown tools.
@@ -60,6 +63,7 @@ class ToolBar(QWidget):
         "Eyedropper",
         ("Crop", ["Crop", "Perspective Crop"]),
         ("Nav", ["Hand", "Zoom", "RotateView"]),
+        ("LassoGroup", ["Lasso", "PolygonalLasso", "MagneticLasso"]),
     ]
 
     def __init__(self, parent=None):

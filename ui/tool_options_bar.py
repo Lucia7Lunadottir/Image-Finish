@@ -57,6 +57,9 @@ class ToolOptionsBar(QWidget):
         self._pages["Hand"] = EmptyOptions("opts.hand_hint")
         self._pages["Zoom"] = EmptyOptions("opts.zoom_hint")
         self._pages["RotateView"] = RotateViewOptions()
+        self._pages["Lasso"] = self._pages["Select"]
+        self._pages["PolygonalLasso"] = self._pages["Select"]
+        self._pages["MagneticLasso"] = self._pages["Select"]
 
         for name, page in self._pages.items():
             self._stack.addWidget(page)
