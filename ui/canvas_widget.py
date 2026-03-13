@@ -1,9 +1,12 @@
+import math
+
 from PyQt6.QtWidgets import QWidget
 from PyQt6.QtCore import Qt, QPoint, QPointF, QRect, QRectF, pyqtSignal
 from PyQt6.QtGui import (QPainter, QColor, QPixmap, QBrush,
-                         QPen, QImage, QCursor, QRadialGradient, QPainterPath)
+                         QPen, QImage, QCursor, QRadialGradient, QPainterPath, QPolygon)
 
-from tools.other_tools import SelectTool, CropTool
+from tools.other_tools import (SelectTool, CropTool, ShapesTool,
+                               HandTool, ZoomTool, RotateViewTool, GradientTool)
 
 # Инструменты с кистью — для них показываем кружок-курсор
 _BRUSH_TOOLS = {"Brush", "Eraser", "Blur", "Sharpen", "Smudge"}
@@ -42,6 +45,9 @@ class CanvasWidget(QWidget):
             "text_shadow_dx":   3,
             "text_shadow_dy":   3,
             "shape_type":     "rect",
+            "shape_fill":     False,
+            "shape_sides":    6,
+            "shape_angle":    0,
             "effect_strength": 0.5,
         }
 
@@ -50,6 +56,10 @@ class CanvasWidget(QWidget):
         self._pan_last: QPointF | None = None
         self._panning: bool = False
         self._space:   bool = False
+
+        self._view_rotation: float = 0.0
+        self._rotating:      bool  = False
+        self._rotate_last_angle: float = 0.0
 
         self._stroke_in_progress: bool = False
         self._pre_stroke_state = None
@@ -96,6 +106,10 @@ class CanvasWidget(QWidget):
         self._fit_to_window()
         self.update()
 
+    def reset_rotation(self):
+        self._view_rotation = 0.0
+        self.update()
+
     def zoom_in(self):
         self._apply_zoom(1.25, self.rect().center())
 
@@ -104,6 +118,16 @@ class CanvasWidget(QWidget):
 
     # ──────────────────────────────────────── координаты
     def to_doc(self, widget_pos: QPointF) -> QPoint:
+        if self._view_rotation:
+            cx = self.width()  / 2
+            cy = self.height() / 2
+            dx = widget_pos.x() - cx
+            dy = widget_pos.y() - cy
+            a  = math.radians(-self._view_rotation)
+            widget_pos = QPointF(
+                dx * math.cos(a) - dy * math.sin(a) + cx,
+                dx * math.sin(a) + dy * math.cos(a) + cy,
+            )
         x = (widget_pos.x() - self._pan.x()) / self.zoom
         y = (widget_pos.y() - self._pan.y()) / self.zoom
         return QPoint(int(x), int(y))
@@ -151,6 +175,31 @@ class CanvasWidget(QWidget):
         if not self.document:
             return
 
+        if self._view_rotation:
+            buf = QImage(self.size(), QImage.Format.Format_ARGB32_Premultiplied)
+            buf.fill(QColor(0, 0, 0, 0))
+            bp = QPainter(buf)
+            bp.setRenderHint(QPainter.RenderHint.SmoothPixmapTransform)
+            self._paint_canvas_content(bp)
+            bp.end()
+            cx = self.width()  / 2
+            cy = self.height() / 2
+            painter.translate(cx, cy)
+            painter.rotate(self._view_rotation)
+            painter.translate(-cx, -cy)
+            painter.drawImage(0, 0, buf)
+            painter.resetTransform()
+        else:
+            self._paint_canvas_content(painter)
+
+        # Курсор кисти — всегда в координатах виджета, без поворота
+        if self._show_brush_cursor and not self._panning and not self._space:
+            self._draw_brush_cursor(painter)
+
+        painter.end()
+
+    def _paint_canvas_content(self, painter: QPainter):
+        """Renders checkerboard, composite, overlays (no brush cursor)."""
         dr = self._doc_rect_in_widget()
 
         # 1. Шахматка
@@ -183,11 +232,9 @@ class CanvasWidget(QWidget):
             painter.save()
             painter.translate(self._pan)
             painter.scale(self.zoom, self.zoom)
-            # Заливка по форме
             painter.setClipPath(sel)
             painter.fillRect(sel.boundingRect().toRect(), QColor(100, 160, 255, 40))
             painter.setClipping(False)
-            # Контур по реальной форме
             pw = max(1.0, 1.0 / self.zoom)
             painter.setBrush(Qt.BrushStyle.NoBrush)
             pen = QPen(QColor(0, 0, 0, 160), pw * 1.5)
@@ -201,7 +248,7 @@ class CanvasWidget(QWidget):
             painter.drawPath(sel)
             painter.restore()
 
-        # 4.5. Превью subtract-drag (Ctrl+drag): показываем что вычитается
+        # 4.5. Превью subtract-drag
         if isinstance(self.active_tool, SelectTool):
             sub_r = self.active_tool.sub_drag_rect()
             if sub_r:
@@ -217,7 +264,7 @@ class CanvasWidget(QWidget):
                 painter.drawRect(sub_r)
                 painter.restore()
 
-        # 5. Floating preview (MoveTool с выделением)
+        # 5. Floating preview (MoveTool)
         if self.active_tool and hasattr(self.active_tool, "floating_preview"):
             fp = self.active_tool.floating_preview()
             if fp:
@@ -244,11 +291,70 @@ class CanvasWidget(QWidget):
             painter.drawRect(cr)
             painter.restore()
 
-        # 7. Курсор кисти — кружок в размер кисти
-        if self._show_brush_cursor and not self._panning and not self._space:
-            self._draw_brush_cursor(painter)
+        # 6.5. Превью фигуры (ShapesTool)
+        if isinstance(self.active_tool, ShapesTool):
+            ps = self.active_tool.preview_shape()
+            if ps:
+                painter.save()
+                painter.translate(self._pan)
+                painter.scale(self.zoom, self.zoom)
+                painter.setRenderHint(QPainter.RenderHint.Antialiasing)
+                stroke = max(1, int(self.tool_opts.get("brush_size", 3)))
+                pen = QPen(self.fg_color, stroke)
+                pen.setStyle(Qt.PenStyle.DashLine)
+                painter.setPen(pen)
+                painter.setBrush(Qt.BrushStyle.NoBrush)
+                shape = ps["shape"]
+                rect  = ps["rect"]
+                angle = ps.get("angle", 0)
+                if angle and shape != "line":
+                    cx, cy = rect.center().x(), rect.center().y()
+                    painter.translate(cx, cy)
+                    painter.rotate(angle)
+                    painter.translate(-cx, -cy)
+                if shape == "ellipse":
+                    painter.drawEllipse(rect)
+                elif shape == "triangle":
+                    painter.drawPolygon(QPolygon([
+                        QPoint(rect.center().x(), rect.top()),
+                        QPoint(rect.left(),  rect.bottom()),
+                        QPoint(rect.right(), rect.bottom()),
+                    ]))
+                elif shape == "polygon":
+                    painter.drawPolygon(
+                        ShapesTool._polygon_points(rect, ps["sides"]))
+                elif shape == "line":
+                    painter.drawLine(ps["start"], ps["end"])
+                elif shape == "star":
+                    painter.drawPolygon(ShapesTool._star_points(rect))
+                elif shape == "arrow":
+                    painter.drawPath(ShapesTool._arrow_path(rect))
+                elif shape == "cross":
+                    painter.drawPath(ShapesTool._cross_path(rect))
+                else:
+                    painter.drawRect(rect)
+                painter.restore()
 
-        painter.end()
+        # 6.6. Превью градиента (GradientTool) — линия от start до end
+        if isinstance(self.active_tool, GradientTool):
+            pg = self.active_tool.preview_gradient()
+            if pg:
+                p0, p1 = pg
+                painter.save()
+                painter.translate(self._pan)
+                painter.scale(self.zoom, self.zoom)
+                pw = max(1.0, 1.0 / self.zoom)
+                pen = QPen(QColor(255, 255, 255, 200), pw * 1.5)
+                pen.setStyle(Qt.PenStyle.DashLine)
+                painter.setPen(pen)
+                painter.drawLine(p0, p1)
+                # Маркеры на концах
+                painter.setBrush(QBrush(QColor(255, 255, 255, 200)))
+                painter.setPen(QPen(QColor(0, 0, 0, 160), pw))
+                r = pw * 3
+                painter.drawEllipse(QPointF(p0), r, r)
+                painter.drawEllipse(QPointF(p1), r, r)
+                painter.restore()
 
     def _draw_brush_cursor(self, painter: QPainter):
         """Рисует кружок размером с кисть вместо системного курсора."""
@@ -314,6 +420,27 @@ class CanvasWidget(QWidget):
             self.setCursor(Qt.CursorShape.ClosedHandCursor)
             return
 
+        if ev.button() == Qt.MouseButton.LeftButton:
+            if isinstance(self.active_tool, HandTool):
+                self._panning = True
+                self._pan_last = ev.position()
+                self.setCursor(Qt.CursorShape.ClosedHandCursor)
+                return
+
+            if isinstance(self.active_tool, ZoomTool):
+                alt = bool(ev.modifiers() & Qt.KeyboardModifier.AltModifier)
+                self._apply_zoom(1 / 1.25 if alt else 1.25, ev.position())
+                return
+
+            if isinstance(self.active_tool, RotateViewTool):
+                self._rotating = True
+                cx = self.width()  / 2
+                cy = self.height() / 2
+                self._rotate_last_angle = math.degrees(
+                    math.atan2(ev.position().y() - cy, ev.position().x() - cx))
+                self.setCursor(Qt.CursorShape.ClosedHandCursor)
+                return
+
         if ev.button() == Qt.MouseButton.LeftButton and self.active_tool:
             self._stroke_in_progress = True
 
@@ -351,14 +478,28 @@ class CanvasWidget(QWidget):
             self.update()
             return
 
+        if self._rotating:
+            cx = self.width()  / 2
+            cy = self.height() / 2
+            curr = math.degrees(
+                math.atan2(ev.position().y() - cy, ev.position().x() - cx))
+            delta = curr - self._rotate_last_angle
+            if delta >  180: delta -= 360
+            if delta < -180: delta += 360
+            self._view_rotation += delta
+            self._rotate_last_angle = curr
+            self.update()
+            return
+
         # Перерисовываем курсор / overlay
         if self._show_brush_cursor:
             self.update()
-        elif isinstance(self.active_tool, SelectTool):
+        elif isinstance(self.active_tool, (SelectTool, ShapesTool, RotateViewTool, GradientTool)):
             self.update()
 
         if (ev.buttons() & Qt.MouseButton.LeftButton
                 and self._stroke_in_progress and self.active_tool):
+            self.tool_opts["_shift"] = bool(ev.modifiers() & Qt.KeyboardModifier.ShiftModifier)
             doc_pos = self.to_doc(ev.position())
             self.active_tool.on_move(doc_pos, self.document,
                                      self.fg_color, self.bg_color, self.tool_opts)
@@ -371,6 +512,11 @@ class CanvasWidget(QWidget):
                 self._panning and ev.button() == Qt.MouseButton.LeftButton):
             self._panning = False
             self._pan_last = None
+            self._update_cursor()
+            return
+
+        if self._rotating and ev.button() == Qt.MouseButton.LeftButton:
+            self._rotating = False
             self._update_cursor()
             return
 

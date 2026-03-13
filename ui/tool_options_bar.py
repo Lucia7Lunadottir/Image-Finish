@@ -1,6 +1,6 @@
 from PyQt6.QtWidgets import (QWidget, QHBoxLayout, QLabel,
                              QSlider, QSpinBox, QComboBox, QStackedWidget,
-                             QPushButton, QFontComboBox, QColorDialog, QFrame)
+                             QPushButton, QFontComboBox, QColorDialog, QFrame, QCheckBox)
 from PyQt6.QtCore import Qt, pyqtSignal
 from PyQt6.QtGui import QColor, QFont
 
@@ -8,7 +8,7 @@ from core.locale import tr
 
 # Internal values for combo boxes — independent of displayed text
 _MASK_VALUES  = ("round", "square", "scatter")
-_SHAPE_VALUES = ("rect", "ellipse")
+_SHAPE_VALUES = ("rect", "ellipse", "triangle", "polygon", "line", "star", "arrow", "cross")
 
 
 def _hslider(minimum: int, maximum: int, value: int) -> QSlider:
@@ -94,6 +94,9 @@ class ToolOptionsBar(QWidget):
         self._add_effect_page("Blur",    "opts.effect.blur")
         self._add_effect_page("Sharpen", "opts.effect.sharpen")
         self._add_effect_page("Smudge",  "opts.effect.smudge")
+        self._add_empty_page("Hand",       "opts.hand_hint")
+        self._add_empty_page("Zoom",       "opts.zoom_hint")
+        self._add_rotate_view_page()
 
     def _add_brush_page(self):
         page = QWidget()
@@ -220,13 +223,44 @@ class ToolOptionsBar(QWidget):
         lo.setSpacing(14)
 
         # Shape combo — index-based
-        _SHAPE_KEYS = ("opts.shape.rect", "opts.shape.ellipse")
+        _SHAPE_KEYS = (
+            "opts.shape.rect", "opts.shape.ellipse", "opts.shape.triangle",
+            "opts.shape.polygon", "opts.shape.line", "opts.shape.star",
+            "opts.shape.arrow", "opts.shape.cross",
+        )
         combo = QComboBox()
         combo.addItems([tr(k) for k in _SHAPE_KEYS])
-        combo.currentIndexChanged.connect(
-            lambda i: self.option_changed.emit(
-                "shape_type", _SHAPE_VALUES[i] if 0 <= i < len(_SHAPE_VALUES) else "rect"))
         self._combo_keys(combo, _SHAPE_KEYS)
+
+        # Sides spinbox (shown only for polygon)
+        sides_lbl = self._lbl("opts.shape.sides")
+        sides_sp = QSpinBox()
+        sides_sp.setRange(3, 20)
+        sides_sp.setValue(6)
+        sides_sp.setFixedWidth(44)
+        sides_sp.valueChanged.connect(lambda v: self.option_changed.emit("shape_sides", v))
+        sides_lbl.setVisible(False)
+        sides_sp.setVisible(False)
+
+        # Angle spinbox (hidden for line)
+        angle_lbl = self._lbl("opts.shape.angle")
+        angle_sp = QSpinBox()
+        angle_sp.setRange(0, 359)
+        angle_sp.setValue(0)
+        angle_sp.setFixedWidth(50)
+        angle_sp.setSuffix("°")
+        angle_sp.setWrapping(True)
+        angle_sp.valueChanged.connect(lambda v: self.option_changed.emit("shape_angle", v))
+
+        def _on_shape_change(i):
+            shape = _SHAPE_VALUES[i] if 0 <= i < len(_SHAPE_VALUES) else "rect"
+            self.option_changed.emit("shape_type", shape)
+            sides_lbl.setVisible(shape == "polygon")
+            sides_sp.setVisible(shape == "polygon")
+            angle_lbl.setVisible(shape != "line")
+            angle_sp.setVisible(shape != "line")
+
+        combo.currentIndexChanged.connect(_on_shape_change)
 
         sl = _hslider(1, 50, 2)
         sp = QSpinBox()
@@ -236,8 +270,18 @@ class ToolOptionsBar(QWidget):
         sp.valueChanged.connect(sl.setValue)
         sp.valueChanged.connect(lambda v: self.option_changed.emit("brush_size", v))
 
+        fill_cb = QCheckBox(tr("opts.shape.fill"))
+        fill_cb.setChecked(False)
+        fill_cb.toggled.connect(lambda v: self.option_changed.emit("shape_fill", v))
+        self._reg(lambda c=fill_cb: c.setText(tr("opts.shape.fill")))
+
         lo.addWidget(self._lbl("opts.shape"))
         lo.addWidget(combo)
+        lo.addWidget(sides_lbl)
+        lo.addWidget(sides_sp)
+        lo.addWidget(angle_lbl)
+        lo.addWidget(angle_sp)
+        lo.addWidget(fill_cb)
         lo.addWidget(self._lbl("opts.stroke"))
         lo.addWidget(sl)
         lo.addWidget(sp)
@@ -391,6 +435,27 @@ class ToolOptionsBar(QWidget):
 
         self._stack.addWidget(page)
         self._pages["Text"] = page
+
+    def _add_rotate_view_page(self):
+        page = QWidget()
+        lo = QHBoxLayout(page)
+        lo.setContentsMargins(0, 0, 0, 0)
+        lo.setSpacing(14)
+
+        lo.addWidget(self._lbl("opts.rotate_view_hint"))
+
+        reset_btn = QPushButton(tr("opts.rotate_view_reset"))
+        reset_btn.setObjectName("smallBtn")
+        reset_btn.setFixedHeight(26)
+        reset_btn.clicked.connect(
+            lambda: self.option_changed.emit("reset_view_rotation", True))
+        self._reg(lambda b=reset_btn: b.setText(tr("opts.rotate_view_reset")))
+
+        lo.addWidget(reset_btn)
+        lo.addStretch()
+
+        self._stack.addWidget(page)
+        self._pages["RotateView"] = page
 
     def _add_empty_page(self, name: str, tr_key: str):
         page = QWidget()
