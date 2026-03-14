@@ -9,7 +9,7 @@ from tools.other_tools import (SelectTool, CropTool, ShapesTool,
                                HandTool, ZoomTool, RotateViewTool, GradientTool, PerspectiveCropTool)
 
 # Инструменты с кистью — для них показываем кружок-курсор
-_BRUSH_TOOLS = {"Brush", "Eraser", "Blur", "Sharpen", "Smudge"}
+_BRUSH_TOOLS = {"Brush", "Eraser", "BackgroundEraser", "Blur", "Sharpen", "Smudge"}
 
 
 class CanvasWidget(QWidget):

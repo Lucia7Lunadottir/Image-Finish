@@ -13,7 +13,7 @@ from .tool_options.perspective_crop_options import PerspectiveCropOptions
 from .tool_options.effect_options import EffectOptions
 from .tool_options.rotate_view_options import RotateViewOptions
 from .tool_options.empty_options import EmptyOptions
-
+from .tool_options.bg_eraser_options import BackgroundEraserOptions
 
 class ToolOptionsBar(QWidget):
     option_changed = pyqtSignal(str, object)
@@ -37,8 +37,11 @@ class ToolOptionsBar(QWidget):
 
     def _build_pages(self):
         self._pages["Brush"] = BrushOptions()
-        self._pages["Eraser"] = EraserOptions()
         self._pages["Fill"] = FillOptions()
+        self._pages["Eraser"] = EraserOptions()
+        self._pages["BackgroundEraser"] = BackgroundEraserOptions()
+        # Magic Eraser использует толерантность, у тебя есть FillOptions, там как раз есть Tolerance
+        self._pages["MagicEraser"] = self._pages["Fill"]
         self._pages["Gradient"] = GradientOptions()
         self._pages["Select"] = SelectOptions()
         self._pages["EllipseSelect"] = self._pages["Select"]
@@ -60,6 +63,7 @@ class ToolOptionsBar(QWidget):
         self._pages["Lasso"] = self._pages["Select"]
         self._pages["PolygonalLasso"] = self._pages["Select"]
         self._pages["MagneticLasso"] = self._pages["Select"]
+        self._pages["MagicWand"] = self._pages["Fill"]
 
         for name, page in self._pages.items():
             self._stack.addWidget(page)
