@@ -1,8 +1,8 @@
 from PyQt6.QtWidgets import (QWidget, QVBoxLayout, QHBoxLayout, QLabel,
                              QPushButton, QListWidget, QListWidgetItem,
-                             QSlider, QCheckBox, QAbstractItemView, QMenu)
+                             QSlider, QCheckBox, QAbstractItemView, QMenu, QComboBox)
 from PyQt6.QtCore import Qt, pyqtSignal
-from PyQt6.QtGui import QColor, QIcon, QPixmap, QPainter
+from PyQt6.QtGui import QColor, QIcon, QPixmap, QPainter, QPen
 
 from core.locale import tr
 
@@ -24,6 +24,16 @@ def _make_eye_icon(visible: bool) -> QIcon:
     return QIcon(pix)
 
 
+class ClickableLabel(QLabel):
+    clicked = pyqtSignal(bool)
+
+    def mousePressEvent(self, ev):
+        if ev.button() == Qt.MouseButton.LeftButton:
+            shift = bool(ev.modifiers() & Qt.KeyboardModifier.ShiftModifier)
+            self.clicked.emit(shift)
+        super().mousePressEvent(ev)
+
+
 class LayerItem(QWidget):
     """
     Custom widget for one row in the layers list.
@@ -31,6 +41,8 @@ class LayerItem(QWidget):
     """
     visibility_toggled = pyqtSignal(int, bool)   # (row_index, new_visible)
     selected           = pyqtSignal(int)          # row_index
+    target_clicked     = pyqtSignal(int, str)     # row_index, target ("image" | "mask")
+    mask_toggled       = pyqtSignal(int)          # row_index
 
     def __init__(self, layer, index: int, is_active: bool, parent=None):
         super().__init__(parent)
@@ -51,14 +63,49 @@ class LayerItem(QWidget):
         lo.addWidget(self._vis_btn)
 
         # Thumbnail
-        thumb_lbl = QLabel()
+        self.thumb_lbl = ClickableLabel()
         thumb_pix = QPixmap.fromImage(
             layer.image.scaled(24, 24, Qt.AspectRatioMode.KeepAspectRatio,
                                Qt.TransformationMode.FastTransformation))
-        thumb_lbl.setPixmap(thumb_pix)
-        thumb_lbl.setFixedSize(26, 26)
-        thumb_lbl.setStyleSheet("border: 1px solid #45475a; background: white;")
-        lo.addWidget(thumb_lbl)
+        self.thumb_lbl.setPixmap(thumb_pix)
+        self.thumb_lbl.setFixedSize(26, 26)
+        self.thumb_lbl.clicked.connect(lambda shift: self.target_clicked.emit(index, "image"))
+        lo.addWidget(self.thumb_lbl)
+
+        mask = getattr(layer, "mask", None)
+        if mask is not None:
+            self.mask_lbl = ClickableLabel()
+            mask_pix = QPixmap.fromImage(mask.scaled(24, 24, Qt.AspectRatioMode.KeepAspectRatio, Qt.TransformationMode.FastTransformation))
+            
+            if not getattr(layer, "mask_enabled", True):
+                p = QPainter(mask_pix)
+                p.setRenderHint(QPainter.RenderHint.Antialiasing)
+                p.setPen(QPen(QColor(220, 50, 50, 200), 2))
+                p.drawLine(2, 2, 22, 22)
+                p.drawLine(22, 2, 2, 22)
+                p.end()
+                
+            self.mask_lbl.setPixmap(mask_pix)
+            self.mask_lbl.setFixedSize(26, 26)
+            self.mask_lbl.setToolTip(tr("layer.mask_tooltip"))
+            self.mask_lbl.clicked.connect(lambda shift: self.mask_toggled.emit(index) if shift else self.target_clicked.emit(index, "mask"))
+            lo.addWidget(self.mask_lbl)
+            
+            if is_active:
+                if getattr(layer, "editing_mask", False):
+                    self.thumb_lbl.setStyleSheet("border: 1px solid #45475a; background: white;")
+                    self.mask_lbl.setStyleSheet("border: 2px solid #cba6f7; background: white;")
+                else:
+                    self.thumb_lbl.setStyleSheet("border: 2px solid #cba6f7; background: white;")
+                    self.mask_lbl.setStyleSheet("border: 1px solid #45475a; background: white;")
+            else:
+                self.thumb_lbl.setStyleSheet("border: 1px solid #45475a; background: white;")
+                self.mask_lbl.setStyleSheet("border: 1px solid #45475a; background: white;")
+        else:
+            if is_active:
+                self.thumb_lbl.setStyleSheet("border: 2px solid #cba6f7; background: white;")
+            else:
+                self.thumb_lbl.setStyleSheet("border: 1px solid #45475a; background: white;")
 
         # Name
         name_lbl = QLabel(layer.name)
@@ -95,6 +142,11 @@ class LayerItem(QWidget):
             lock_lbl = QLabel("🔒")
             lock_lbl.setFixedWidth(18)
             lo.addWidget(lock_lbl)
+            
+        if getattr(layer, "lock_alpha", False):
+            alpha_lock_lbl = QLabel("🏁")
+            alpha_lock_lbl.setFixedWidth(18)
+            lo.addWidget(alpha_lock_lbl)
 
 
 class LayersPanel(QWidget):
@@ -111,6 +163,13 @@ class LayersPanel(QWidget):
     layer_moved_down    = pyqtSignal()
     layer_visibility    = pyqtSignal(int, bool)
     layer_opacity       = pyqtSignal(int, float)
+    layer_alpha_locked  = pyqtSignal(int, bool)
+    layer_blend_mode    = pyqtSignal(str)
+    layer_target_changed= pyqtSignal(int, str)
+    layer_mask_toggled  = pyqtSignal(int)
+    layer_add_mask      = pyqtSignal()
+    layer_delete_mask   = pyqtSignal()
+    layer_apply_mask    = pyqtSignal()
     layer_merged_down   = pyqtSignal()
     layer_flatten       = pyqtSignal()
     layer_edit          = pyqtSignal()
@@ -132,6 +191,28 @@ class LayersPanel(QWidget):
         self._title_lbl.setObjectName("panelTitle")
         layout.addWidget(self._title_lbl)
 
+        # Blend mode
+        blend_widget = QWidget()
+        blend_lo = QHBoxLayout(blend_widget)
+        blend_lo.setContentsMargins(8, 2, 8, 2)
+        blend_lo.setSpacing(6)
+        self._blend_lbl = QLabel(tr("opts.blend_mode"))
+        blend_lo.addWidget(self._blend_lbl)
+        self._blend_combo = QComboBox()
+        modes = [
+            ("blend.normal", "SourceOver"), ("blend.multiply", "Multiply"),
+            ("blend.screen", "Screen"), ("blend.overlay", "Overlay"),
+            ("blend.darken", "Darken"), ("blend.lighten", "Lighten"),
+            ("blend.color_dodge", "ColorDodge"), ("blend.color_burn", "ColorBurn"),
+            ("blend.hard_light", "HardLight"), ("blend.soft_light", "SoftLight"),
+            ("blend.difference", "Difference"), ("blend.exclusion", "Exclusion")
+        ]
+        for loc_key, val in modes:
+            self._blend_combo.addItem(tr(loc_key), val)
+        self._blend_combo.activated.connect(lambda idx: self.layer_blend_mode.emit(self._blend_combo.itemData(idx)))
+        blend_lo.addWidget(self._blend_combo, 1)
+        layout.addWidget(blend_widget)
+
         # Opacity slider for active layer
         op_widget = QWidget()
         op_lo = QHBoxLayout(op_widget)
@@ -148,6 +229,12 @@ class LayersPanel(QWidget):
         self._opacity_label.setFixedWidth(36)
         self._opacity_label.setStyleSheet("color: #7f849c; font-size:11px;")
         op_lo.addWidget(self._opacity_label)
+        self._alpha_lock_btn = QPushButton("🏁")
+        self._alpha_lock_btn.setCheckable(True)
+        self._alpha_lock_btn.setFixedSize(24, 24)
+        self._alpha_lock_btn.setToolTip(tr("layer.lock_alpha"))
+        self._alpha_lock_btn.clicked.connect(self._on_alpha_lock_toggled)
+        op_lo.addWidget(self._alpha_lock_btn)
         layout.addWidget(op_widget)
 
         # Layer list
@@ -210,6 +297,8 @@ class LayersPanel(QWidget):
 
             widget = LayerItem(layer, i, i == document.active_layer_index)
             widget.visibility_toggled.connect(self.layer_visibility.emit)
+            widget.target_clicked.connect(self.layer_target_changed.emit)
+            widget.mask_toggled.connect(self.layer_mask_toggled.emit)
             item.setSizeHint(widget.sizeHint())
             self._list.setItemWidget(item, widget)
 
@@ -230,6 +319,17 @@ class LayersPanel(QWidget):
             self._opacity_slider.blockSignals(False)
             self._opacity_label.setText(f"{int(layer.opacity * 100)}%")
 
+            self._alpha_lock_btn.blockSignals(True)
+            self._alpha_lock_btn.setChecked(getattr(layer, "lock_alpha", False))
+            self._alpha_lock_btn.blockSignals(False)
+
+            self._blend_combo.blockSignals(True)
+            mode = getattr(layer, "blend_mode", "SourceOver")
+            idx = self._blend_combo.findData(mode)
+            if idx >= 0:
+                self._blend_combo.setCurrentIndex(idx)
+            self._blend_combo.blockSignals(False)
+
         self._updating = False
 
     # ---------------------------------------------------------------- Private
@@ -246,6 +346,11 @@ class LayersPanel(QWidget):
         if self._document and not self._updating:
             active = self._document.active_layer_index
             self.layer_opacity.emit(active, value / 100)
+            
+    def _on_alpha_lock_toggled(self, checked: bool):
+        if self._document and not self._updating:
+            active = self._document.active_layer_index
+            self.layer_alpha_locked.emit(active, checked)
 
     def _context_menu(self, pos):
         menu = QMenu(self)
@@ -260,6 +365,13 @@ class LayersPanel(QWidget):
         layer = (self._document.get_active_layer()
                  if self._document else None)
         ltype = getattr(layer, "layer_type", "raster") if layer else "raster"
+
+        menu.addSeparator()
+        if layer and getattr(layer, "mask", None) is None:
+            menu.addAction(tr("ctx.add_mask"), self.layer_add_mask.emit)
+        elif layer:
+            menu.addAction(tr("ctx.delete_mask"), self.layer_delete_mask.emit)
+            menu.addAction(tr("ctx.apply_mask"), self.layer_apply_mask.emit)
 
         menu.addSeparator()
         if ltype in ("adjustment", "fill"):
@@ -278,6 +390,15 @@ class LayersPanel(QWidget):
         """Update all static labels/tooltips to the current locale."""
         self._title_lbl.setText(tr("panel.layers"))
         self._opacity_lbl.setText(tr("panel.opacity"))
+        self._blend_lbl.setText(tr("opts.blend_mode"))
+        self._alpha_lock_btn.setToolTip(tr("layer.lock_alpha"))
+        modes = [
+            "blend.normal", "blend.multiply", "blend.screen", "blend.overlay",
+            "blend.darken", "blend.lighten", "blend.color_dodge", "blend.color_burn",
+            "blend.hard_light", "blend.soft_light", "blend.difference", "blend.exclusion"
+        ]
+        for i, loc_key in enumerate(modes):
+            self._blend_combo.setItemText(i, tr(loc_key))
         self._add_btn.setToolTip(tr("layer.btn.new"))
         self._dup_btn.setToolTip(tr("layer.btn.duplicate"))
         self._up_btn.setToolTip(tr("layer.btn.up"))

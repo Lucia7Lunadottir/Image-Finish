@@ -34,6 +34,23 @@ class BrushOptions(BaseOptions):
         self._mask_combo.activated.connect(self._on_mask_activated)
         self.layout.addWidget(self._mask_combo)
 
+        # --- Режим смешивания ---
+        self.layout.addWidget(self._lbl("opts.blend_mode"))
+        self._blend_combo = QComboBox()
+        modes = [
+            ("blend.normal", "SourceOver"), ("blend.multiply", "Multiply"),
+            ("blend.screen", "Screen"), ("blend.overlay", "Overlay"),
+            ("blend.darken", "Darken"), ("blend.lighten", "Lighten"),
+            ("blend.color_dodge", "ColorDodge"), ("blend.color_burn", "ColorBurn"),
+            ("blend.hard_light", "HardLight"), ("blend.soft_light", "SoftLight"),
+            ("blend.difference", "Difference"), ("blend.exclusion", "Exclusion")
+        ]
+        for loc_key, val in modes:
+            self._blend_combo.addItem(tr(loc_key), val)
+        
+        self._blend_combo.activated.connect(lambda idx: self.option_changed.emit("brush_blend_mode", self._blend_combo.itemData(idx)))
+        self.layout.addWidget(self._blend_combo)
+
         # --- Размер ---
         self.layout.addWidget(self._lbl("opts.size"))
         size_widget = QWidget()
@@ -191,7 +208,8 @@ class BrushOptions(BaseOptions):
         # Блокируем сигналы, чтобы не вызывать option_changed при обновлении
         controls = [self._size_slider, self._size_spin, self._size_dyn_cb,
                     self._opacity_slider, self._opacity_spin, self._opacity_dyn_cb,
-                    self._hardness_slider, self._hardness_spin, self._angle_spin, self._angle_random_cb]
+                    self._hardness_slider, self._hardness_spin, self._angle_spin, self._angle_random_cb,
+                    self._blend_combo]
         for w in controls:
             w.blockSignals(True)
 
@@ -205,6 +223,11 @@ class BrushOptions(BaseOptions):
         self._angle_spin.setValue(int(opts.get("brush_angle", 0.0)))
         self._angle_random_cb.setChecked(opts.get("brush_angle_random", False))
 
+        blend = opts.get("brush_blend_mode", "SourceOver")
+        idx_blend = self._blend_combo.findData(blend)
+        if idx_blend >= 0:
+            self._blend_combo.setCurrentIndex(idx_blend)
+
         mask_val = opts.get("brush_mask", "round")
         idx = self._mask_combo.findData(mask_val)
         if idx >= 0:
@@ -214,3 +237,22 @@ class BrushOptions(BaseOptions):
 
         for w in controls:
             w.blockSignals(False)
+
+    def retranslate(self):
+        self._mask_combo.setItemText(0, tr("opts.mask.round"))
+        self._mask_combo.setItemText(1, tr("opts.mask.square"))
+        self._mask_combo.setItemText(2, tr("opts.mask.scatter"))
+
+        modes = [
+            "blend.normal", "blend.multiply", "blend.screen", "blend.overlay",
+            "blend.darken", "blend.lighten", "blend.color_dodge", "blend.color_burn",
+            "blend.hard_light", "blend.soft_light", "blend.difference", "blend.exclusion"
+        ]
+        for i, loc_key in enumerate(modes):
+            self._blend_combo.setItemText(i, tr(loc_key))
+
+        self._size_dyn_cb.setText(tr("opts.dynamic"))
+        self._opacity_dyn_cb.setText(tr("opts.dynamic"))
+        self._angle_random_cb.setText(tr("opts.angle_random"))
+        if hasattr(super(), "retranslate"):
+            super().retranslate()

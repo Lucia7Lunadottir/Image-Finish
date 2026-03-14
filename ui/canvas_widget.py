@@ -32,6 +32,7 @@ class CanvasWidget(QWidget):
             "brush_angle":    0.0,
             "brush_angle_random": False,
             "brush_mask":     "round",  # round | square | scatter
+            "brush_blend_mode": "SourceOver",
             "fill_tolerance": 32,
             "fill_contiguous": True,
             "font_size":        24,
@@ -345,7 +346,7 @@ class CanvasWidget(QWidget):
                 painter.scale(self.zoom, self.zoom)
                 
                 if hasattr(self.active_tool, "stroke_composition_mode"):
-                    painter.setCompositionMode(self.active_tool.stroke_composition_mode())
+                    painter.setCompositionMode(self.active_tool.stroke_composition_mode(self.tool_opts))
                 
                 painter.setOpacity(max(0.0, min(1.0, float(op))))
                 painter.drawImage(tl, img)

@@ -15,6 +15,12 @@ class MagicEraserTool(BaseTool):
         layer = doc.get_active_layer()
         if not layer or layer.locked or layer.image.isNull():
             return
+            
+        if getattr(layer, "lock_alpha", False):
+            return
+            
+        if getattr(layer, "editing_mask", False):
+            return
 
         img = layer.image
         w, h = img.width(), img.height()
@@ -98,6 +104,12 @@ class BackgroundEraserTool(BaseTool):
         layer = doc.get_active_layer()
         if not layer or layer.locked or layer.image.isNull():
             self.sample_color = None
+            return
+            
+        if getattr(layer, "lock_alpha", False):
+            return
+            
+        if getattr(layer, "editing_mask", False):
             return
 
         img = layer.image

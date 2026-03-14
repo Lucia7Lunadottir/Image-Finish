@@ -19,7 +19,11 @@ class MagicWandTool(BaseTool, LassoMixin):
         if not layer or layer.locked or layer.image.isNull():
             return
 
-        img = layer.image
+        if getattr(layer, "editing_mask", False) and getattr(layer, "mask", None) is not None:
+            img = layer.mask
+        else:
+            img = layer.image
+            
         w, h = img.width(), img.height()
         cx, cy = pos.x(), pos.y()
 

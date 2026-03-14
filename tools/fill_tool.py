@@ -15,8 +15,16 @@ class FillTool(BaseTool):
             return
         tolerance = int(opts.get("fill_tolerance", 32))
         contiguous = bool(opts.get("fill_contiguous", True))
+        
+        if getattr(layer, "editing_mask", False) and getattr(layer, "mask", None) is not None:
+            target_img = layer.mask
+            lock_alpha = False
+        else:
+            target_img = layer.image
+            lock_alpha = getattr(layer, "lock_alpha", False)
+            
         sel = doc.selection if (doc.selection and not doc.selection.isEmpty()) else None
-        self._flood_fill(layer.image, pos.x(), pos.y(), fg, tolerance, sel, contiguous)
+        self._flood_fill(target_img, pos.x(), pos.y(), fg, tolerance, sel, contiguous, lock_alpha)
 
     def on_move(self, pos, doc, fg, bg, opts): pass
     def on_release(self, pos, doc, fg, bg, opts): pass
@@ -25,7 +33,7 @@ class FillTool(BaseTool):
     # ---------------------------------------------------------------- Algorithm
     @staticmethod
     def _flood_fill(image: QImage, x: int, y: int, fill_color: QColor,
-                    tolerance: int, selection=None, contiguous: bool = True):
+                    tolerance: int, selection=None, contiguous: bool = True, lock_alpha: bool = False):
         w, h = image.width(), image.height()
         if not (0 <= x < w and 0 <= y < h):
             return
@@ -38,6 +46,10 @@ class FillTool(BaseTool):
         # Распаковка целевого цвета
         tr, tg, tb, ta = (target_rgba >> 16) & 0xFF, (target_rgba >> 8) & 0xFF, \
                          target_rgba & 0xFF, (target_rgba >> 24) & 0xFF
+                         
+        # Нельзя заливать прозрачные пиксели, если альфа заблокирована
+        if lock_alpha and ta == 0:
+            return
 
         fr, fg_g, fb, fa = fill_color.red(), fill_color.green(), fill_color.blue(), fill_color.alpha()
 
@@ -114,9 +126,18 @@ class FillTool(BaseTool):
         border_mask = neighbors & (dist_sq_rgb <= border_tol_sq)
         
         final_fill = visited | border_mask
+        if lock_alpha:
+            final_fill &= (A > 0)
 
         # 3. ФИНАЛЬНАЯ ЗАЛИВКА махом
-        arr[final_fill, 0] = fb
-        arr[final_fill, 1] = fg_g
-        arr[final_fill, 2] = fr
-        arr[final_fill, 3] = fa
+        if lock_alpha:
+            existing_a = A[final_fill].astype(np.float32) / 255.0
+            arr[final_fill, 0] = (fb * existing_a).astype(np.uint8)
+            arr[final_fill, 1] = (fg_g * existing_a).astype(np.uint8)
+            arr[final_fill, 2] = (fr * existing_a).astype(np.uint8)
+            # Альфу не трогаем!
+        else:
+            arr[final_fill, 0] = fb
+            arr[final_fill, 1] = fg_g
+            arr[final_fill, 2] = fr
+            arr[final_fill, 3] = fa

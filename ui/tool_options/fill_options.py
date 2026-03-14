@@ -48,3 +48,8 @@ class FillOptions(BaseOptions):
 
         for w in [self._sl, self._sp, self._contiguous_cb]:
             w.blockSignals(False)
+
+    def retranslate(self):
+        self._contiguous_cb.setText(tr("opts.contiguous"))
+        if hasattr(super(), "retranslate"):
+            super().retranslate()

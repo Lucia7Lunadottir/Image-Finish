@@ -77,3 +77,9 @@ class ToolOptionsBar(QWidget):
         page = self._pages.get(tool_name)
         if page:
             self._stack.setCurrentWidget(page)
+
+    def retranslate(self):
+        # Используем set, чтобы не обновлять одну и ту же панель (например, BrushOptions) несколько раз
+        for page in set(self._pages.values()):
+            if hasattr(page, "retranslate"):
+                page.retranslate()

@@ -3,6 +3,23 @@ from PyQt6.QtCore import Qt, QRect, QRectF, QPoint, QPointF
 from .layer import Layer
 
 
+def _get_composition_mode(mode_str: str) -> QPainter.CompositionMode:
+    mapping = {
+        "SourceOver": QPainter.CompositionMode.CompositionMode_SourceOver,
+        "Multiply": QPainter.CompositionMode.CompositionMode_Multiply,
+        "Screen": QPainter.CompositionMode.CompositionMode_Screen,
+        "Overlay": QPainter.CompositionMode.CompositionMode_Overlay,
+        "Darken": QPainter.CompositionMode.CompositionMode_Darken,
+        "Lighten": QPainter.CompositionMode.CompositionMode_Lighten,
+        "ColorDodge": QPainter.CompositionMode.CompositionMode_ColorDodge,
+        "ColorBurn": QPainter.CompositionMode.CompositionMode_ColorBurn,
+        "HardLight": QPainter.CompositionMode.CompositionMode_HardLight,
+        "SoftLight": QPainter.CompositionMode.CompositionMode_SoftLight,
+        "Difference": QPainter.CompositionMode.CompositionMode_Difference,
+        "Exclusion": QPainter.CompositionMode.CompositionMode_Exclusion,
+    }
+    return mapping.get(mode_str, QPainter.CompositionMode.CompositionMode_SourceOver)
+
 def _apply_layer_adjustment(image: QImage, layer) -> QImage:
     d = layer.adjustment_data or {}
     t = d.get("type", "")
@@ -117,12 +134,55 @@ class Document:
 
             elif ltype == "fill":
                 fill_img = _render_fill_layer(layer, self.width, self.height)
+                
+                if getattr(layer, "mask", None) is not None and getattr(layer, "mask_enabled", True):
+                    import numpy as np
+                    ptr = fill_img.bits(); ptr.setsize(fill_img.sizeInBytes())
+                    bpl = fill_img.bytesPerLine()
+                    arr_full = np.ndarray((self.height, bpl // 4, 4), dtype=np.uint8, buffer=ptr)
+                    arr = arr_full[:, :self.width, :]
+                    
+                    m_ptr = layer.mask.bits(); m_ptr.setsize(layer.mask.sizeInBytes())
+                    m_bpl = layer.mask.bytesPerLine()
+                    m_arr_full = np.ndarray((layer.mask.height(), m_bpl // 4, 4), dtype=np.uint8, buffer=m_ptr)
+                    m_arr = m_arr_full[:, :self.width, :]
+                    
+                    mask_f = (m_arr[..., 1].astype(np.float32) / 255.0) * (m_arr[..., 3].astype(np.float32) / 255.0)
+                    arr[..., 0] = (arr[..., 0] * mask_f).astype(np.uint8)
+                    arr[..., 1] = (arr[..., 1] * mask_f).astype(np.uint8)
+                    arr[..., 2] = (arr[..., 2] * mask_f).astype(np.uint8)
+                    arr[..., 3] = (arr[..., 3] * mask_f).astype(np.uint8)
+                
+                painter.setCompositionMode(_get_composition_mode(getattr(layer, "blend_mode", "SourceOver")))
                 painter.setOpacity(layer.opacity)
                 painter.drawImage(layer.offset, fill_img)
 
             else:
+                img_to_draw = layer.image
+                if getattr(layer, "mask", None) is not None and getattr(layer, "mask_enabled", True):
+                    import numpy as np
+                    ptr = layer.image.bits(); ptr.setsize(layer.image.sizeInBytes())
+                    bpl = layer.image.bytesPerLine()
+                    arr_full = np.ndarray((layer.height(), bpl // 4, 4), dtype=np.uint8, buffer=ptr).copy()
+                    arr = arr_full[:, :layer.width(), :]
+                    
+                    m_ptr = layer.mask.bits(); m_ptr.setsize(layer.mask.sizeInBytes())
+                    m_bpl = layer.mask.bytesPerLine()
+                    m_arr_full = np.ndarray((layer.mask.height(), m_bpl // 4, 4), dtype=np.uint8, buffer=m_ptr)
+                    m_arr = m_arr_full[:, :layer.width(), :]
+                    
+                    mask_f = (m_arr[..., 1].astype(np.float32) / 255.0) * (m_arr[..., 3].astype(np.float32) / 255.0)
+                    arr[..., 0] = (arr[..., 0] * mask_f).astype(np.uint8)
+                    arr[..., 1] = (arr[..., 1] * mask_f).astype(np.uint8)
+                    arr[..., 2] = (arr[..., 2] * mask_f).astype(np.uint8)
+                    arr[..., 3] = (arr[..., 3] * mask_f).astype(np.uint8)
+                    
+                    img_to_draw = QImage(arr_full.data, layer.width(), layer.height(), bpl, QImage.Format.Format_ARGB32_Premultiplied)
+                    img_to_draw.ndarr = arr_full  # держим ссылку на массив в памяти
+                    
+                painter.setCompositionMode(_get_composition_mode(getattr(layer, "blend_mode", "SourceOver")))
                 painter.setOpacity(layer.opacity)
-                painter.drawImage(layer.offset, layer.image)
+                painter.drawImage(layer.offset, img_to_draw)
 
         if painter.isActive():
             painter.end()
@@ -131,6 +191,28 @@ class Document:
     # ----------------------------------------------------------------- History
     def snapshot_layers(self) -> list[Layer]:
         return [layer.copy() for layer in self.layers]
+
+    def apply_layer_mask(self, layer):
+        if getattr(layer, "mask", None) is None: return
+        import numpy as np
+        if getattr(layer, "layer_type", "raster") != "raster":
+            layer.layer_type = "raster"
+        w, h = layer.width(), layer.height()
+        ptr = layer.image.bits(); ptr.setsize(layer.image.sizeInBytes())
+        bpl = layer.image.bytesPerLine()
+        arr_full = np.ndarray((h, bpl // 4, 4), dtype=np.uint8, buffer=ptr)
+        arr = arr_full[:, :w, :]
+        m_ptr = layer.mask.bits(); m_ptr.setsize(layer.mask.sizeInBytes())
+        m_bpl = layer.mask.bytesPerLine()
+        m_arr_full = np.ndarray((h, m_bpl // 4, 4), dtype=np.uint8, buffer=m_ptr)
+        m_arr = m_arr_full[:, :w, :]
+        mask_f = (m_arr[..., 1].astype(np.float32) / 255.0) * (m_arr[..., 3].astype(np.float32) / 255.0)
+        arr[..., 0] = (arr[..., 0] * mask_f).astype(np.uint8)
+        arr[..., 1] = (arr[..., 1] * mask_f).astype(np.uint8)
+        arr[..., 2] = (arr[..., 2] * mask_f).astype(np.uint8)
+        arr[..., 3] = (arr[..., 3] * mask_f).astype(np.uint8)
+        layer.mask = None
+        layer.editing_mask = False
 
     def restore_layers(self, snapshot: list[Layer]):
         self.layers = [layer.copy() for layer in snapshot]

@@ -345,6 +345,17 @@ class MainWindow(QMainWindow,
         self._layers_panel.layer_moved_down.connect(self._layer_down)
         self._layers_panel.layer_visibility.connect(self._on_layer_visibility)
         self._layers_panel.layer_opacity.connect(self._on_layer_opacity)
+        if hasattr(self._layers_panel, "layer_alpha_locked"):
+            self._layers_panel.layer_alpha_locked.connect(self._on_layer_alpha_locked)
+        if hasattr(self._layers_panel, "layer_blend_mode"):
+            self._layers_panel.layer_blend_mode.connect(self._on_layer_blend_mode)
+        if hasattr(self._layers_panel, "layer_target_changed"):
+            self._layers_panel.layer_target_changed.connect(self._on_layer_target_changed)
+            if hasattr(self._layers_panel, "layer_mask_toggled"):
+                self._layers_panel.layer_mask_toggled.connect(self._on_layer_mask_toggled)
+            self._layers_panel.layer_add_mask.connect(self._add_mask)
+            self._layers_panel.layer_delete_mask.connect(self._delete_mask)
+            self._layers_panel.layer_apply_mask.connect(self._apply_mask)
         self._layers_panel.layer_merged_down.connect(self._merge_down)
         self._layers_panel.layer_flatten.connect(self._flatten)
         self._layers_panel.layer_edit.connect(self._on_edit_layer)
@@ -416,6 +427,65 @@ class MainWindow(QMainWindow,
             self._canvas.reset_rotation()
             return
         self._canvas.tool_opts[key] = value
+
+    def _on_layer_blend_mode(self, mode: str):
+        layer = self._document.get_active_layer()
+        if layer and getattr(layer, "blend_mode", "SourceOver") != mode:
+            layer.blend_mode = mode
+            self._push_history(tr("history.layer_blend"))
+            self._canvas_refresh()
+
+    def _on_layer_alpha_locked(self, index: int, locked: bool):
+        if 0 <= index < len(self._document.layers):
+            layer = self._document.layers[index]
+            if getattr(layer, "lock_alpha", False) != locked:
+                layer.lock_alpha = locked
+                self._push_history(tr("history.lock_alpha"))
+                self._refresh_layers()
+
+    def _on_layer_target_changed(self, index: int, target: str):
+        if 0 <= index < len(self._document.layers):
+            self._document.active_layer_index = index
+            layer = self._document.layers[index]
+            layer.editing_mask = (target == "mask")
+            self._refresh_layers()
+
+    def _on_layer_mask_toggled(self, index: int):
+        if 0 <= index < len(self._document.layers):
+            layer = self._document.layers[index]
+            if getattr(layer, "mask", None) is not None:
+                layer.mask_enabled = not getattr(layer, "mask_enabled", True)
+                self._push_history(tr("history.toggle_mask"))
+                self._refresh_layers()
+                self._canvas_refresh()
+
+    def _add_mask(self):
+        layer = self._document.get_active_layer()
+        if layer and getattr(layer, "mask", None) is None:
+            from PyQt6.QtGui import QImage, QColor
+            layer.mask = QImage(layer.width(), layer.height(), QImage.Format.Format_ARGB32_Premultiplied)
+            layer.mask.fill(QColor(255, 255, 255))
+            layer.editing_mask = True
+            self._push_history(tr("history.add_mask"))
+            self._refresh_layers()
+            self._canvas_refresh()
+
+    def _delete_mask(self):
+        layer = self._document.get_active_layer()
+        if layer and getattr(layer, "mask", None) is not None:
+            layer.mask = None
+            layer.editing_mask = False
+            self._push_history(tr("history.delete_mask"))
+            self._refresh_layers()
+            self._canvas_refresh()
+
+    def _apply_mask(self):
+        layer = self._document.get_active_layer()
+        if layer and getattr(layer, "mask", None) is not None:
+            self._document.apply_layer_mask(layer)
+            self._push_history(tr("history.apply_mask"))
+            self._refresh_layers()
+            self._canvas_refresh()
 
     def _on_apply_crop_requested(self):
         if self._active_tool_name == "Crop":
