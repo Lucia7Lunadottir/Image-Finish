@@ -90,8 +90,8 @@ class MainWindow(QMainWindow,
         self._tools    = _build_tool_registry(self)
         self._active_tool_name = "Brush"
 
-        self._all_acts:  dict[str, QAction] = {}
-        self._all_menus: dict[str, QMenu]   = {}
+        self._all_acts:  list[tuple[str, QAction]] = []
+        self._all_menus: list[tuple[str, QMenu]]   = []
         self._lang_acts: dict[str, QAction] = {}
 
         self._build_ui()
@@ -237,6 +237,16 @@ class MainWindow(QMainWindow,
         self._act(adj_m, "menu.new_adj_bc",     lambda: self._new_adj_layer("brightness_contrast"))
         self._act(adj_m, "menu.new_adj_hs",     lambda: self._new_adj_layer("hue_saturation"))
         self._act(adj_m, "menu.new_adj_invert", lambda: self._new_adj_layer("invert"))
+        adj_m.addSeparator()
+        self._act(adj_m, "menu.levels",       lambda: self._new_adj_layer("levels"))
+        self._act(adj_m, "menu.exposure",     lambda: self._new_adj_layer("exposure"))
+        self._act(adj_m, "menu.vibrance",     lambda: self._new_adj_layer("vibrance"))
+        self._act(adj_m, "menu.black_white",  lambda: self._new_adj_layer("black_white"))
+        self._act(adj_m, "menu.posterize",    lambda: self._new_adj_layer("posterize"))
+        self._act(adj_m, "menu.threshold",    lambda: self._new_adj_layer("threshold"))
+        self._act(adj_m, "menu.photo_filter", lambda: self._new_adj_layer("photo_filter"))
+        self._act(adj_m, "menu.gradient_map", lambda: self._new_adj_layer("gradient_map"))
+        self._act(adj_m, "menu.color_lookup", lambda: self._new_adj_layer("color_lookup"))
 
         fill_m = self._menu(layer_m, "menu.new_fill_layer")
         self._act(fill_m, "menu.new_fill_solid",    lambda: self._new_fill_layer("solid"))
@@ -279,12 +289,12 @@ class MainWindow(QMainWindow,
             act.setShortcut(shortcut)
         act.triggered.connect(slot)
         menu.addAction(act)
-        self._all_acts[key] = act
+        self._all_acts.append((key, act))
         return act
 
     def _menu(self, parent, key: str) -> QMenu:
         m = parent.addMenu(tr(key))
-        self._all_menus[key] = m
+        self._all_menus.append((key, m))
         return m
 
     # ── Language ───────────────────────────────────────────────────────────────
@@ -305,9 +315,9 @@ class MainWindow(QMainWindow,
         self._apply_language()
 
     def _apply_language(self):
-        for key, act in self._all_acts.items():
+        for key, act in self._all_acts:
             act.setText(tr(key))
-        for key, menu in self._all_menus.items():
+        for key, menu in self._all_menus:
             menu.setTitle(tr(key))
         cur = locale_current()
         for code, act in self._lang_acts.items():
@@ -356,6 +366,12 @@ class MainWindow(QMainWindow,
             self._layers_panel.layer_add_mask.connect(self._add_mask)
             self._layers_panel.layer_delete_mask.connect(self._delete_mask)
             self._layers_panel.layer_apply_mask.connect(self._apply_mask)
+            if hasattr(self._layers_panel, "layer_invert_mask"):
+                self._layers_panel.layer_invert_mask.connect(self._invert_mask)
+        if hasattr(self._layers_panel, "layer_add_vector_mask"):
+            self._layers_panel.layer_add_vector_mask.connect(self._add_vector_mask)
+            self._layers_panel.layer_delete_vector_mask.connect(self._delete_vector_mask)
+            self._layers_panel.layer_vmask_toggled.connect(self._on_layer_vmask_toggled)
         self._layers_panel.layer_merged_down.connect(self._merge_down)
         self._layers_panel.layer_flatten.connect(self._flatten)
         self._layers_panel.layer_edit.connect(self._on_edit_layer)
@@ -431,16 +447,16 @@ class MainWindow(QMainWindow,
     def _on_layer_blend_mode(self, mode: str):
         layer = self._document.get_active_layer()
         if layer and getattr(layer, "blend_mode", "SourceOver") != mode:
-            layer.blend_mode = mode
             self._push_history(tr("history.layer_blend"))
+            layer.blend_mode = mode
             self._canvas_refresh()
 
     def _on_layer_alpha_locked(self, index: int, locked: bool):
         if 0 <= index < len(self._document.layers):
             layer = self._document.layers[index]
             if getattr(layer, "lock_alpha", False) != locked:
-                layer.lock_alpha = locked
                 self._push_history(tr("history.lock_alpha"))
+                layer.lock_alpha = locked
                 self._refresh_layers()
 
     def _on_layer_target_changed(self, index: int, target: str):
@@ -454,38 +470,187 @@ class MainWindow(QMainWindow,
         if 0 <= index < len(self._document.layers):
             layer = self._document.layers[index]
             if getattr(layer, "mask", None) is not None:
-                layer.mask_enabled = not getattr(layer, "mask_enabled", True)
                 self._push_history(tr("history.toggle_mask"))
+                layer.mask_enabled = not getattr(layer, "mask_enabled", True)
+                self._refresh_layers()
+                self._canvas_refresh()
+
+    def _add_vector_mask(self):
+        layer = self._document.get_active_layer()
+        if layer and getattr(layer, "vector_mask", None) is None:
+            self._push_history(tr("history.add_vector_mask"))
+            if self._document.selection and not self._document.selection.isEmpty():
+                layer.vector_mask = QPainterPath(self._document.selection)
+            else:
+                path = QPainterPath()
+                path.addRect(QRectF(0, 0, self._document.width, self._document.height))
+                layer.vector_mask = path
+            layer.vector_mask_enabled = True
+            self._refresh_layers()
+            self._canvas_refresh()
+
+    def _delete_vector_mask(self):
+        layer = self._document.get_active_layer()
+        if layer and getattr(layer, "vector_mask", None) is not None:
+            self._push_history(tr("history.delete_vector_mask"))
+            layer.vector_mask = None
+            self._refresh_layers()
+            self._canvas_refresh()
+
+    def _on_layer_vmask_toggled(self, index: int):
+        if 0 <= index < len(self._document.layers):
+            layer = self._document.layers[index]
+            if getattr(layer, "vector_mask", None) is not None:
+                self._push_history(tr("history.toggle_vector_mask"))
+                layer.vector_mask_enabled = not getattr(layer, "vector_mask_enabled", True)
                 self._refresh_layers()
                 self._canvas_refresh()
 
     def _add_mask(self):
         layer = self._document.get_active_layer()
         if layer and getattr(layer, "mask", None) is None:
+            self._push_history(tr("history.add_mask"))
             from PyQt6.QtGui import QImage, QColor
             layer.mask = QImage(layer.width(), layer.height(), QImage.Format.Format_ARGB32_Premultiplied)
             layer.mask.fill(QColor(255, 255, 255))
             layer.editing_mask = True
-            self._push_history(tr("history.add_mask"))
             self._refresh_layers()
             self._canvas_refresh()
 
     def _delete_mask(self):
         layer = self._document.get_active_layer()
         if layer and getattr(layer, "mask", None) is not None:
+            self._push_history(tr("history.delete_mask"))
             layer.mask = None
             layer.editing_mask = False
-            self._push_history(tr("history.delete_mask"))
             self._refresh_layers()
             self._canvas_refresh()
 
     def _apply_mask(self):
         layer = self._document.get_active_layer()
         if layer and getattr(layer, "mask", None) is not None:
-            self._document.apply_layer_mask(layer)
             self._push_history(tr("history.apply_mask"))
+            self._document.apply_layer_mask(layer)
             self._refresh_layers()
             self._canvas_refresh()
+
+    def _invert_mask(self):
+        layer = self._document.get_active_layer()
+        if layer and getattr(layer, "mask", None) is not None:
+            self._push_history(tr("history.invert_mask"))
+            layer.mask.invertPixels()
+            self._refresh_layers()
+            self._canvas_refresh()
+
+    def _invert(self):
+        layer = self._document.get_active_layer()
+        if layer and getattr(layer, "editing_mask", False) and getattr(layer, "mask", None) is not None:
+            self._invert_mask()
+        elif hasattr(super(), "_invert"):
+            super()._invert()
+
+    def _get_adj_dialog(self, layer, t):
+        if t == "levels":
+            from ui.levels_dialog import LevelsDialog
+            return LevelsDialog(layer, self._canvas_refresh, self)
+        elif t == "exposure":
+            from ui.more_adjustments import ExposureDialog
+            return ExposureDialog(layer, self._canvas_refresh, self)
+        elif t == "vibrance":
+            from ui.more_adjustments import VibranceDialog
+            return VibranceDialog(layer, self._canvas_refresh, self)
+        elif t == "black_white":
+            from ui.more_adjustments import BlackWhiteDialog
+            return BlackWhiteDialog(layer, self._canvas_refresh, self)
+        elif t == "posterize":
+            from ui.more_adjustments import PosterizeDialog
+            return PosterizeDialog(layer, self._canvas_refresh, self)
+        elif t == "threshold":
+            from ui.more_adjustments import ThresholdDialog
+            return ThresholdDialog(layer, self._canvas_refresh, self)
+        elif t == "photo_filter":
+            from ui.more_adjustments import PhotoFilterDialog
+            return PhotoFilterDialog(layer, self._canvas_refresh, self)
+        elif t == "gradient_map":
+            from ui.more_adjustments import GradientMapDialog
+            return GradientMapDialog(layer, self._canvas_refresh, self)
+        elif t == "color_lookup":
+            from ui.more_adjustments import ColorLookupDialog
+            return ColorLookupDialog(layer, self._canvas_refresh, self)
+        elif t == "hdr_toning":
+            from core.adjustments.hdr_toning import HDRToningDialog
+            return HDRToningDialog(layer, self._canvas_refresh, self)
+        else:
+            from ui.adjustment_layer_dialog import AdjustmentLayerDialog
+            return AdjustmentLayerDialog(layer, self._canvas_refresh, self)
+
+    def _new_adj_layer(self, adj_type: str):
+        if not self._document: return
+        
+        # Захватываем состояние ДО добавления слоя
+        from core.history import HistoryState
+        pre_state = HistoryState(
+            description=tr("history.new_adj_layer"),
+            layers_snapshot=self._document.snapshot_layers(),
+            active_layer_index=self._document.active_layer_index,
+            doc_width=self._document.width,
+            doc_height=self._document.height,
+            selection_snapshot=QPainterPath(self._document.selection) if self._document.selection else None,
+        )
+        
+        idx = self._document.active_layer_index
+        layer = self._document.add_layer(tr("layer.name.adjustment"), idx + 1)
+        layer.layer_type = "adjustment"
+        layer.adjustment_data = {"type": adj_type}
+        
+        dlg = self._get_adj_dialog(layer, adj_type)
+        if dlg and dlg.exec():
+            self._history.push(pre_state)
+            self._refresh_layers()
+        else:
+            self._document.layers.remove(layer)
+            self._document.active_layer_index = idx
+            self._canvas_refresh()
+            self._refresh_layers()
+
+    def _on_edit_layer(self):
+        layer = self._document.get_active_layer()
+        if not layer:
+            return
+        ltype = getattr(layer, "layer_type", "raster")
+        
+        # Захватываем состояние ДО редактирования
+        from core.history import HistoryState
+        pre_state = HistoryState(
+            description=tr("history.edit_adj_layer") if ltype == "adjustment" else tr("history.edit_fill_layer"),
+            layers_snapshot=self._document.snapshot_layers(),
+            active_layer_index=self._document.active_layer_index,
+            doc_width=self._document.width,
+            doc_height=self._document.height,
+            selection_snapshot=QPainterPath(self._document.selection) if self._document.selection else None,
+        )
+        
+        if ltype == "fill":
+            from ui.fill_layer_dialog import FillLayerDialog
+            dlg = FillLayerDialog(layer, self._canvas_refresh, self)
+            if dlg.exec():
+                self._history.push(pre_state)
+                self._refresh_layers()
+            else:
+                self._document.restore_layers(pre_state.layers_snapshot)
+                self._canvas_refresh()
+        elif ltype == "adjustment":
+            t = (layer.adjustment_data or {}).get("type", "")
+            dlg = self._get_adj_dialog(layer, t)
+            
+            if dlg and dlg.exec():
+                self._history.push(pre_state)
+                self._refresh_layers()
+            else:
+                self._document.restore_layers(pre_state.layers_snapshot)
+                self._canvas_refresh()
+        elif hasattr(super(), "_on_edit_layer"):
+            super()._on_edit_layer()
 
     def _on_apply_crop_requested(self):
         if self._active_tool_name == "Crop":

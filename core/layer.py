@@ -1,4 +1,4 @@
-from PyQt6.QtGui import QImage, QColor
+from PyQt6.QtGui import QImage, QColor, QPainterPath
 from PyQt6.QtCore import Qt, QPoint
 
 
@@ -15,6 +15,8 @@ class Layer:
         self.mask: QImage | None = None
         self.mask_enabled: bool = True
         self.editing_mask: bool = False
+        self.vector_mask: QPainterPath | None = None
+        self.vector_mask_enabled: bool = True
         self.opacity: float = 1.0
         self.blend_mode: str = "Normal"
         self.offset: QPoint = QPoint(0, 0)
@@ -47,6 +49,11 @@ class Layer:
             clone.mask = None
         clone.mask_enabled = getattr(self, "mask_enabled", True)
         clone.editing_mask = getattr(self, "editing_mask", False)
+        if getattr(self, "vector_mask", None) is not None:
+            clone.vector_mask = QPainterPath(self.vector_mask)
+        else:
+            clone.vector_mask = None
+        clone.vector_mask_enabled = getattr(self, "vector_mask_enabled", True)
         clone.opacity = self.opacity
         clone.blend_mode = self.blend_mode
         clone.offset = QPoint(self.offset)

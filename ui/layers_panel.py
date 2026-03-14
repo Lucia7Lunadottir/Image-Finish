@@ -43,6 +43,7 @@ class LayerItem(QWidget):
     selected           = pyqtSignal(int)          # row_index
     target_clicked     = pyqtSignal(int, str)     # row_index, target ("image" | "mask")
     mask_toggled       = pyqtSignal(int)          # row_index
+    vmask_toggled      = pyqtSignal(int)          # row_index
 
     def __init__(self, layer, index: int, is_active: bool, parent=None):
         super().__init__(parent)
@@ -107,6 +108,38 @@ class LayerItem(QWidget):
             else:
                 self.thumb_lbl.setStyleSheet("border: 1px solid #45475a; background: white;")
 
+        vmask = getattr(layer, "vector_mask", None)
+        if vmask is not None:
+            self.vmask_lbl = ClickableLabel()
+            vm_pix = QPixmap(24, 24)
+            vm_pix.fill(QColor(255, 255, 255))
+            p = QPainter(vm_pix)
+            p.setRenderHint(QPainter.RenderHint.Antialiasing)
+            bounds = vmask.boundingRect()
+            scale = 1.0
+            if not bounds.isEmpty():
+                scale = min(20.0 / max(1.0, bounds.width()), 20.0 / max(1.0, bounds.height()))
+                p.translate(12, 12)
+                p.scale(scale, scale)
+                p.translate(-bounds.center())
+            p.setBrush(QColor(150, 150, 150))
+            p.setPen(QPen(QColor(50, 50, 50), max(1.0, 1.0 / scale)))
+            p.drawPath(vmask)
+            p.end()
+            if not getattr(layer, "vector_mask_enabled", True):
+                p = QPainter(vm_pix)
+                p.setRenderHint(QPainter.RenderHint.Antialiasing)
+                p.setPen(QPen(QColor(220, 50, 50, 200), 2))
+                p.drawLine(2, 2, 22, 22)
+                p.drawLine(22, 2, 2, 22)
+                p.end()
+            self.vmask_lbl.setPixmap(vm_pix)
+            self.vmask_lbl.setFixedSize(26, 26)
+            self.vmask_lbl.setToolTip(tr("layer.vmask_tooltip"))
+            self.vmask_lbl.clicked.connect(lambda shift: self.vmask_toggled.emit(index) if shift else None)
+            self.vmask_lbl.setStyleSheet("border: 1px solid #45475a; background: white;")
+            lo.addWidget(self.vmask_lbl)
+
         # Name
         name_lbl = QLabel(layer.name)
         if is_active:
@@ -170,6 +203,10 @@ class LayersPanel(QWidget):
     layer_add_mask      = pyqtSignal()
     layer_delete_mask   = pyqtSignal()
     layer_apply_mask    = pyqtSignal()
+    layer_invert_mask   = pyqtSignal()
+    layer_add_vector_mask    = pyqtSignal()
+    layer_delete_vector_mask = pyqtSignal()
+    layer_vmask_toggled      = pyqtSignal(int)
     layer_merged_down   = pyqtSignal()
     layer_flatten       = pyqtSignal()
     layer_edit          = pyqtSignal()
@@ -299,6 +336,7 @@ class LayersPanel(QWidget):
             widget.visibility_toggled.connect(self.layer_visibility.emit)
             widget.target_clicked.connect(self.layer_target_changed.emit)
             widget.mask_toggled.connect(self.layer_mask_toggled.emit)
+            widget.vmask_toggled.connect(self.layer_vmask_toggled.emit)
             item.setSizeHint(widget.sizeHint())
             self._list.setItemWidget(item, widget)
 
@@ -370,8 +408,25 @@ class LayersPanel(QWidget):
         if layer and getattr(layer, "mask", None) is None:
             menu.addAction(tr("ctx.add_mask"), self.layer_add_mask.emit)
         elif layer:
+            active_idx = self._document.active_layer_index
+            if getattr(layer, "mask_enabled", True):
+                menu.addAction(tr("ctx.disable_mask"), lambda *args, idx=active_idx: self.layer_mask_toggled.emit(idx))
+            else:
+                menu.addAction(tr("ctx.enable_mask"), lambda *args, idx=active_idx: self.layer_mask_toggled.emit(idx))
             menu.addAction(tr("ctx.delete_mask"), self.layer_delete_mask.emit)
             menu.addAction(tr("ctx.apply_mask"), self.layer_apply_mask.emit)
+            menu.addAction(tr("ctx.invert_mask"), self.layer_invert_mask.emit)
+
+        menu.addSeparator()
+        if layer and getattr(layer, "vector_mask", None) is None:
+            menu.addAction(tr("ctx.add_vector_mask"), self.layer_add_vector_mask.emit)
+        elif layer:
+            active_idx = self._document.active_layer_index
+            if getattr(layer, "vector_mask_enabled", True):
+                menu.addAction(tr("ctx.disable_vector_mask"), lambda *args, idx=active_idx: self.layer_vmask_toggled.emit(idx))
+            else:
+                menu.addAction(tr("ctx.enable_vector_mask"), lambda *args, idx=active_idx: self.layer_vmask_toggled.emit(idx))
+            menu.addAction(tr("ctx.delete_vector_mask"), self.layer_delete_vector_mask.emit)
 
         menu.addSeparator()
         if ltype in ("adjustment", "fill"):

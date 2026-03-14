@@ -24,17 +24,48 @@ def _apply_layer_adjustment(image: QImage, layer) -> QImage:
     d = layer.adjustment_data or {}
     t = d.get("type", "")
     try:
-        from ui.adjustments_dialog import (apply_brightness_contrast,
-                                           apply_hue_saturation, apply_invert)
         if t == "brightness_contrast":
+            from ui.adjustments_dialog import apply_brightness_contrast
             return apply_brightness_contrast(image, d.get("brightness", 0), d.get("contrast", 0))
-        if t == "hue_saturation":
+        elif t == "hue_saturation":
+            from ui.adjustments_dialog import apply_hue_saturation
             return apply_hue_saturation(image, d.get("hue", 0),
                                         d.get("saturation", 0), d.get("lightness", 0))
-        if t == "invert":
+        elif t == "invert":
+            from ui.adjustments_dialog import apply_invert
             return apply_invert(image)
-    except Exception:
-        pass
+        elif t == "levels":
+            from ui.levels_dialog import apply_levels
+            return apply_levels(image, d.get("in_min", 0), d.get("in_max", 255), d.get("in_gamma", 1.0), d.get("out_min", 0), d.get("out_max", 255))
+        elif t == "exposure":
+            from core.adjustments.exposure import apply_exposure
+            return apply_exposure(image, d.get("exposure", 0.0), d.get("offset", 0.0), d.get("gamma", 1.0))
+        elif t == "vibrance":
+            from core.adjustments.vibrance import apply_vibrance
+            return apply_vibrance(image, d.get("vibrance", 0), d.get("saturation", 0))
+        elif t == "black_white":
+            from core.adjustments.black_white import apply_black_white
+            return apply_black_white(image, d.get("reds", 40), d.get("yellows", 60), d.get("greens", 40), d.get("cyans", 60), d.get("blues", 20), d.get("magentas", 80))
+        elif t == "posterize":
+            from core.adjustments.posterize import apply_posterize
+            return apply_posterize(image, d.get("levels", 4))
+        elif t == "threshold":
+            from core.adjustments.threshold import apply_threshold
+            return apply_threshold(image, d.get("threshold", 128))
+        elif t == "photo_filter":
+            from core.adjustments.photo_filter import apply_photo_filter
+            return apply_photo_filter(image, d.get("color", QColor(255,140,0)), d.get("density", 25), d.get("preserve", True))
+        elif t == "gradient_map":
+            from core.adjustments.gradient_map import apply_gradient_map
+            return apply_gradient_map(image, d.get("shadows", QColor(0,0,0)), d.get("highlights", QColor(255,255,255)))
+        elif t == "color_lookup":
+            from core.adjustments.color_lookup import apply_color_lookup
+            return apply_color_lookup(image, d.get("lut", None), d.get("intensity", 100))
+        elif t == "hdr_toning":
+            from core.adjustments.hdr_toning import apply_hdr_toning
+            return apply_hdr_toning(image, d.get("radius", 10), d.get("strength", 0.5), d.get("gamma", 1.0), d.get("detail", 1.0))
+    except Exception as e:
+        print(f"Error applying adjustment layer '{t}':", e)
     return image
 
 
@@ -129,7 +160,51 @@ class Document:
 
             if ltype == "adjustment":
                 painter.end()
-                result = _apply_layer_adjustment(result, layer)
+                
+                backup = result.copy()
+                adjusted = _apply_layer_adjustment(backup, layer)
+                
+                import numpy as np
+                ptr_b = backup.bits(); ptr_b.setsize(backup.sizeInBytes())
+                arr_b = np.ndarray((backup.height(), backup.bytesPerLine() // 4, 4), dtype=np.uint8, buffer=ptr_b)
+                
+                ptr_a = adjusted.bits(); ptr_a.setsize(adjusted.sizeInBytes())
+                arr_a = np.ndarray((adjusted.height(), adjusted.bytesPerLine() // 4, 4), dtype=np.uint8, buffer=ptr_a)
+                
+                frac = np.full((backup.height(), backup.width()), layer.opacity, dtype=np.float32)
+                
+                has_mask = getattr(layer, "mask", None) is not None and getattr(layer, "mask_enabled", True)
+                if has_mask:
+                    m_ptr = layer.mask.bits(); m_ptr.setsize(layer.mask.sizeInBytes())
+                    m_arr = np.ndarray((layer.mask.height(), layer.mask.bytesPerLine() // 4, 4), dtype=np.uint8, buffer=m_ptr)
+                    mw = min(backup.width(), layer.mask.width())
+                    mh = min(backup.height(), layer.mask.height())
+                    mask_f = (m_arr[:mh, :mw, 1].astype(np.float32) / 255.0) * \
+                             (m_arr[:mh, :mw, 3].astype(np.float32) / 255.0)
+                    frac[:mh, :mw] *= mask_f
+                    
+                has_vmask = getattr(layer, "vector_mask", None) is not None and getattr(layer, "vector_mask_enabled", True)
+                if has_vmask:
+                    vmask_img = QImage(backup.width(), backup.height(), QImage.Format.Format_Grayscale8)
+                    vmask_img.fill(0)
+                    vp = QPainter(vmask_img)
+                    vp.fillPath(layer.vector_mask, QColor(255, 255, 255))
+                    vp.end()
+                    v_ptr = vmask_img.bits(); v_ptr.setsize(vmask_img.sizeInBytes())
+                    v_arr = np.ndarray((backup.height(), vmask_img.bytesPerLine()), dtype=np.uint8, buffer=v_ptr)
+                    vmask_f = v_arr[:backup.height(), :backup.width()].astype(np.float32) / 255.0
+                    frac *= vmask_f
+                
+                frac_4 = frac[..., np.newaxis]
+                
+                ptr_res = result.bits(); ptr_res.setsize(result.sizeInBytes())
+                arr_res = np.ndarray((result.height(), result.bytesPerLine() // 4, 4), dtype=np.uint8, buffer=ptr_res)
+                
+                arr_res[:backup.height(), :backup.width(), :] = (
+                    arr_b[:backup.height(), :backup.width(), :] * (1.0 - frac_4) + 
+                    arr_a[:backup.height(), :backup.width(), :] * frac_4
+                ).astype(np.uint8)
+                
                 painter = QPainter(result)
 
             elif ltype == "fill":
@@ -153,9 +228,13 @@ class Document:
                     arr[..., 2] = (arr[..., 2] * mask_f).astype(np.uint8)
                     arr[..., 3] = (arr[..., 3] * mask_f).astype(np.uint8)
                 
+                painter.save()
+                if getattr(layer, "vector_mask", None) is not None and getattr(layer, "vector_mask_enabled", True):
+                    painter.setClipPath(layer.vector_mask)
                 painter.setCompositionMode(_get_composition_mode(getattr(layer, "blend_mode", "SourceOver")))
                 painter.setOpacity(layer.opacity)
                 painter.drawImage(layer.offset, fill_img)
+                painter.restore()
 
             else:
                 img_to_draw = layer.image
@@ -180,9 +259,13 @@ class Document:
                     img_to_draw = QImage(arr_full.data, layer.width(), layer.height(), bpl, QImage.Format.Format_ARGB32_Premultiplied)
                     img_to_draw.ndarr = arr_full  # держим ссылку на массив в памяти
                     
+                painter.save()
+                if getattr(layer, "vector_mask", None) is not None and getattr(layer, "vector_mask_enabled", True):
+                    painter.setClipPath(layer.vector_mask)
                 painter.setCompositionMode(_get_composition_mode(getattr(layer, "blend_mode", "SourceOver")))
                 painter.setOpacity(layer.opacity)
                 painter.drawImage(layer.offset, img_to_draw)
+                painter.restore()
 
         if painter.isActive():
             painter.end()
