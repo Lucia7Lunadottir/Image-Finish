@@ -256,6 +256,8 @@
   "opts.angle":         "Угол:",
   "opts.angle_random":  "Случайный",
   "opts.dynamic":       "Динамика",
+  "opts.pattern":       "Узор:",
+  "opts.pattern_scale": "Масштаб узора:",
   "opts.mask":          "Маска:",
   "opts.mask.round":    "Круглая",
   "opts.mask.square":   "Квадратная",

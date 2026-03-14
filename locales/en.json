@@ -294,6 +294,8 @@
   "tool.magic_wand": "Magic Wand",
   "tool.quick_selection": "Quick Selection",
   "tool.object_selection": "Object Selection",
+  "tool.clone_stamp": "Clone Stamp",
+  "tool.pattern_stamp": "Pattern Stamp",
 
   "opts.hand_hint":          "Drag to pan the canvas",
   "opts.zoom_hint":          "Click to zoom in · Alt+click to zoom out",

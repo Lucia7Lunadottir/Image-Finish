@@ -9,7 +9,7 @@ from tools.other_tools import (SelectTool, CropTool, ShapesTool,
                                HandTool, ZoomTool, RotateViewTool, GradientTool, PerspectiveCropTool)
 
 # Инструменты с кистью — для них показываем кружок-курсор
-_BRUSH_TOOLS = {"Brush", "Eraser", "BackgroundEraser", "Blur", "Sharpen", "Smudge"}
+_BRUSH_TOOLS = {"Brush", "Eraser", "BackgroundEraser", "Blur", "Sharpen", "Smudge", "CloneStamp", "PatternStamp"}
 
 
 class CanvasWidget(QWidget):
@@ -33,6 +33,7 @@ class CanvasWidget(QWidget):
             "brush_angle_random": False,
             "brush_mask":     "round",  # round | square | scatter
             "brush_blend_mode": "SourceOver",
+            "brush_pattern_scale": 100,
             "fill_tolerance": 32,
             "fill_contiguous": True,
             "font_size":        24,
@@ -474,6 +475,24 @@ class CanvasWidget(QWidget):
                 painter.drawEllipse(QPointF(p1), r, r)
                 painter.restore()
 
+        # 7. Crosshair для Штампа (откуда берется цвет)
+        crosshair = getattr(self.active_tool, "_crosshair_pos", None)
+        if crosshair is not None:
+            painter.save()
+            painter.translate(self._pan)
+            painter.scale(self.zoom, self.zoom)
+            pw = max(1.0, 1.0 / self.zoom)
+            pen1 = QPen(QColor(0, 0, 0, 180), pw * 3)
+            pen2 = QPen(QColor(255, 255, 255, 220), pw)
+            r = 6 * pw
+            painter.setPen(pen1)
+            painter.drawLine(QPointF(crosshair.x() - r, crosshair.y()), QPointF(crosshair.x() + r, crosshair.y()))
+            painter.drawLine(QPointF(crosshair.x(), crosshair.y() - r), QPointF(crosshair.x(), crosshair.y() + r))
+            painter.setPen(pen2)
+            painter.drawLine(QPointF(crosshair.x() - r, crosshair.y()), QPointF(crosshair.x() + r, crosshair.y()))
+            painter.drawLine(QPointF(crosshair.x(), crosshair.y() - r), QPointF(crosshair.x(), crosshair.y() + r))
+            painter.restore()
+
     def _draw_brush_cursor(self, painter: QPainter):
         """Рисует кружок размером с кисть вместо системного курсора."""
         size   = int(self.tool_opts.get("brush_size", 10))
@@ -485,6 +504,22 @@ class CanvasWidget(QWidget):
             mask = "round"
             hard = 1.0
             angle = 0.0
+            
+        cx = int(self._mouse_pos.x())
+        cy = int(self._mouse_pos.y())
+
+        alt_pressed = bool(self.tool_opts.get("_alt", False))
+        if getattr(self.active_tool, "name", "") == "CloneStamp" and alt_pressed:
+            painter.save()
+            painter.setRenderHint(QPainter.RenderHint.Antialiasing)
+            painter.setPen(QPen(QColor(0,0,0, 180), 3))
+            painter.drawEllipse(QPointF(cx, cy), 8, 8)
+            painter.setPen(QPen(QColor(255,255,255, 220), 1.5))
+            painter.drawEllipse(QPointF(cx, cy), 8, 8)
+            painter.drawLine(int(cx)-12, int(cy), int(cx)+12, int(cy))
+            painter.drawLine(int(cx), int(cy)-12, int(cx), int(cy)+12)
+            painter.restore()
+            return
 
         # Нормализация маски: QPixmap или путь к файлу -> QImage
         actual_mask = mask
@@ -503,8 +538,6 @@ class CanvasWidget(QWidget):
         # Размер курсора в пикселях виджета
         w_size = max(2, int(size * self.zoom))
         r = w_size / 2.0
-        cx = int(self._mouse_pos.x())
-        cy = int(self._mouse_pos.y())
 
         painter.save()
         painter.setRenderHint(QPainter.RenderHint.Antialiasing)
@@ -588,6 +621,11 @@ class CanvasWidget(QWidget):
     def mousePressEvent(self, ev):
         if not self.document:
             return
+            
+        mods = ev.modifiers()
+        self.tool_opts["_shift"] = bool(mods & Qt.KeyboardModifier.ShiftModifier)
+        self.tool_opts["_ctrl"]  = bool(mods & Qt.KeyboardModifier.ControlModifier)
+        self.tool_opts["_alt"]   = bool(mods & Qt.KeyboardModifier.AltModifier)
 
         is_pan = (ev.button() == Qt.MouseButton.MiddleButton or
                   (self._space and ev.button() == Qt.MouseButton.LeftButton))
@@ -653,6 +691,11 @@ class CanvasWidget(QWidget):
                 self.document_changed.emit()
 
     def mouseMoveEvent(self, ev):
+        mods = ev.modifiers()
+        self.tool_opts["_shift"] = bool(mods & Qt.KeyboardModifier.ShiftModifier)
+        self.tool_opts["_ctrl"]  = bool(mods & Qt.KeyboardModifier.ControlModifier)
+        self.tool_opts["_alt"]   = bool(mods & Qt.KeyboardModifier.AltModifier)
+        
         if hasattr(ev, "device") and ev.device().type() == QInputDevice.DeviceType.Mouse:
             self.tool_opts["_pressure"] = 1.0
 

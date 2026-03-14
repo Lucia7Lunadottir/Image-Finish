@@ -1,5 +1,5 @@
-from PyQt6.QtWidgets import QWidget, QHBoxLayout, QStackedWidget
-from PyQt6.QtCore import pyqtSignal
+from PyQt6.QtWidgets import QWidget, QHBoxLayout, QStackedWidget, QScrollArea, QSizePolicy
+from PyQt6.QtCore import pyqtSignal, Qt
 
 from .tool_options.brush_options import BrushOptions
 from .tool_options.fill_options import FillOptions
@@ -13,6 +13,7 @@ from .tool_options.effect_options import EffectOptions
 from .tool_options.rotate_view_options import RotateViewOptions
 from .tool_options.empty_options import EmptyOptions
 from .tool_options.bg_eraser_options import BackgroundEraserOptions
+from .tool_options.pattern_stamp_options import PatternStampOptions
 
 class ToolOptionsBar(QWidget):
     option_changed = pyqtSignal(str, object)
@@ -22,20 +23,37 @@ class ToolOptionsBar(QWidget):
     def __init__(self, parent=None):
         super().__init__(parent)
         self.setObjectName("toolOptionsBar")
-        self.setFixedHeight(42)
+        self.setMinimumHeight(46)
+        self.setMaximumHeight(64)
 
         outer = QHBoxLayout(self)
-        outer.setContentsMargins(10, 0, 10, 0)
+        outer.setContentsMargins(0, 0, 0, 0)
         outer.setSpacing(0)
 
+        self._scroll = QScrollArea()
+        self._scroll.setWidgetResizable(True)
+        self._scroll.setVerticalScrollBarPolicy(Qt.ScrollBarPolicy.ScrollBarAlwaysOff)
+        self._scroll.setHorizontalScrollBarPolicy(Qt.ScrollBarPolicy.ScrollBarAsNeeded)
+        self._scroll.setFrameShape(QScrollArea.Shape.NoFrame)
+
+        self._container = QWidget()
+        c_layout = QHBoxLayout(self._container)
+        c_layout.setContentsMargins(10, 0, 10, 0)
+        c_layout.setSpacing(0)
+
         self._stack = QStackedWidget()
-        outer.addWidget(self._stack, 1)
+        c_layout.addWidget(self._stack, 1)
+        
+        self._scroll.setWidget(self._container)
+        outer.addWidget(self._scroll, 1)
 
         self._pages: dict[str, QWidget] = {}
         self._build_pages()
 
     def _build_pages(self):
         self._pages["Brush"] = BrushOptions()
+        self._pages["CloneStamp"] = self._pages["Brush"]
+        self._pages["PatternStamp"] = PatternStampOptions()
         self._pages["Fill"] = FillOptions()
         self._pages["Eraser"] = self._pages["Brush"]
         self._pages["BackgroundEraser"] = BackgroundEraserOptions()
@@ -66,7 +84,8 @@ class ToolOptionsBar(QWidget):
         self._pages["QuickSelection"] = self._pages["BackgroundEraser"]
         self._pages["ObjectSelection"] = self._pages["Select"]
 
-        for name, page in self._pages.items():
+        for page in set(self._pages.values()):
+            page.setSizePolicy(QSizePolicy.Policy.Ignored, QSizePolicy.Policy.Ignored)
             self._stack.addWidget(page)
             if hasattr(page, "option_changed"):
                 page.option_changed.connect(self.option_changed)
@@ -78,6 +97,10 @@ class ToolOptionsBar(QWidget):
     def switch_to(self, tool_name: str):
         page = self._pages.get(tool_name)
         if page:
+            current = self._stack.currentWidget()
+            if current and current != page:
+                current.setSizePolicy(QSizePolicy.Policy.Ignored, QSizePolicy.Policy.Ignored)
+            page.setSizePolicy(QSizePolicy.Policy.Preferred, QSizePolicy.Policy.Preferred)
             self._stack.setCurrentWidget(page)
 
     def retranslate(self):
