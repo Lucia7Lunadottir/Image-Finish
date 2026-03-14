@@ -33,6 +33,7 @@ class MagicEraserTool(BaseTool):
         tolerance_pct = opts.get("fill_tolerance", 32)
         max_dist_sq = 255**2 * 3
         tolerance_sq = (tolerance_pct / 100.0)**2 * max_dist_sq
+        contiguous = bool(opts.get("fill_contiguous", True))
 
         # --- NUMPY ОПТИМИЗАЦИЯ ---
         ptr = img.bits()
@@ -54,19 +55,23 @@ class MagicEraserTool(BaseTool):
         if not color_mask[sy, sx]:
             return
 
-        # Быстрый Flood Fill по логической маске вместо медленного img.pixel()
-        visited = np.zeros((h, w), dtype=bool)
-        stack = [(sy, sx)]
-        visited[sy, sx] = True
-        color_mask[sy, sx] = False
+        if contiguous:
+            # Быстрый Flood Fill по логической маске вместо медленного img.pixel()
+            visited = np.zeros((h, w), dtype=bool)
+            stack = [(sy, sx)]
+            visited[sy, sx] = True
+            color_mask[sy, sx] = False
 
-        while stack:
-            y, x = stack.pop()
+            while stack:
+                y, x = stack.pop()
 
-            if y > 0 and color_mask[y - 1, x]: visited[y - 1, x] = True; color_mask[y - 1, x] = False; stack.append((y - 1, x))
-            if y < h - 1 and color_mask[y + 1, x]: visited[y + 1, x] = True; color_mask[y + 1, x] = False; stack.append((y + 1, x))
-            if x > 0 and color_mask[y, x - 1]: visited[y, x - 1] = True; color_mask[y, x - 1] = False; stack.append((y, x - 1))
-            if x < w - 1 and color_mask[y, x + 1]: visited[y, x + 1] = True; color_mask[y, x + 1] = False; stack.append((y, x + 1))
+                if y > 0 and color_mask[y - 1, x]: visited[y - 1, x] = True; color_mask[y - 1, x] = False; stack.append((y - 1, x))
+                if y < h - 1 and color_mask[y + 1, x]: visited[y + 1, x] = True; color_mask[y + 1, x] = False; stack.append((y + 1, x))
+                if x > 0 and color_mask[y, x - 1]: visited[y, x - 1] = True; color_mask[y, x - 1] = False; stack.append((y, x - 1))
+                if x < w - 1 and color_mask[y, x + 1]: visited[y, x + 1] = True; color_mask[y, x + 1] = False; stack.append((y, x + 1))
+        else:
+            visited = color_mask.copy()
+            visited[sy, sx] = True
 
         # Мгновенно очищаем все найденные пиксели махом
         arr[visited] = 0

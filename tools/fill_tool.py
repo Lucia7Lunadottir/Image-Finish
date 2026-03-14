@@ -1,7 +1,7 @@
-from PyQt6.QtGui import QImage, QColor
-from PyQt6.QtCore import QPoint, QPointF
+import numpy as np
+from PyQt6.QtGui import QImage, QColor, QPainter
+from PyQt6.QtCore import QPoint
 from tools.base_tool import BaseTool
-from collections import deque
 
 
 class FillTool(BaseTool):
@@ -14,14 +14,18 @@ class FillTool(BaseTool):
         if not layer or layer.locked:
             return
         tolerance = int(opts.get("fill_tolerance", 32))
+        contiguous = bool(opts.get("fill_contiguous", True))
         sel = doc.selection if (doc.selection and not doc.selection.isEmpty()) else None
-        self._flood_fill(layer.image, pos.x(), pos.y(), fg, tolerance, sel)
+        self._flood_fill(layer.image, pos.x(), pos.y(), fg, tolerance, sel, contiguous)
+
+    def on_move(self, pos, doc, fg, bg, opts): pass
+    def on_release(self, pos, doc, fg, bg, opts): pass
+    def needs_history_push(self) -> bool: return True
 
     # ---------------------------------------------------------------- Algorithm
     @staticmethod
     def _flood_fill(image: QImage, x: int, y: int, fill_color: QColor,
-                    tolerance: int, selection=None):
-        import math
+                    tolerance: int, selection=None, contiguous: bool = True):
         w, h = image.width(), image.height()
         if not (0 <= x < w and 0 <= y < h):
             return
@@ -35,46 +39,84 @@ class FillTool(BaseTool):
         tr, tg, tb, ta = (target_rgba >> 16) & 0xFF, (target_rgba >> 8) & 0xFF, \
                          target_rgba & 0xFF, (target_rgba >> 24) & 0xFF
 
-        queue = deque([(x, y)])
-        visited = { (x, y) }
-        to_fill = set()
+        fr, fg_g, fb, fa = fill_color.red(), fill_color.green(), fill_color.blue(), fill_color.alpha()
 
-        # 1. ОСНОВНОЙ ПРОХОД (Поиск области)
-        while queue:
-            cx, cy = queue.popleft()
+        # --- NUMPY ОПТИМИЗАЦИЯ ---
+        ptr = image.bits()
+        ptr.setsize(image.sizeInBytes())
+        bpl = image.bytesPerLine()
 
-            pixel = image.pixel(cx, cy)
-            pr, pg, pb, pa = (pixel >> 16) & 0xFF, (pixel >> 8) & 0xFF, \
-                             pixel & 0xFF, (pixel >> 24) & 0xFF
+        arr_full = np.ndarray((h, bpl // 4, 4), dtype=np.uint8, buffer=ptr)
+        arr = arr_full[:, :w, :]
 
-            # Считаем разницу (Евклид)
-            dist = math.sqrt((pr-tr)**2 + (pg-tg)**2 + (pb-tb)**2 + (pa-ta)**2)
+        B = arr[..., 0].astype(np.int32)
+        G = arr[..., 1].astype(np.int32)
+        R = arr[..., 2].astype(np.int32)
+        A = arr[..., 3].astype(np.int32)
 
-            if dist <= tolerance:
-                to_fill.add((cx, cy))
-                for nx, ny in ((cx+1, cy), (cx-1, cy), (cx, cy+1), (cx, cy-1)):
-                    if 0 <= nx < w and 0 <= ny < h and (nx, ny) not in visited:
-                        if selection is None or selection.contains(QPointF(nx, ny)):
-                            visited.add((nx, ny))
-                            queue.append((nx, ny))
+        # Вычисляем квадрат расстояния (с учетом Alpha)
+        dist_sq = (R - tr)**2 + (G - tg)**2 + (B - tb)**2 + (A - ta)**2
+        tolerance_sq = tolerance**2
+
+        color_mask = dist_sq <= tolerance_sq
+
+        # Если есть выделение, применяем его быстро через QPainter
+        if selection:
+            sel_img = QImage(w, h, QImage.Format.Format_Grayscale8)
+            sel_img.fill(0)
+            p = QPainter(sel_img)
+            p.fillPath(selection, QColor(255))
+            p.end()
+            
+            sel_ptr = sel_img.bits()
+            sel_ptr.setsize(sel_img.sizeInBytes())
+            sel_arr = np.ndarray((h, sel_img.bytesPerLine()), dtype=np.uint8, buffer=sel_ptr)
+            sel_arr = sel_arr[:, :w]
+            
+            color_mask &= (sel_arr > 0)
+
+        if not color_mask[y, x]:
+            return
+
+        if contiguous:
+            # 1. ОСНОВНОЙ ПРОХОД (Flood Fill по маске)
+            visited = np.zeros((h, w), dtype=bool)
+            stack = [(y, x)]
+            visited[y, x] = True
+            color_mask[y, x] = False
+
+            while stack:
+                cy, cx = stack.pop()
+
+                if cy > 0 and color_mask[cy - 1, cx]: visited[cy - 1, cx] = True; color_mask[cy - 1, cx] = False; stack.append((cy - 1, cx))
+                if cy < h - 1 and color_mask[cy + 1, cx]: visited[cy + 1, cx] = True; color_mask[cy + 1, cx] = False; stack.append((cy + 1, cx))
+                if cx > 0 and color_mask[cy, cx - 1]: visited[cy, cx - 1] = True; color_mask[cy, cx - 1] = False; stack.append((cy, cx - 1))
+                if cx < w - 1 and color_mask[cy, cx + 1]: visited[cy, cx + 1] = True; color_mask[cy, cx + 1] = False; stack.append((cy, cx + 1))
+        else:
+            visited = color_mask.copy()
+            visited[y, x] = True
 
         # 2. ФАЗА "ПОЖИРАНИЯ" ГРАНИЦ (Anti-Halo)
-        # Мы берем каждый найденный пиксель и смотрим его соседей.
-        # Если сосед еще не закрашен, мы проверяем его с ПОВЫШЕННЫМ допуском.
-        final_to_fill = set(to_fill)
-        border_tolerance = tolerance * 1.5 + 20 # Агрессивный порог для краев
+        up = np.roll(visited, 1, axis=0); up[0, :] = False
+        down = np.roll(visited, -1, axis=0); down[-1, :] = False
+        left = np.roll(visited, 1, axis=1); left[:, 0] = False
+        right = np.roll(visited, -1, axis=1); right[:, -1] = False
+        
+        neighbors = (up | down | left | right) & ~visited
+        if selection:
+            neighbors &= (sel_arr > 0)
+            
+        border_tolerance = tolerance * 1.5 + 20
+        border_tol_sq = border_tolerance**2
+        
+        # В оригинале для границ проверялся только RGB
+        dist_sq_rgb = (R - tr)**2 + (G - tg)**2 + (B - tb)**2
+        border_mask = neighbors & (dist_sq_rgb <= border_tol_sq)
+        
+        final_fill = visited | border_mask
 
-        for cx, cy in to_fill:
-            for nx, ny in ((cx+1, cy), (cx-1, cy), (cx, cy+1), (cx, cy-1)):
-                if 0 <= nx < w and 0 <= ny < h and (nx, ny) not in final_to_fill:
-                    pixel = image.pixel(nx, ny)
-                    dist = math.sqrt((((pixel >> 16) & 0xFF)-tr)**2 +
-                                     (((pixel >> 8) & 0xFF)-tg)**2 +
-                                     ((pixel & 0xFF)-tb)**2)
-
-                    if dist <= border_tolerance:
-                        final_to_fill.add((nx, ny))
-
-        # 3. ФИНАЛЬНАЯ ЗАЛИВКА
-        for fx, fy in final_to_fill:
-            image.setPixel(fx, fy, fill_rgba)
+        # 3. ФИНАЛЬНАЯ ЗАЛИВКА махом
+        arr[final_fill, 0] = fb
+        arr[final_fill, 1] = fg_g
+        arr[final_fill, 2] = fr
+        arr[final_fill, 3] = fa

@@ -33,6 +33,7 @@ class CanvasWidget(QWidget):
             "brush_angle_random": False,
             "brush_mask":     "round",  # round | square | scatter
             "fill_tolerance": 32,
+            "fill_contiguous": True,
             "font_size":        24,
             "font_family":      "Sans Serif",
             "font_bold":        False,
