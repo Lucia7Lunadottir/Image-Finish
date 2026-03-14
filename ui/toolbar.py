@@ -26,6 +26,8 @@ class ToolBar(QWidget):
         "Move":          _ToolDef("Move",          "✋",  "V", "tool.move"),
         "Brush":         _ToolDef("Brush",         "🖌️", "B", "tool.brush"),
         "Eraser":        _ToolDef("Eraser",        "🧹",  "E", "tool.eraser"),
+        "BackgroundEraser": _ToolDef("BackgroundEraser", "✂️", "E", "tool.bg_eraser"),
+        "MagicEraser":      _ToolDef("MagicEraser",      "🎇", "E", "tool.magic_eraser"),
         "Fill":          _ToolDef("Fill",          "🪣",  "K", "tool.fill"),
         "Gradient":      _ToolDef("Gradient",      "🌈",  "G", "tool.gradient"),
         "Blur":          _ToolDef("Blur",          "💧",  "R", "tool.blur"),
@@ -47,13 +49,15 @@ class ToolBar(QWidget):
         "Lasso":          _ToolDef("Lasso",          "➰", "L", "tool.lasso"),
         "PolygonalLasso": _ToolDef("PolygonalLasso", "⬡",  "",  "tool.poly_lasso"),
         "MagneticLasso":  _ToolDef("MagneticLasso",  "🧲", "",  "tool.mag_lasso"),
+        "MagicWand":     _ToolDef("MagicWand",     "🪄", "W", "tool.magic_wand"),
+
     }
 
     # Order/structure of the toolbar. Groups behave like Photoshop dropdown tools.
     _LAYOUT = [
         "Move",
         "Brush",
-        "Eraser",
+        ("EraserGroup", ["Eraser", "BackgroundEraser", "MagicEraser"]),
         "Fill",
         "Gradient",
         ("Effects", ["Blur", "Sharpen", "Smudge"]),
@@ -64,6 +68,7 @@ class ToolBar(QWidget):
         ("Crop", ["Crop", "Perspective Crop"]),
         ("Nav", ["Hand", "Zoom", "RotateView"]),
         ("LassoGroup", ["Lasso", "PolygonalLasso", "MagneticLasso"]),
+        ("WandGroup", ["MagicWand"]), # Можно будет потом добавить сюда Quick Selection
     ]
 
     def __init__(self, parent=None):

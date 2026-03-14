@@ -35,13 +35,18 @@ def _build_tool_registry(text_parent):
                                     HandTool, ZoomTool, RotateViewTool,
                                     GradientTool, PerspectiveCropTool)
     from tools.lasso_tools import LassoTool, PolygonalLassoTool, MagneticLassoTool
+    from tools.advanced_erasers import MagicEraserTool, BackgroundEraserTool
+    from tools.magic_wand_tool import MagicWandTool
+
     text = TextTool();  text._parent_widget  = text_parent
     textv = VerticalTypeTool(); textv._parent_widget = text_parent
     texthm = HorizontalTypeMaskTool(); texthm._parent_widget = text_parent
     textvm = VerticalTypeMaskTool();   textvm._parent_widget = text_parent
     return {
         "Brush":      BrushTool(),
-        "Eraser":     EraserTool(),
+        "Eraser":           EraserTool(),
+        "BackgroundEraser": BackgroundEraserTool(),
+        "MagicEraser":      MagicEraserTool(),
         "Fill":       FillTool(),
         "Blur":       BlurTool(),
         "Sharpen":    SharpenTool(),
@@ -64,6 +69,7 @@ def _build_tool_registry(text_parent):
         "Lasso":          LassoTool(),
         "PolygonalLasso": PolygonalLassoTool(),
         "MagneticLasso":  MagneticLassoTool(),
+        "MagicWand": MagicWandTool(),
     }
 
 

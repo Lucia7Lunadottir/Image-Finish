@@ -16,8 +16,12 @@
   "menu.copy":             "Copy",
   "menu.paste_new_layer":  "Paste as New Layer",
   "menu.clear_layer":      "Clear Layer",
+  "menu.select": "Selection",
+  "menu.reselect": "Reselect",
+  "menu.inverse": "Inverse",
   "menu.deselect":         "Deselect",
   "menu.select_all":       "Select All",
+
   "menu.fill_fg":          "Fill FG Color",
   "menu.fill_bg":          "Fill BG Color",
 
@@ -264,6 +268,8 @@
   "tool.move":        "Move",
   "tool.brush":       "Brush",
   "tool.eraser":      "Eraser",
+  "tool.bg_eraser":      "Background Eraser",
+  "tool.magic_eraser":      "Magic Eraser",
   "tool.fill":        "Fill",
   "tool.blur":        "Blur",
   "tool.sharpen":     "Sharpen",
@@ -282,6 +288,10 @@
   "tool.hand":        "Hand",
   "tool.zoom":        "Zoom",
   "tool.rotate_view": "Rotate View",
+  "tool.lasso": "Lasso",
+  "tool.poly_lasso": "Poly Lasso",
+  "tool.mag_lasso": "Magnetic lasso",
+  "tool.magic_wand": "Magic Wand",
 
   "opts.hand_hint":          "Drag to pan the canvas",
   "opts.zoom_hint":          "Click to zoom in · Alt+click to zoom out",
