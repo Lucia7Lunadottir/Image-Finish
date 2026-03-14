@@ -227,6 +227,7 @@
   "opts.mask.square":   "Квадратная",
   "opts.mask.scatter":  "Разброс",
   "opts.tolerance":     "Допуск:",
+  "opts.contiguous":    "Смежные",
   "opts.gradient.type":           "Тип:",
   "opts.gradient.linear":         "Линейный",
   "opts.gradient.radial":         "Радиальный",
