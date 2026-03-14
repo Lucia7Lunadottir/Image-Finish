@@ -184,25 +184,28 @@ class BackgroundEraserTool(BaseTool):
 
         arr_full = np.ndarray((h, bpl // 4, 4), dtype=np.uint8, buffer=ptr)
         arr = arr_full[:, :w, :]
-        roi = arr[min_y:max_y, min_x:max_x]
-
-        Y, X = np.ogrid[min_y - cy : max_y - cy, min_x - cx : max_x - cx]
-        circle_mask = (X**2 + Y**2) <= radius**2
-
-        roi_B = roi[..., 0].astype(np.int32)
-        roi_G = roi[..., 1].astype(np.int32)
-        roi_R = roi[..., 2].astype(np.int32)
-        roi_A = roi[..., 3]
-
-        alpha_mask = roi_A > 0
-
-        color_dist_sq = (roi_R - sr)**2 + (roi_G - sg)**2 + (roi_B - sb)**2
-        max_dist_sq = 255**2 * 3
-        tolerance_sq = (tolerance_pct / 100.0)**2 * max_dist_sq
-        color_mask = color_dist_sq <= tolerance_sq
-
-        final_mask = circle_mask & alpha_mask & color_mask
-        roi[final_mask] = 0
+        
+        for t_cx, t_cy in list(dict.fromkeys(centers)):
+            min_x, max_x = max(0, t_cx - radius), min(w, t_cx + radius + 1)
+            min_y, max_y = max(0, t_cy - radius), min(h, t_cy + radius + 1)
+            
+            if min_x >= max_x or min_y >= max_y:
+                continue
+                
+            roi = arr[min_y:max_y, min_x:max_x]
+            Y, X = np.ogrid[min_y - t_cy : max_y - t_cy, min_x - t_cx : max_x - t_cx]
+            circle_mask = (X**2 + Y**2) <= radius**2
+            
+            roi_B = roi[..., 0].astype(np.int32)
+            roi_G = roi[..., 1].astype(np.int32)
+            roi_R = roi[..., 2].astype(np.int32)
+            roi_A = roi[..., 3]
+            
+            color_dist_sq = (roi_R - sr)**2 + (roi_G - sg)**2 + (roi_B - sb)**2
+            tolerance_sq = (tolerance_pct / 100.0)**2 * (255**2 * 3)
+            
+            final_mask = circle_mask & (roi_A > 0) & (color_dist_sq <= tolerance_sq)
+            roi[final_mask] = 0
 
     def needs_history_push(self) -> bool: return True
     def cursor(self): return Qt.CursorShape.CrossCursor

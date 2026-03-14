@@ -14,6 +14,7 @@ from .tool_options.rotate_view_options import RotateViewOptions
 from .tool_options.empty_options import EmptyOptions
 from .tool_options.bg_eraser_options import BackgroundEraserOptions
 from .tool_options.pattern_stamp_options import PatternStampOptions
+from .tool_options.measure_options import ColorSamplerOptions, RulerOptions
 
 class ToolOptionsBar(QWidget):
     option_changed = pyqtSignal(str, object)
@@ -52,6 +53,9 @@ class ToolOptionsBar(QWidget):
 
     def _build_pages(self):
         self._pages["Brush"] = BrushOptions()
+        self._pages["Pencil"] = self._pages["Brush"]
+        self._pages["ColorReplacement"] = self._pages["Brush"]
+        self._pages["MixerBrush"] = self._pages["Brush"]
         self._pages["CloneStamp"] = self._pages["Brush"]
         self._pages["PatternStamp"] = PatternStampOptions()
         self._pages["Fill"] = FillOptions()
@@ -69,6 +73,8 @@ class ToolOptionsBar(QWidget):
         self._pages["TextVMask"] = self._pages["Text"]
         self._pages["Move"] = EmptyOptions("tool.move")
         self._pages["Eyedropper"] = EmptyOptions("tool.eyedropper")
+        self._pages["ColorSampler"] = ColorSamplerOptions()
+        self._pages["Ruler"] = RulerOptions()
         self._pages["Crop"] = CropOptions()
         self._pages["Perspective Crop"] = PerspectiveCropOptions()
         self._pages["Blur"] = EffectOptions("opts.effect.blur")

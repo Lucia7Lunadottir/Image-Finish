@@ -256,6 +256,9 @@ class BrushTool(BaseTool):
         size_dyn = bool(opts.get("brush_size_dynamic", False))
         op_dyn   = bool(opts.get("brush_opacity_dynamic", False))
         pattern_scale = float(opts.get("brush_pattern_scale", 100)) / 100.0
+        mirror_x = bool(opts.get("brush_mirror_x", False))
+        mirror_y = bool(opts.get("brush_mirror_y", False))
+        doc_w, doc_h = doc.width, doc.height
         
         is_pattern_stamp = getattr(self, "name", "") == "PatternStamp"
         pattern_pixmap = None
@@ -266,7 +269,7 @@ class BrushTool(BaseTool):
 
         # Для очень жёстких круглых кистей — быстрый QPen
         if not is_pattern_stamp and mask == "round" and hardness >= 0.98 and not size_dyn and not op_dyn:
-            self._paint_fast(p1, p2, layer, color, size_base)
+            self._paint_fast(p1, p2, layer, color, size_base, doc, opts)
             return
 
         # Штамп-кисть: рисуем вдоль отрезка с шагом size/3
@@ -288,7 +291,11 @@ class BrushTool(BaseTool):
         painter.setRenderHint(QPainter.RenderHint.Antialiasing)
         if self._stroke_clip is not None:
             painter.setClipPath(self._stroke_clip)
-        painter.setCompositionMode(QPainter.CompositionMode.CompositionMode_Lighten)
+        
+        if getattr(self, "name", "") == "MixerBrush":
+            painter.setCompositionMode(QPainter.CompositionMode.CompositionMode_SourceOver)
+        else:
+            painter.setCompositionMode(QPainter.CompositionMode.CompositionMode_Lighten)
 
         for i in range(start_i, steps + 1):
             t = 0 if steps == 0 else i / steps
@@ -300,50 +307,78 @@ class BrushTool(BaseTool):
                 
             stamp = self._get_stamp(cur_size, hardness, mask)
             
-            center_x = p1.x() + dx * t
-            center_y = p1.y() + dy * t
-            # Тонируем штамп в цвет кисти
-            painter.save()
-            painter.translate(center_x, center_y)
-            current_angle = random.uniform(0, 360) if angle_random else angle
-            if current_angle != 0.0:
-                painter.rotate(current_angle)
-            painter.translate(-cur_size / 2.0, -cur_size / 2.0)
-            # Применяем alpha-маску штампа
-            colored = QImage(stamp.size(), QImage.Format.Format_ARGB32)
+            cx = p1.x() + dx * t
+            cy = p1.y() + dy * t
             
-            if pattern_pixmap and not pattern_pixmap.isNull():
-                colored.fill(Qt.GlobalColor.transparent)
-                ppat = QPainter(colored)
-                b = QBrush(pattern_pixmap)
-                xform = QTransform()
-                xform.translate(center_x, center_y)
-                if current_angle != 0.0: xform.rotate(current_angle)
-                xform.translate(-cur_size / 2.0, -cur_size / 2.0)
-                
-                brush_xform = QTransform()
-                brush_xform.scale(pattern_scale, pattern_scale)
-                brush_xform *= xform.inverted()[0]
-                b.setTransform(brush_xform)
-                
-                ppat.fillRect(colored.rect(), b)
-                if op_dyn:
-                    ppat.setCompositionMode(QPainter.CompositionMode.CompositionMode_DestinationIn)
-                    ppat.fillRect(colored.rect(), QColor(0, 0, 0, int(255 * cur_press)))
-                ppat.end()
-            else:
-                stamp_color = QColor(c)
-                if op_dyn: stamp_color.setAlpha(int(255 * cur_press))
-                colored.fill(stamp_color)
+            centers = [(cx, cy)]
+            if mirror_x: centers.extend([(doc_w - c[0], c[1]) for c in centers])
+            if mirror_y: centers.extend([(c[0], doc_h - c[1]) for c in centers])
             
-            cp = QPainter(colored)
-            cp.setCompositionMode(
-                QPainter.CompositionMode.CompositionMode_DestinationIn)
-            cp.drawImage(0, 0, stamp)
-            cp.end()
-            painter.drawImage(0, 0, colored)
-            painter.restore()
+            # dict.fromkeys убирает дубликаты (например, если рисуем прямо по оси), сохраняя порядок
+            for target_cx, target_cy in list(dict.fromkeys(centers)):
+                painter.save()
+                painter.translate(target_cx, target_cy)
+                current_angle = random.uniform(0, 360) if angle_random else angle
+                if current_angle != 0.0:
+                    painter.rotate(current_angle)
+                painter.translate(-cur_size / 2.0, -cur_size / 2.0)
+                # Применяем alpha-маску штампа
+                colored = QImage(stamp.size(), QImage.Format.Format_ARGB32)
+                
+                if pattern_pixmap and not pattern_pixmap.isNull():
+                    colored.fill(Qt.GlobalColor.transparent)
+                    ppat = QPainter(colored)
+                    b = QBrush(pattern_pixmap)
+                    xform = QTransform()
+                    xform.translate(target_cx, target_cy)
+                    if current_angle != 0.0: xform.rotate(current_angle)
+                    xform.translate(-cur_size / 2.0, -cur_size / 2.0)
+                    
+                    brush_xform = QTransform()
+                    brush_xform.scale(pattern_scale, pattern_scale)
+                    brush_xform *= xform.inverted()[0]
+                    b.setTransform(brush_xform)
+                    
+                    ppat.fillRect(colored.rect(), b)
+                    if op_dyn:
+                        ppat.setCompositionMode(QPainter.CompositionMode.CompositionMode_DestinationIn)
+                        ppat.fillRect(colored.rect(), QColor(0, 0, 0, int(255 * cur_press)))
+                    ppat.end()
+                else:
+                    stamp_color = QColor(c)
+                    if op_dyn: stamp_color.setAlpha(int(255 * cur_press))
+                    colored.fill(stamp_color)
+                
+                cp = QPainter(colored)
+                cp.setCompositionMode(QPainter.CompositionMode.CompositionMode_DestinationIn)
+                cp.drawImage(0, 0, stamp)
+                cp.end()
+                painter.drawImage(0, 0, colored)
+                painter.restore()
 
+        painter.end()
+
+    def _paint_fast(self, p1, p2, layer, color, size, doc, opts):
+        """Быстрый путь: QPen без штампа."""
+        c = QColor(color)
+        painter = QPainter(self._stroke_img)
+        if getattr(self, "name", "") != "Pencil":
+            painter.setRenderHint(QPainter.RenderHint.Antialiasing)
+        if self._stroke_clip is not None:
+            painter.setClipPath(self._stroke_clip)
+            
+        mirror_x = bool(opts.get("brush_mirror_x", False))
+        mirror_y = bool(opts.get("brush_mirror_y", False))
+        doc_w, doc_h = doc.width, doc.height
+        
+        pairs = [((p1.x(), p1.y()), (p2.x(), p2.y()))]
+        if mirror_x: pairs.extend([((doc_w - a[0], a[1]), (doc_w - b[0], b[1])) for a, b in pairs])
+        if mirror_y: pairs.extend([((a[0], doc_h - a[1]), (b[0], doc_h - b[1])) for a, b in pairs])
+        
+        pen = QPen(c, size, Qt.PenStyle.SolidLine, Qt.PenCapStyle.RoundCap, Qt.PenJoinStyle.RoundJoin)
+        painter.setPen(pen)
+        for a, b in list(dict.fromkeys(pairs)):
+            painter.drawLine(QPoint(int(a[0]), int(a[1])), QPoint(int(b[0]), int(b[1])))
         painter.end()
 
 
@@ -351,19 +386,6 @@ class PatternStampTool(BrushTool):
     name     = "PatternStamp"
     icon     = "💠"
     shortcut = "S"
-
-    def _paint_fast(self, p1, p2, layer, color, size):
-        """Быстрый путь: QPen без штампа."""
-        c = QColor(color)
-        painter = QPainter(self._stroke_img)
-        painter.setRenderHint(QPainter.RenderHint.Antialiasing)
-        if self._stroke_clip is not None:
-            painter.setClipPath(self._stroke_clip)
-        
-        pen = QPen(c, size, Qt.PenStyle.SolidLine, Qt.PenCapStyle.RoundCap, Qt.PenJoinStyle.RoundJoin)
-        painter.setPen(pen)
-        painter.drawLine(p1, p2)
-        painter.end()
 
 
 class EraserTool(BrushTool):
@@ -432,6 +454,9 @@ class CloneStampTool(BrushTool):
         angle_random = bool(opts.get("brush_angle_random", False))
         size_base = max(1, int(opts.get("brush_size", 10)))
         size_dyn = bool(opts.get("brush_size_dynamic", False))
+        mirror_x = bool(opts.get("brush_mirror_x", False))
+        mirror_y = bool(opts.get("brush_mirror_y", False))
+        doc_w, doc_h = doc.width, doc.height
 
         step  = max(1, size_base // 3)
         dx, dy = p2.x() - p1.x(), p2.y() - p1.y()
@@ -454,36 +479,101 @@ class CloneStampTool(BrushTool):
             stamp = self._get_stamp(cur_size, hardness, mask)
             
             cx, cy = p1.x() + dx * t, p1.y() + dy * t
-            src_cx, src_cy = cx - self._paint_offset.x(), cy - self._paint_offset.y()
+            
+            centers = [(cx, cy)]
+            if mirror_x: centers.extend([(doc_w - c[0], c[1]) for c in centers])
+            if mirror_y: centers.extend([(c[0], doc_h - c[1]) for c in centers])
+            
+            orig_src_cx = cx - self._paint_offset.x()
+            orig_src_cy = cy - self._paint_offset.y()
 
-            painter.save()
-            painter.translate(cx, cy)
-            current_angle = random.uniform(0, 360) if angle_random else angle
-            if current_angle != 0.0:
-                painter.setRenderHint(QPainter.RenderHint.SmoothPixmapTransform)
-                painter.rotate(current_angle)
-            painter.translate(-cur_size / 2.0, -cur_size / 2.0)
-            
-            patch = QImage(stamp.size(), QImage.Format.Format_ARGB32_Premultiplied)
-            patch.fill(Qt.GlobalColor.transparent)
-            
-            pp = QPainter(patch)
-            pp.drawImage(0, 0, stamp)
-            pp.setCompositionMode(QPainter.CompositionMode.CompositionMode_SourceIn)
-            pp.translate(cur_size / 2.0, cur_size / 2.0)
-            pp.translate(-src_cx, -src_cy)
-            pp.drawImage(0, 0, self._source_img)
-            pp.end()
-            
-            if opts.get("brush_opacity_dynamic", False):
-                alpha_mask = QImage(patch.size(), QImage.Format.Format_ARGB32_Premultiplied)
-                alpha_mask.fill(QColor(0,0,0, int(255*cur_press)))
-                pp2 = QPainter(patch)
-                pp2.setCompositionMode(QPainter.CompositionMode.CompositionMode_DestinationIn)
-                pp2.drawImage(0, 0, alpha_mask)
-                pp2.end()
-            
-            painter.drawImage(0, 0, patch)
-            painter.restore()
+            for target_cx, target_cy in list(dict.fromkeys(centers)):
+                src_cx = doc_w - orig_src_cx if target_cx != cx else orig_src_cx
+                src_cy = doc_h - orig_src_cy if target_cy != cy else orig_src_cy
+                
+                painter.save()
+                painter.translate(target_cx, target_cy)
+                current_angle = random.uniform(0, 360) if angle_random else angle
+                if current_angle != 0.0:
+                    painter.setRenderHint(QPainter.RenderHint.SmoothPixmapTransform)
+                    painter.rotate(current_angle)
+                painter.translate(-cur_size / 2.0, -cur_size / 2.0)
+                
+                patch = QImage(stamp.size(), QImage.Format.Format_ARGB32_Premultiplied)
+                patch.fill(Qt.GlobalColor.transparent)
+                
+                pp = QPainter(patch)
+                pp.drawImage(0, 0, stamp)
+                pp.setCompositionMode(QPainter.CompositionMode.CompositionMode_SourceIn)
+                pp.translate(cur_size / 2.0, cur_size / 2.0)
+                pp.translate(-src_cx, -src_cy)
+                pp.drawImage(0, 0, self._source_img)
+                pp.end()
+                
+                if opts.get("brush_opacity_dynamic", False):
+                    alpha_mask = QImage(patch.size(), QImage.Format.Format_ARGB32_Premultiplied)
+                    alpha_mask.fill(QColor(0,0,0, int(255*cur_press)))
+                    pp2 = QPainter(patch)
+                    pp2.setCompositionMode(QPainter.CompositionMode.CompositionMode_DestinationIn)
+                    pp2.drawImage(0, 0, alpha_mask)
+                    pp2.end()
+                
+                painter.drawImage(0, 0, patch)
+                painter.restore()
 
         painter.end()
+
+
+class PencilTool(BrushTool):
+    name     = "Pencil"
+    icon     = "✏️"
+    shortcut = "B"
+
+    def _get_stamp(self, size: int, hardness: float, mask) -> QImage:
+        # Карандаш всегда имеет 100% жесткость и бинарный альфа-канал
+        stamp = super()._get_stamp(size, 1.0, mask).copy()
+        ptr = stamp.bits()
+        ptr.setsize(stamp.sizeInBytes())
+        arr = np.ndarray((stamp.height(), stamp.width(), 4), dtype=np.uint8, buffer=ptr)
+        arr[arr[..., 3] < 128, 3] = 0
+        arr[arr[..., 3] >= 128, 3] = 255
+        return stamp
+
+
+class ColorReplacementTool(BrushTool):
+    name     = "ColorReplacement"
+    icon     = "🖌️🎨"
+    shortcut = "B"
+
+    def stroke_composition_mode(self, opts=None):
+        # В Qt нет нативного режима Color, используем Overlay для сохранения текстуры слоя
+        return QPainter.CompositionMode.CompositionMode_Overlay
+
+
+class MixerBrushTool(BrushTool):
+    name     = "MixerBrush"
+    icon     = "🖌️💧"
+    shortcut = "B"
+
+    def __init__(self):
+        super().__init__()
+        self._mix_color = None
+
+    def on_press(self, pos, doc, fg, bg, opts):
+        self._mix_color = QColor(fg)
+        super().on_press(pos, doc, self._mix_color, bg, opts)
+
+    def on_move(self, pos, doc, fg, bg, opts):
+        if self._last_pos and self._target_img:
+            cx, cy = pos.x(), pos.y()
+            if 0 <= cx < self._target_img.width() and 0 <= cy < self._target_img.height():
+                canvas_color = QColor(self._target_img.pixel(cx, cy))
+                if canvas_color.alpha() > 0:
+                    # Замедляем скорость смешивания для более предсказуемого результата
+                    factor = 0.05
+                    r = int(self._mix_color.red() * (1 - factor) + canvas_color.red() * factor)
+                    g = int(self._mix_color.green() * (1 - factor) + canvas_color.green() * factor)
+                    b = int(self._mix_color.blue() * (1 - factor) + canvas_color.blue() * factor)
+                    self._mix_color = QColor(r, g, b, 255)
+        
+        super().on_move(pos, doc, self._mix_color, bg, opts)

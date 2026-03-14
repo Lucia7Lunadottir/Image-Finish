@@ -23,7 +23,8 @@ from core.locale   import tr, available_languages, load as locale_load, current 
 
 # ── Tool registry ──────────────────────────────────────────────────────────────
 def _build_tool_registry(text_parent):
-    from tools.brush_tool   import BrushTool, EraserTool, CloneStampTool, PatternStampTool
+    from tools.brush_tool   import (BrushTool, EraserTool, CloneStampTool, PatternStampTool,
+                                    PencilTool, ColorReplacementTool, MixerBrushTool)
     from tools.fill_tool    import FillTool
     from tools.effect_tools import BlurTool, SharpenTool, SmudgeTool
     from tools.other_tools  import (SelectTool, MoveTool, EyedropperTool,
@@ -34,6 +35,7 @@ def _build_tool_registry(text_parent):
                                     HandTool, ZoomTool, RotateViewTool,
                                     GradientTool, PerspectiveCropTool)
     from tools.lasso_tools import LassoTool, PolygonalLassoTool, MagneticLassoTool
+    from tools.measure_tools import ColorSamplerTool, RulerTool
     from tools.advanced_erasers import MagicEraserTool, BackgroundEraserTool
     from tools.magic_wand_tool import MagicWandTool, QuickSelectionTool, ObjectSelectionTool
 
@@ -48,6 +50,9 @@ def _build_tool_registry(text_parent):
         "MagicEraser":      MagicEraserTool(),
         "CloneStamp":       CloneStampTool(),
         "PatternStamp":     PatternStampTool(),
+        "Pencil":           PencilTool(),
+        "ColorReplacement": ColorReplacementTool(),
+        "MixerBrush":       MixerBrushTool(),
         "Fill":       FillTool(),
         "Blur":       BlurTool(),
         "Sharpen":    SharpenTool(),
@@ -56,6 +61,8 @@ def _build_tool_registry(text_parent):
         "EllipseSelect": EllipticalSelectTool(),
         "Move":       MoveTool(),
         "Eyedropper": EyedropperTool(),
+        "ColorSampler": ColorSamplerTool(),
+        "Ruler":      RulerTool(),
         "Crop":       CropTool(),
         "Perspective Crop": PerspectiveCropTool(),
         "Text":       text,
@@ -451,6 +458,16 @@ class MainWindow(QMainWindow,
     def _on_opt_changed(self, key: str, value):
         if key == "reset_view_rotation":
             self._canvas.reset_rotation()
+            return
+        if key == "sampler_clear":
+            tool = self._tools.get("ColorSampler")
+            if tool: tool.markers.clear()
+            self._canvas_refresh()
+            return
+        if key == "ruler_clear":
+            tool = self._tools.get("Ruler")
+            if tool: tool.clear()
+            self._canvas_refresh()
             return
         self._canvas.tool_opts[key] = value
 

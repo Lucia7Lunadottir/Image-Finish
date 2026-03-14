@@ -9,7 +9,8 @@ from tools.other_tools import (SelectTool, CropTool, ShapesTool,
                                HandTool, ZoomTool, RotateViewTool, GradientTool, PerspectiveCropTool)
 
 # Инструменты с кистью — для них показываем кружок-курсор
-_BRUSH_TOOLS = {"Brush", "Eraser", "BackgroundEraser", "Blur", "Sharpen", "Smudge", "CloneStamp", "PatternStamp"}
+_BRUSH_TOOLS = {"Brush", "Eraser", "BackgroundEraser", "Blur", "Sharpen", "Smudge", "CloneStamp", "PatternStamp",
+                "Pencil", "ColorReplacement", "MixerBrush"}
 
 
 class CanvasWidget(QWidget):
@@ -34,6 +35,8 @@ class CanvasWidget(QWidget):
             "brush_mask":     "round",  # round | square | scatter
             "brush_blend_mode": "SourceOver",
             "brush_pattern_scale": 100,
+            "brush_mirror_x": False,
+            "brush_mirror_y": False,
             "fill_tolerance": 32,
             "fill_contiguous": True,
             "font_size":        24,
@@ -137,6 +140,19 @@ class CanvasWidget(QWidget):
         y = (widget_pos.y() - self._pan.y()) / self.zoom
         return QPoint(int(x), int(y))
 
+    def to_widget(self, doc_pos: QPoint) -> QPointF:
+        x = doc_pos.x() * self.zoom + self._pan.x()
+        y = doc_pos.y() * self.zoom + self._pan.y()
+        if self._view_rotation:
+            cx = self.width() / 2
+            cy = self.height() / 2
+            dx = x - cx
+            dy = y - cy
+            a = math.radians(self._view_rotation)
+            x = dx * math.cos(a) - dy * math.sin(a) + cx
+            y = dx * math.sin(a) + dy * math.cos(a) + cy
+        return QPointF(x, y)
+
     def _doc_rect_in_widget(self) -> QRect:
         if not self.document:
             return QRect()
@@ -234,6 +250,27 @@ class CanvasWidget(QWidget):
         painter.setPen(QPen(QColor(80, 80, 100), 1))
         painter.setBrush(Qt.BrushStyle.NoBrush)
         painter.drawRect(dr.adjusted(0, 0, -1, -1))
+
+        # 3.5. Оси симметрии (показываем, если активна кисть)
+        mirror_x = bool(self.tool_opts.get("brush_mirror_x", False))
+        mirror_y = bool(self.tool_opts.get("brush_mirror_y", False))
+        tool_name = getattr(self.active_tool, "name", "")
+        if tool_name in _BRUSH_TOOLS and (mirror_x or mirror_y):
+            painter.save()
+            painter.translate(self._pan)
+            painter.scale(self.zoom, self.zoom)
+            pw = max(1.0, 1.0 / self.zoom)
+            pen1 = QPen(QColor(0, 0, 0, 100), pw * 3)
+            pen2 = QPen(QColor(100, 200, 255, 180), pw)
+            pen2.setStyle(Qt.PenStyle.DashLine)
+            w, h = self.document.width, self.document.height
+            if mirror_x:
+                painter.setPen(pen1); painter.drawLine(QPointF(w/2, 0), QPointF(w/2, h))
+                painter.setPen(pen2); painter.drawLine(QPointF(w/2, 0), QPointF(w/2, h))
+            if mirror_y:
+                painter.setPen(pen1); painter.drawLine(QPointF(0, h/2), QPointF(w, h/2))
+                painter.setPen(pen2); painter.drawLine(QPointF(0, h/2), QPointF(w, h/2))
+            painter.restore()
 
         # 4. Выделение
         sel = self.document.selection
@@ -493,6 +530,63 @@ class CanvasWidget(QWidget):
             painter.drawLine(QPointF(crosshair.x(), crosshair.y() - r), QPointF(crosshair.x(), crosshair.y() + r))
             painter.restore()
 
+        # 8. Инструменты измерений (Пипетка-эталон и Линейка)
+        try:
+            from tools.measure_tools import ColorSamplerTool, RulerTool
+            if isinstance(self.active_tool, ColorSamplerTool):
+                painter.save()
+                painter.translate(self._pan)
+                painter.scale(self.zoom, self.zoom)
+                pw = max(1.0, 1.0 / self.zoom)
+                for pt in self.active_tool.markers:
+                    painter.setPen(QPen(QColor(0,0,0, 180), pw*3))
+                    painter.drawLine(QPointF(pt.x() - 6*pw, pt.y()), QPointF(pt.x() + 6*pw, pt.y()))
+                    painter.drawLine(QPointF(pt.x(), pt.y() - 6*pw), QPointF(pt.x(), pt.y() + 6*pw))
+                    painter.setPen(QPen(QColor(255,255,255), pw))
+                    painter.drawLine(QPointF(pt.x() - 6*pw, pt.y()), QPointF(pt.x() + 6*pw, pt.y()))
+                    painter.drawLine(QPointF(pt.x(), pt.y() - 6*pw), QPointF(pt.x(), pt.y() + 6*pw))
+                painter.restore()
+                painter.save()
+                painter.setRenderHint(QPainter.RenderHint.TextAntialiasing)
+                for i, pt in enumerate(self.active_tool.markers):
+                    c = QColor(0,0,0,0)
+                    if self._composite_cache and 0 <= pt.x() < self._composite_cache.width() and 0 <= pt.y() < self._composite_cache.height():
+                        c = QColor(self._composite_cache.pixel(pt))
+                    text = f" #{i+1} R:{c.red()} G:{c.green()} B:{c.blue()} "
+                    wp = self.to_widget(pt)
+                    tr_rect = painter.fontMetrics().boundingRect(text)
+                    tr_rect.moveTopLeft(QPoint(int(wp.x()) + 10, int(wp.y()) + 10))
+                    tr_rect.adjust(-4, -2, 4, 2)
+                    painter.fillRect(tr_rect, QColor(0, 0, 0, 180))
+                    painter.setPen(QColor(255, 255, 255))
+                    painter.drawText(tr_rect, Qt.AlignmentFlag.AlignCenter, text)
+                painter.restore()
+            elif isinstance(self.active_tool, RulerTool):
+                lines = self.active_tool.get_lines()
+                if lines:
+                    painter.save()
+                    painter.translate(self._pan); painter.scale(self.zoom, self.zoom)
+                    pw = max(1.0, 1.0 / self.zoom)
+                    for p1, p2 in lines:
+                        painter.setPen(QPen(QColor(0,0,0, 180), pw*3)); painter.drawLine(p1, p2)
+                        painter.setPen(QPen(QColor(255,255,255), pw)); painter.drawLine(p1, p2)
+                        painter.drawEllipse(QPointF(p1), 3*pw, 3*pw); painter.drawEllipse(QPointF(p2), 3*pw, 3*pw)
+                    painter.restore()
+                    painter.save()
+                    for p1, p2 in lines:
+                        dx, dy = p2.x() - p1.x(), p2.y() - p1.y()
+                        if dx == 0 and dy == 0: continue
+                        angle = math.degrees(math.atan2(-dy, dx))
+                        if angle < 0: angle += 360
+                        text = f" L: {math.hypot(dx, dy):.1f} px   A: {angle:.1f}° "
+                        wp = self.to_widget(QPoint(int((p1.x()+p2.x())/2), int((p1.y()+p2.y())/2)))
+                        tr_rect = painter.fontMetrics().boundingRect(text)
+                        tr_rect.moveTopLeft(QPoint(int(wp.x()) + 10, int(wp.y()) + 10)); tr_rect.adjust(-4, -2, 4, 2)
+                        painter.fillRect(tr_rect, QColor(0, 0, 0, 180)); painter.setPen(QColor(255, 255, 255))
+                        painter.drawText(tr_rect, Qt.AlignmentFlag.AlignCenter, text)
+                    painter.restore()
+        except ImportError: pass
+
     def _draw_brush_cursor(self, painter: QPainter):
         """Рисует кружок размером с кисть вместо системного курсора."""
         size   = int(self.tool_opts.get("brush_size", 10))
@@ -505,20 +599,34 @@ class CanvasWidget(QWidget):
             hard = 1.0
             angle = 0.0
             
-        cx = int(self._mouse_pos.x())
-        cy = int(self._mouse_pos.y())
+        # Подготавливаем список всех позиций курсоров (для симметрии)
+        mirror_x = bool(self.tool_opts.get("brush_mirror_x", False))
+        mirror_y = bool(self.tool_opts.get("brush_mirror_y", False))
+        doc_pos = self.to_doc(self._mouse_pos)
+        w, h = self.document.width, self.document.height
+        
+        centers = [(int(self._mouse_pos.x()), int(self._mouse_pos.y()))]
+        mirrors = []
+        if mirror_x: mirrors.append(QPoint(w - doc_pos.x(), doc_pos.y()))
+        if mirror_y: mirrors.append(QPoint(doc_pos.x(), h - doc_pos.y()))
+        if mirror_x and mirror_y: mirrors.append(QPoint(w - doc_pos.x(), h - doc_pos.y()))
+        
+        for m in mirrors:
+            wp = self.to_widget(m)
+            centers.append((int(wp.x()), int(wp.y())))
 
         alt_pressed = bool(self.tool_opts.get("_alt", False))
         if getattr(self.active_tool, "name", "") == "CloneStamp" and alt_pressed:
-            painter.save()
-            painter.setRenderHint(QPainter.RenderHint.Antialiasing)
-            painter.setPen(QPen(QColor(0,0,0, 180), 3))
-            painter.drawEllipse(QPointF(cx, cy), 8, 8)
-            painter.setPen(QPen(QColor(255,255,255, 220), 1.5))
-            painter.drawEllipse(QPointF(cx, cy), 8, 8)
-            painter.drawLine(int(cx)-12, int(cy), int(cx)+12, int(cy))
-            painter.drawLine(int(cx), int(cy)-12, int(cx), int(cy)+12)
-            painter.restore()
+            for ctx, cty in centers:
+                painter.save()
+                painter.setRenderHint(QPainter.RenderHint.Antialiasing)
+                painter.setPen(QPen(QColor(0,0,0, 180), 3))
+                painter.drawEllipse(QPointF(ctx, cty), 8, 8)
+                painter.setPen(QPen(QColor(255,255,255, 220), 1.5))
+                painter.drawEllipse(QPointF(ctx, cty), 8, 8)
+                painter.drawLine(ctx-12, cty, ctx+12, cty)
+                painter.drawLine(ctx, cty-12, ctx, cty+12)
+                painter.restore()
             return
 
         # Нормализация маски: QPixmap или путь к файлу -> QImage
@@ -542,12 +650,6 @@ class CanvasWidget(QWidget):
         painter.save()
         painter.setRenderHint(QPainter.RenderHint.Antialiasing)
 
-        # Применяем поворот ко всему курсору кисти
-        if angle != 0.0:
-            painter.translate(cx, cy)
-            painter.rotate(angle)
-            painter.translate(-cx, -cy)
-
         # Контур (черный и белый для контраста)
         outer_pen = QPen(QColor(0, 0, 0, 160), 1.5)
         inner_pen = QPen(QColor(255, 255, 255, 200), 1)
@@ -569,47 +671,56 @@ class CanvasWidget(QWidget):
             path.addRegion(region)
             path = path.simplified()  # Сливаем мелкие части в один контур
 
-            # 3. Центрируем и рисуем контур
             br = path.boundingRect()
-            path.translate(cx - br.center().x(), cy - br.center().y())
-
-            painter.setBrush(Qt.BrushStyle.NoBrush)
-            painter.setPen(outer_pen)
-            painter.drawPath(path)
-            painter.setPen(inner_pen)
-            painter.drawPath(path)
+            for ctx, cty in centers:
+                c_path = QPainterPath(path)
+                c_path.translate(ctx - br.center().x(), cty - br.center().y())
+                painter.save()
+                if angle != 0.0:
+                    painter.translate(ctx, cty)
+                    painter.rotate(angle)
+                    painter.translate(-ctx, -cty)
+                painter.setBrush(Qt.BrushStyle.NoBrush)
+                painter.setPen(outer_pen)
+                painter.drawPath(c_path)
+                painter.setPen(inner_pen)
+                painter.drawPath(c_path)
+                painter.restore()
 
         # --- Стандартные курсоры (круг/квадрат) ---
         else:
-            # Мягкая кисть — показываем градиентный ореол
-            if hard < 0.8 and actual_mask != "square":
-                grad = QRadialGradient(cx, cy, r)
-                grad.setColorAt(0,   QColor(255, 255, 255, 80))
-                grad.setColorAt(hard, QColor(255, 255, 255, 40))
-                grad.setColorAt(1,   QColor(255, 255, 255, 0))
-                painter.setBrush(grad)
-                painter.setPen(Qt.PenStyle.NoPen)
-                painter.drawEllipse(QPoint(cx, cy), int(r), int(r))
+            for ctx, cty in centers:
+                painter.save()
+                if angle != 0.0:
+                    painter.translate(ctx, cty)
+                    painter.rotate(angle)
+                    painter.translate(-ctx, -cty)
+                
+                if hard < 0.8 and actual_mask != "square":
+                    grad = QRadialGradient(ctx, cty, r)
+                    grad.setColorAt(0,   QColor(255, 255, 255, 80))
+                    grad.setColorAt(hard, QColor(255, 255, 255, 40))
+                    grad.setColorAt(1,   QColor(255, 255, 255, 0))
+                    painter.setBrush(grad)
+                    painter.setPen(Qt.PenStyle.NoPen)
+                    painter.drawEllipse(QPoint(ctx, cty), int(r), int(r))
 
-            # Рисуем контур
-            painter.setBrush(Qt.BrushStyle.NoBrush)
-            if actual_mask == "square":
-                rect = QRect(int(cx - r), int(cy - r), w_size, w_size)
-                painter.setPen(outer_pen)
-                painter.drawRect(rect.adjusted(1, 1, -1, -1))
-                painter.setPen(inner_pen)
-                painter.drawRect(rect)
-            else:  # round
-                painter.setPen(outer_pen)
-                painter.drawEllipse(QPoint(cx, cy), int(r) + 1, int(r) + 1)
-                painter.setPen(inner_pen)
-                painter.drawEllipse(QPoint(cx, cy), int(r), int(r))
+                painter.setBrush(Qt.BrushStyle.NoBrush)
+                if actual_mask == "square":
+                    rect = QRect(int(ctx - r), int(cty - r), w_size, w_size)
+                    painter.setPen(outer_pen); painter.drawRect(rect.adjusted(1, 1, -1, -1))
+                    painter.setPen(inner_pen); painter.drawRect(rect)
+                else:  # round
+                    painter.setPen(outer_pen); painter.drawEllipse(QPoint(ctx, cty), int(r) + 1, int(r) + 1)
+                    painter.setPen(inner_pen); painter.drawEllipse(QPoint(ctx, cty), int(r), int(r))
+                painter.restore()
 
         # Крестик в центре (только при большом размере)
         if w_size > 16:
-            painter.setPen(QPen(QColor(255, 255, 255, 180), 1))
-            painter.drawLine(cx - 3, cy, cx + 3, cy)
-            painter.drawLine(cx, cy - 3, cx, cy + 3)
+            for ctx, cty in centers:
+                painter.setPen(QPen(QColor(255, 255, 255, 180), 1))
+                painter.drawLine(ctx - 3, cty, ctx + 3, cty)
+                painter.drawLine(ctx, cty - 3, ctx, cty + 3)
 
         painter.restore()
 

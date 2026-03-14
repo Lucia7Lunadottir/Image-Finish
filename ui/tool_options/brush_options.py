@@ -1,7 +1,7 @@
 import os
 import glob
 import shutil
-from PyQt6.QtWidgets import QWidget, QHBoxLayout, QSlider, QSpinBox, QDial, QComboBox, QFileDialog, QCheckBox
+from PyQt6.QtWidgets import QWidget, QHBoxLayout, QSlider, QSpinBox, QDial, QComboBox, QFileDialog, QCheckBox, QPushButton, QLabel
 from PyQt6.QtGui import QIcon, QPixmap, QPainter, QColor, QBrush, QImage
 from PyQt6.QtCore import Qt, QSize
 from .base_options import BaseOptions
@@ -134,6 +134,25 @@ class BrushOptions(BaseOptions):
         
         self.layout.addWidget(angle_widget)
 
+        # --- Симметрия ---
+        sym_widget = QWidget()
+        sym_layout = QHBoxLayout(sym_widget)
+        sym_layout.setContentsMargins(0, 0, 0, 0)
+        self._lbl_sym = QLabel(tr("opts.symmetry"))
+        sym_layout.addWidget(self._lbl_sym)
+        self._mirror_x_btn = QPushButton("X")
+        self._mirror_x_btn.setCheckable(True)
+        self._mirror_x_btn.setFixedWidth(40)
+        self._mirror_x_btn.toggled.connect(lambda v: self.option_changed.emit("brush_mirror_x", v))
+        sym_layout.addWidget(self._mirror_x_btn)
+        self._mirror_y_btn = QPushButton("Y")
+        self._mirror_y_btn.setCheckable(True)
+        self._mirror_y_btn.setFixedWidth(40)
+        self._mirror_y_btn.toggled.connect(lambda v: self.option_changed.emit("brush_mirror_y", v))
+        sym_layout.addWidget(self._mirror_y_btn)
+        sym_layout.addStretch()
+        self.layout.addWidget(sym_widget)
+
         self.layout.addStretch()
 
     def _on_size_slider_change(self, value):
@@ -209,7 +228,7 @@ class BrushOptions(BaseOptions):
         controls = [self._size_slider, self._size_spin, self._size_dyn_cb,
                     self._opacity_slider, self._opacity_spin, self._opacity_dyn_cb,
                     self._hardness_slider, self._hardness_spin, self._angle_spin, self._angle_random_cb,
-                    self._blend_combo]
+                    self._blend_combo, self._mirror_x_btn, self._mirror_y_btn]
         for w in controls:
             w.blockSignals(True)
 
@@ -222,6 +241,8 @@ class BrushOptions(BaseOptions):
         self._hardness_spin.setValue(int(opts.get("brush_hardness", 1.0) * 100))
         self._angle_spin.setValue(int(opts.get("brush_angle", 0.0)))
         self._angle_random_cb.setChecked(opts.get("brush_angle_random", False))
+        self._mirror_x_btn.setChecked(bool(opts.get("brush_mirror_x", False)))
+        self._mirror_y_btn.setChecked(bool(opts.get("brush_mirror_y", False)))
 
         blend = opts.get("brush_blend_mode", "SourceOver")
         idx_blend = self._blend_combo.findData(blend)
@@ -254,5 +275,6 @@ class BrushOptions(BaseOptions):
         self._size_dyn_cb.setText(tr("opts.dynamic"))
         self._opacity_dyn_cb.setText(tr("opts.dynamic"))
         self._angle_random_cb.setText(tr("opts.angle_random"))
+        self._lbl_sym.setText(tr("opts.symmetry"))
         if hasattr(super(), "retranslate"):
             super().retranslate()

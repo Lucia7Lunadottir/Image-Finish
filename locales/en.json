@@ -296,6 +296,13 @@
   "tool.object_selection": "Object Selection",
   "tool.clone_stamp": "Clone Stamp",
   "tool.pattern_stamp": "Pattern Stamp",
+  "tool.pencil":      "Pencil",
+  "tool.color_replacement": "Color Replacement",
+  "tool.mixer_brush": "Mixer Brush",
+  "tool.color_sampler": "Color Sampler",
+  "tool.ruler":       "Ruler",
+  "opts.clear_markers": "Clear All",
+  "opts.clear_ruler":   "Clear",
 
   "opts.hand_hint":          "Drag to pan the canvas",
   "opts.zoom_hint":          "Click to zoom in · Alt+click to zoom out",

@@ -258,6 +258,7 @@
   "opts.dynamic":       "Динамика",
   "opts.pattern":       "Узор:",
   "opts.pattern_scale": "Масштаб узора:",
+  "opts.symmetry":      "Симметрия:",
   "opts.mask":          "Маска:",
   "opts.mask.round":    "Круглая",
   "opts.mask.square":   "Квадратная",

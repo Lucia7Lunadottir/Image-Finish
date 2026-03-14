@@ -25,6 +25,9 @@ class ToolBar(QWidget):
     _TOOL_DEFS: dict[str, _ToolDef] = {
         "Move":          _ToolDef("Move",          "✋",  "V", "tool.move"),
         "Brush":         _ToolDef("Brush",         "🖌️", "B", "tool.brush"),
+        "Pencil":        _ToolDef("Pencil",        "✏️", "B", "tool.pencil"),
+        "ColorReplacement":_ToolDef("ColorReplacement", "🖌️🎨", "B", "tool.color_replacement"),
+        "MixerBrush":    _ToolDef("MixerBrush",    "🖌️💧", "B", "tool.mixer_brush"),
         "CloneStamp":    _ToolDef("CloneStamp",    "⎘",  "S", "tool.clone_stamp"),
         "PatternStamp":  _ToolDef("PatternStamp",  "💠", "S", "tool.pattern_stamp"),
         "Eraser":        _ToolDef("Eraser",        "🧹",  "E", "tool.eraser"),
@@ -43,6 +46,8 @@ class ToolBar(QWidget):
         "TextHMask":     _ToolDef("TextHMask",     "Tm",  "",  "tool.text_h_mask"),
         "TextVMask":     _ToolDef("TextVMask",     "Vm",  "",  "tool.text_v_mask"),
         "Eyedropper":    _ToolDef("Eyedropper",    "💉",  "I", "tool.eyedropper"),
+        "ColorSampler":  _ToolDef("ColorSampler",  "🎯",  "I", "tool.color_sampler"),
+        "Ruler":         _ToolDef("Ruler",         "📏",  "I", "tool.ruler"),
         "Crop":          _ToolDef("Crop",          "✂️",  "C", "tool.crop"),
         "Perspective Crop": _ToolDef("Perspective Crop", "📐", "", "tool.perspective_crop"),
         "Hand":          _ToolDef("Hand",          "🖐",  "H", "tool.hand"),
@@ -59,7 +64,7 @@ class ToolBar(QWidget):
     # Order/structure of the toolbar. Groups behave like Photoshop dropdown tools.
     _LAYOUT = [
         "Move",
-        ("BrushGroup", ["Brush", "CloneStamp", "PatternStamp"]),
+        ("BrushGroup", ["Brush", "Pencil", "ColorReplacement", "MixerBrush", "CloneStamp", "PatternStamp"]),
         ("EraserGroup", ["Eraser", "BackgroundEraser", "MagicEraser"]),
         "Fill",
         "Gradient",
@@ -67,7 +72,7 @@ class ToolBar(QWidget):
         ("Marquee", ["Select", "EllipseSelect"]),
         "Shapes",
         ("Type", ["Text", "TextV", "TextHMask", "TextVMask"]),
-        "Eyedropper",
+        ("EyedropperGroup", ["Eyedropper", "ColorSampler", "Ruler"]),
         ("Crop", ["Crop", "Perspective Crop"]),
         ("Nav", ["Hand", "Zoom", "RotateView"]),
         ("LassoGroup", ["Lasso", "PolygonalLasso", "MagneticLasso"]),
@@ -180,6 +185,9 @@ class ToolBar(QWidget):
         btn.setToolTip(self._make_tip(td.tr_key, td.shortcut))
         btn.setPopupMode(QToolButton.ToolButtonPopupMode.MenuButtonPopup)
         btn.setSizePolicy(QSizePolicy.Policy.Fixed, QSizePolicy.Policy.Fixed)
+
+        btn.setContextMenuPolicy(Qt.ContextMenuPolicy.CustomContextMenu)
+        btn.customContextMenuRequested.connect(lambda pos, b=btn: b.menu().exec(b.mapToGlobal(pos)))
 
         menu = QMenu(btn)
         for tname in tool_names:
