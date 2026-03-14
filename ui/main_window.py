@@ -23,8 +23,7 @@ from core.locale   import tr, available_languages, load as locale_load, current 
 
 # ── Tool registry ──────────────────────────────────────────────────────────────
 def _build_tool_registry(text_parent):
-    from tools.brush_tool   import BrushTool
-    from tools.eraser_tool  import EraserTool
+    from tools.brush_tool   import BrushTool, EraserTool
     from tools.fill_tool    import FillTool
     from tools.effect_tools import BlurTool, SharpenTool, SmudgeTool
     from tools.other_tools  import (SelectTool, MoveTool, EyedropperTool,

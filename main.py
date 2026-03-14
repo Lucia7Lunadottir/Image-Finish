@@ -21,11 +21,13 @@ from ui.main_window import MainWindow
 
 _APP_DIR   = os.path.dirname(os.path.abspath(__file__))
 FONTS_DIR  = os.path.join(_APP_DIR, "fonts")
+BRUSHES_DIR = os.path.join(_APP_DIR, "brushes")
 
 
 def _load_custom_fonts():
     """Загружает все .ttf/.otf шрифты из папки fonts/."""
     os.makedirs(FONTS_DIR, exist_ok=True)
+    os.makedirs(BRUSHES_DIR, exist_ok=True)
     patterns = ("**/*.ttf", "**/*.otf", "**/*.TTF", "**/*.OTF")
     loaded = 0
     for pat in patterns:

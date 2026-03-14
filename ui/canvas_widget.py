@@ -2,8 +2,8 @@ import math
 
 from PyQt6.QtWidgets import QWidget
 from PyQt6.QtCore import Qt, QPoint, QPointF, QRect, QRectF, pyqtSignal
-from PyQt6.QtGui import (QPainter, QColor, QPixmap, QBrush,
-                         QPen, QImage, QCursor, QRadialGradient, QPainterPath, QPolygon, QPolygonF)
+from PyQt6.QtGui import (QPainter, QColor, QPixmap, QBrush, QPen, QImage, QCursor, QInputDevice,
+                         QRadialGradient, QPainterPath, QPolygon, QPolygonF, QBitmap, QRegion)
 
 from tools.other_tools import (SelectTool, CropTool, ShapesTool,
                                HandTool, ZoomTool, RotateViewTool, GradientTool, PerspectiveCropTool)
@@ -29,6 +29,8 @@ class CanvasWidget(QWidget):
             "brush_size":     10,
             "brush_opacity":  1.0,
             "brush_hardness": 1.0,   # 0.0 = мягкая, 1.0 = жёсткая
+            "brush_angle":    0.0,
+            "brush_angle_random": False,
             "brush_mask":     "round",  # round | square | scatter
             "fill_tolerance": 32,
             "font_size":        24,
@@ -340,6 +342,10 @@ class CanvasWidget(QWidget):
                 painter.save()
                 painter.translate(self._pan)
                 painter.scale(self.zoom, self.zoom)
+                
+                if hasattr(self.active_tool, "stroke_composition_mode"):
+                    painter.setCompositionMode(self.active_tool.stroke_composition_mode())
+                
                 painter.setOpacity(max(0.0, min(1.0, float(op))))
                 painter.drawImage(tl, img)
                 painter.restore()
@@ -470,46 +476,101 @@ class CanvasWidget(QWidget):
         size   = int(self.tool_opts.get("brush_size", 10))
         mask   = self.tool_opts.get("brush_mask", "round")
         hard   = float(self.tool_opts.get("brush_hardness", 1.0))
+        angle  = float(self.tool_opts.get("brush_angle", 0.0))
 
-        # Радиус в пикселях виджета
-        r = max(1, int(size * self.zoom / 2))
+        if getattr(self.active_tool, "name", "") == "BackgroundEraser":
+            mask = "round"
+            hard = 1.0
+            angle = 0.0
+
+        # Нормализация маски: QPixmap или путь к файлу -> QImage
+        actual_mask = mask
+        if isinstance(actual_mask, QPixmap):
+            actual_mask = actual_mask.toImage()
+        elif isinstance(actual_mask, str):
+            if actual_mask == "scatter":
+                from tools.brush_tool import _make_brush_stamp
+                # Генерируем реальный штамп разброса, чтобы он стал маской контура
+                actual_mask = _make_brush_stamp(size, hard, "scatter")
+            elif actual_mask not in ("round", "square"):
+                tmp = QImage(actual_mask)
+                if not tmp.isNull():
+                    actual_mask = tmp
+
+        # Размер курсора в пикселях виджета
+        w_size = max(2, int(size * self.zoom))
+        r = w_size / 2.0
         cx = int(self._mouse_pos.x())
         cy = int(self._mouse_pos.y())
 
         painter.save()
         painter.setRenderHint(QPainter.RenderHint.Antialiasing)
 
-        # Мягкая кисть — показываем градиентный ореол
-        if hard < 0.8:
-            inner_r = int(r * hard)
-            grad = QRadialGradient(cx, cy, r)
-            grad.setColorAt(0,   QColor(255, 255, 255, 80))
-            grad.setColorAt(hard, QColor(255, 255, 255, 40))
-            grad.setColorAt(1,   QColor(255, 255, 255, 0))
-            painter.setBrush(grad)
-            painter.setPen(Qt.PenStyle.NoPen)
-            painter.drawEllipse(QPoint(cx, cy), r, r)
+        # Применяем поворот ко всему курсору кисти
+        if angle != 0.0:
+            painter.translate(cx, cy)
+            painter.rotate(angle)
+            painter.translate(-cx, -cy)
 
-        # Контур кружка
+        # Контур (черный и белый для контраста)
         outer_pen = QPen(QColor(0, 0, 0, 160), 1.5)
         inner_pen = QPen(QColor(255, 255, 255, 200), 1)
 
-        if mask == "square":
-            rect = QRect(cx - r, cy - r, r * 2, r * 2)
+        # --- Курсор для кастомной кисти ---
+        if isinstance(actual_mask, QImage) and not actual_mask.isNull():
+            # 1. Масштабируем маску кисти до размера курсора
+            scaled_img = actual_mask.scaled(w_size, w_size, Qt.AspectRatioMode.KeepAspectRatio, Qt.TransformationMode.SmoothTransformation)
+
+            # 2. Превращаем форму в контур. Если картинка без прозрачности, используем эвристику.
+            if not scaled_img.hasAlphaChannel():
+                mask_img = scaled_img.createHeuristicMask()
+            else:
+                mask_img = scaled_img.createAlphaMask()
+                
+            bitmap = QBitmap.fromImage(mask_img)
+            region = QRegion(bitmap)
+            path = QPainterPath()
+            path.addRegion(region)
+            path = path.simplified()  # Сливаем мелкие части в один контур
+
+            # 3. Центрируем и рисуем контур
+            br = path.boundingRect()
+            path.translate(cx - br.center().x(), cy - br.center().y())
+
             painter.setBrush(Qt.BrushStyle.NoBrush)
             painter.setPen(outer_pen)
-            painter.drawRect(rect.adjusted(1, 1, -1, -1))
+            painter.drawPath(path)
             painter.setPen(inner_pen)
-            painter.drawRect(rect)
+            painter.drawPath(path)
+
+        # --- Стандартные курсоры (круг/квадрат) ---
         else:
+            # Мягкая кисть — показываем градиентный ореол
+            if hard < 0.8 and actual_mask != "square":
+                grad = QRadialGradient(cx, cy, r)
+                grad.setColorAt(0,   QColor(255, 255, 255, 80))
+                grad.setColorAt(hard, QColor(255, 255, 255, 40))
+                grad.setColorAt(1,   QColor(255, 255, 255, 0))
+                painter.setBrush(grad)
+                painter.setPen(Qt.PenStyle.NoPen)
+                painter.drawEllipse(QPoint(cx, cy), int(r), int(r))
+
+            # Рисуем контур
             painter.setBrush(Qt.BrushStyle.NoBrush)
-            painter.setPen(outer_pen)
-            painter.drawEllipse(QPoint(cx, cy), r + 1, r + 1)
-            painter.setPen(inner_pen)
-            painter.drawEllipse(QPoint(cx, cy), r, r)
+            if actual_mask == "square":
+                rect = QRect(int(cx - r), int(cy - r), w_size, w_size)
+                painter.setPen(outer_pen)
+                painter.drawRect(rect.adjusted(1, 1, -1, -1))
+                painter.setPen(inner_pen)
+                painter.drawRect(rect)
+            else:  # round
+                painter.setPen(outer_pen)
+                painter.drawEllipse(QPoint(cx, cy), int(r) + 1, int(r) + 1)
+                painter.setPen(inner_pen)
+                painter.drawEllipse(QPoint(cx, cy), int(r), int(r))
 
         # Крестик в центре (только при большом размере)
-        if r > 8:
+        if w_size > 16:
             painter.setPen(QPen(QColor(255, 255, 255, 180), 1))
             painter.drawLine(cx - 3, cy, cx + 3, cy)
             painter.drawLine(cx, cy - 3, cx, cy + 3)
@@ -517,6 +578,10 @@ class CanvasWidget(QWidget):
         painter.restore()
 
     # ──────────────────────────────────────── мышь
+    def tabletEvent(self, ev):
+        self.tool_opts["_pressure"] = ev.pressure()
+        ev.ignore()
+
     def mousePressEvent(self, ev):
         if not self.document:
             return
@@ -528,6 +593,9 @@ class CanvasWidget(QWidget):
             self._pan_last = ev.position()
             self.setCursor(Qt.CursorShape.ClosedHandCursor)
             return
+
+        if hasattr(ev, "device") and ev.device().type() == QInputDevice.DeviceType.Mouse:
+            self.tool_opts["_pressure"] = 1.0
 
         if ev.button() == Qt.MouseButton.LeftButton:
             if isinstance(self.active_tool, HandTool):
@@ -582,6 +650,9 @@ class CanvasWidget(QWidget):
                 self.document_changed.emit()
 
     def mouseMoveEvent(self, ev):
+        if hasattr(ev, "device") and ev.device().type() == QInputDevice.DeviceType.Mouse:
+            self.tool_opts["_pressure"] = 1.0
+
         self._mouse_pos = ev.position()
 
         if self._panning and self._pan_last is not None:
