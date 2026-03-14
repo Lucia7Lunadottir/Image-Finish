@@ -11,6 +11,10 @@ class Layer:
         self.name = name
         self.visible: bool = True
         self.locked: bool = False
+        self.lock_alpha: bool = False
+        self.mask: QImage | None = None
+        self.mask_enabled: bool = True
+        self.editing_mask: bool = False
         self.opacity: float = 1.0
         self.blend_mode: str = "Normal"
         self.offset: QPoint = QPoint(0, 0)
@@ -36,6 +40,13 @@ class Layer:
         clone.name = self.name
         clone.visible = self.visible
         clone.locked = self.locked
+        clone.lock_alpha = getattr(self, "lock_alpha", False)
+        if getattr(self, "mask", None) is not None:
+            clone.mask = self.mask.copy()
+        else:
+            clone.mask = None
+        clone.mask_enabled = getattr(self, "mask_enabled", True)
+        clone.editing_mask = getattr(self, "editing_mask", False)
         clone.opacity = self.opacity
         clone.blend_mode = self.blend_mode
         clone.offset = QPoint(self.offset)

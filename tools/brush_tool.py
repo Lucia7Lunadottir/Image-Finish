@@ -1,4 +1,5 @@
 import math, random
+import numpy as np
 from PyQt6.QtGui import (QPainter, QColor, QPen, QRadialGradient, QBrush,
                          QImage, QPixmap)
 from PyQt6.QtCore import QPoint, QPointF, Qt, QRect
@@ -94,6 +95,7 @@ class BrushTool(BaseTool):
         self._last_pressure: float = 1.0
         self._stamp_cache: dict = {}  # key: (size, hardness, mask), val: QImage
         self._stroke_layer = None
+        self._target_img: QImage | None = None
         self._stroke_img: QImage | None = None
         self._stroke_opacity: float = 1.0
         self._stroke_clip = None  # QPainterPath | None
@@ -105,7 +107,13 @@ class BrushTool(BaseTool):
             return
         self._last_pressure = float(opts.get("_pressure", 1.0))
         self._stroke_layer = layer
-        self._stroke_img = QImage(layer.image.size(), QImage.Format.Format_ARGB32_Premultiplied)
+        
+        if getattr(layer, "editing_mask", False) and getattr(layer, "mask", None) is not None:
+            self._target_img = layer.mask
+        else:
+            self._target_img = layer.image
+            
+        self._stroke_img = QImage(self._target_img.size(), QImage.Format.Format_ARGB32_Premultiplied)
         self._stroke_img.fill(Qt.GlobalColor.transparent)
         self._stroke_opacity = float(opts.get("brush_opacity", 1.0))
         sel = doc.selection
@@ -121,17 +129,39 @@ class BrushTool(BaseTool):
 
     def on_release(self, pos, doc, fg, bg, opts):
         # Apply stroke buffer once (opacity per stroke)
-        if self._stroke_layer and self._stroke_img is not None and not self._stroke_layer.locked:
-            painter = QPainter(self._stroke_layer.image)
+        layer = self._stroke_layer
+        if layer and self._stroke_img is not None and not layer.locked:
+            target = self._target_img
+            lock_a = getattr(layer, "lock_alpha", False) and target is layer.image
+            
+            if lock_a:
+                w, h = target.width(), target.height()
+                ptr = target.bits()
+                ptr.setsize(target.sizeInBytes())
+                arr = np.ndarray((h, w, 4), dtype=np.uint8, buffer=ptr)
+                orig_alpha = arr[..., 3].copy()
+
+            painter = QPainter(target)
             painter.setRenderHint(QPainter.RenderHint.Antialiasing)
             if self._stroke_clip is not None:
                 painter.setClipPath(self._stroke_clip)
-            painter.setCompositionMode(self.stroke_composition_mode())
+            painter.setCompositionMode(self.stroke_composition_mode(opts))
             painter.setOpacity(max(0.0, min(1.0, float(self._stroke_opacity))))
             painter.drawImage(0, 0, self._stroke_img)
             painter.end()
+
+            if lock_a:
+                new_alpha = arr[..., 3].astype(np.float32)
+                new_alpha[new_alpha == 0] = 1.0 
+                ratio = orig_alpha.astype(np.float32) / new_alpha
+                arr[..., 0] = np.clip(arr[..., 0] * ratio, 0, 255).astype(np.uint8)
+                arr[..., 1] = np.clip(arr[..., 1] * ratio, 0, 255).astype(np.uint8)
+                arr[..., 2] = np.clip(arr[..., 2] * ratio, 0, 255).astype(np.uint8)
+                arr[..., 3] = orig_alpha
+
         self._last_pos = None
         self._stroke_layer = None
+        self._target_img = None
         self._stroke_img = None
         self._stroke_clip = None
         self._stroke_opacity = 1.0
@@ -142,8 +172,24 @@ class BrushTool(BaseTool):
             return None
         return (self._stroke_img, QPoint(0, 0), float(self._stroke_opacity))
 
-    def stroke_composition_mode(self):
-        return QPainter.CompositionMode.CompositionMode_SourceOver
+    def stroke_composition_mode(self, opts=None):
+        if opts is None: opts = {}
+        mode_str = opts.get("brush_blend_mode", "SourceOver")
+        mapping = {
+            "SourceOver": QPainter.CompositionMode.CompositionMode_SourceOver,
+            "Multiply": QPainter.CompositionMode.CompositionMode_Multiply,
+            "Screen": QPainter.CompositionMode.CompositionMode_Screen,
+            "Overlay": QPainter.CompositionMode.CompositionMode_Overlay,
+            "Darken": QPainter.CompositionMode.CompositionMode_Darken,
+            "Lighten": QPainter.CompositionMode.CompositionMode_Lighten,
+            "ColorDodge": QPainter.CompositionMode.CompositionMode_ColorDodge,
+            "ColorBurn": QPainter.CompositionMode.CompositionMode_ColorBurn,
+            "HardLight": QPainter.CompositionMode.CompositionMode_HardLight,
+            "SoftLight": QPainter.CompositionMode.CompositionMode_SoftLight,
+            "Difference": QPainter.CompositionMode.CompositionMode_Difference,
+            "Exclusion": QPainter.CompositionMode.CompositionMode_Exclusion,
+        }
+        return mapping.get(mode_str, QPainter.CompositionMode.CompositionMode_SourceOver)
 
     def _get_stamp(self, size: int, hardness: float, mask) -> QImage:
         """
@@ -290,5 +336,5 @@ class EraserTool(BrushTool):
     icon     = "🧽"
     shortcut = "E"
 
-    def stroke_composition_mode(self):
+    def stroke_composition_mode(self, opts=None):
         return QPainter.CompositionMode.CompositionMode_DestinationOut

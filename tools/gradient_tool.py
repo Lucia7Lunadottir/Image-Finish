@@ -1,4 +1,5 @@
 import math
+import numpy as np
 
 from PyQt6.QtCore import QPoint, QPointF, QRectF, Qt
 from PyQt6.QtGui import (QPainter, QColor, QLinearGradient,
@@ -55,16 +56,40 @@ class GradientTool(BaseTool):
         if reverse:
             # Инвертируем позиции и порядок: точка на 0.1 станет 0.9 и т.д.
             stops = [(1.0 - pos, color) for pos, color in reversed(stops)]
+            
+        if getattr(layer, "editing_mask", False) and getattr(layer, "mask", None) is not None:
+            target_img = layer.mask
+            lock_a = False
+        else:
+            target_img = layer.image
+            lock_a = getattr(layer, "lock_alpha", False)
+            
+        if lock_a:
+            w, h = target_img.width(), target_img.height()
+            ptr = target_img.bits()
+            ptr.setsize(target_img.sizeInBytes())
+            arr = np.ndarray((h, w, 4), dtype=np.uint8, buffer=ptr)
+            orig_alpha = arr[..., 3].copy()
 
-        painter = QPainter(layer.image)
+        painter = QPainter(target_img)
         painter.setOpacity(opacity)
         if doc.selection and not doc.selection.isEmpty():
             painter.setClipPath(doc.selection)
 
         self._apply_gradient(painter, gtype,
-                             layer.image.width(), layer.image.height(),
+                             target_img.width(), target_img.height(),
                              sx, sy, ex, ey, stops)
         painter.end()
+        
+        if lock_a:
+            new_alpha = arr[..., 3].astype(np.float32)
+            new_alpha[new_alpha == 0] = 1.0 
+            ratio = orig_alpha.astype(np.float32) / new_alpha
+            arr[..., 0] = np.clip(arr[..., 0] * ratio, 0, 255).astype(np.uint8)
+            arr[..., 1] = np.clip(arr[..., 1] * ratio, 0, 255).astype(np.uint8)
+            arr[..., 2] = np.clip(arr[..., 2] * ratio, 0, 255).astype(np.uint8)
+            arr[..., 3] = orig_alpha
+            
         self._start = None
 
     @staticmethod
