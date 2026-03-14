@@ -102,6 +102,29 @@ class EditActionsMixin:
             self._document.selection = full_rect.subtracted(sel)
             self._canvas_refresh()
 
+    def _color_range(self):
+        layer = self._document.get_active_layer()
+        if not layer or layer.image.isNull():
+            return
+        
+        from core.history import HistoryState
+        pre_state = HistoryState(
+            description=tr("history.color_range"),
+            layers_snapshot=self._document.snapshot_layers(),
+            active_layer_index=self._document.active_layer_index,
+            doc_width=self._document.width,
+            doc_height=self._document.height,
+            selection_snapshot=QPainterPath(self._document.selection) if self._document.selection else None,
+        )
+        
+        from ui.color_range_dialog import ColorRangeDialog
+        dlg = ColorRangeDialog(self._document, self._canvas_refresh, self)
+        if dlg.exec():
+            self._history.push(pre_state)
+        else:
+            self._document.selection = pre_state.selection_snapshot
+            self._canvas_refresh()
+
     def _cut(self):
         self._copy()
         layer = self._document.get_active_layer()

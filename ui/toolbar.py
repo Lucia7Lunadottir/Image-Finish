@@ -50,7 +50,8 @@ class ToolBar(QWidget):
         "PolygonalLasso": _ToolDef("PolygonalLasso", "⬡",  "",  "tool.poly_lasso"),
         "MagneticLasso":  _ToolDef("MagneticLasso",  "🧲", "",  "tool.mag_lasso"),
         "MagicWand":     _ToolDef("MagicWand",     "🪄", "W", "tool.magic_wand"),
-
+        "QuickSelection": _ToolDef("QuickSelection", "🖌️✨", "W", "tool.quick_selection"),
+        "ObjectSelection":_ToolDef("ObjectSelection", "📦",  "W", "tool.object_selection"),
     }
 
     # Order/structure of the toolbar. Groups behave like Photoshop dropdown tools.
@@ -68,7 +69,7 @@ class ToolBar(QWidget):
         ("Crop", ["Crop", "Perspective Crop"]),
         ("Nav", ["Hand", "Zoom", "RotateView"]),
         ("LassoGroup", ["Lasso", "PolygonalLasso", "MagneticLasso"]),
-        ("WandGroup", ["MagicWand"]), # Можно будет потом добавить сюда Quick Selection
+        ("WandGroup", ["MagicWand", "QuickSelection", "ObjectSelection"]),
     ]
 
     def __init__(self, parent=None):

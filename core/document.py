@@ -100,6 +100,7 @@ class Document:
         self.layers: list[Layer] = []
         self.active_layer_index: int = 0
         self.selection: QPainterPath | None = None  # active selection (may be non-rectangular)
+        self.quick_mask_layer: Layer | None = None
 
         # Create default background layer
         bg = bg_color if bg_color else QColor(255, 255, 255)
@@ -143,6 +144,8 @@ class Document:
         self.active_layer_index = to_index
 
     def get_active_layer(self) -> Layer | None:
+        if getattr(self, "quick_mask_layer", None) is not None:
+            return self.quick_mask_layer
         if self.layers and 0 <= self.active_layer_index < len(self.layers):
             return self.layers[self.active_layer_index]
         return None
@@ -153,10 +156,17 @@ class Document:
         result.fill(Qt.GlobalColor.transparent)
 
         painter = QPainter(result)
+        current_clip_alpha = None
+        
         for layer in self.layers:  # bottom → top
             if not layer.visible:
                 continue
+                
             ltype = getattr(layer, "layer_type", "raster")
+            is_clipping = getattr(layer, "clipping", False)
+            
+            if is_clipping and current_clip_alpha is None:
+                continue
 
             if ltype == "adjustment":
                 painter.end()
@@ -194,6 +204,9 @@ class Document:
                     v_arr = np.ndarray((backup.height(), vmask_img.bytesPerLine()), dtype=np.uint8, buffer=v_ptr)
                     vmask_f = v_arr[:backup.height(), :backup.width()].astype(np.float32) / 255.0
                     frac *= vmask_f
+                    
+                if is_clipping and current_clip_alpha is not None:
+                    frac *= current_clip_alpha
                 
                 frac_4 = frac[..., np.newaxis]
                 
@@ -205,60 +218,78 @@ class Document:
                     arr_a[:backup.height(), :backup.width(), :] * frac_4
                 ).astype(np.uint8)
                 
+                if not is_clipping:
+                    current_clip_alpha = None
+                
                 painter = QPainter(result)
 
-            elif ltype == "fill":
-                fill_img = _render_fill_layer(layer, self.width, self.height)
-                
-                if getattr(layer, "mask", None) is not None and getattr(layer, "mask_enabled", True):
-                    import numpy as np
-                    ptr = fill_img.bits(); ptr.setsize(fill_img.sizeInBytes())
-                    bpl = fill_img.bytesPerLine()
-                    arr_full = np.ndarray((self.height, bpl // 4, 4), dtype=np.uint8, buffer=ptr)
-                    arr = arr_full[:, :self.width, :]
-                    
-                    m_ptr = layer.mask.bits(); m_ptr.setsize(layer.mask.sizeInBytes())
-                    m_bpl = layer.mask.bytesPerLine()
-                    m_arr_full = np.ndarray((layer.mask.height(), m_bpl // 4, 4), dtype=np.uint8, buffer=m_ptr)
-                    m_arr = m_arr_full[:, :self.width, :]
-                    
-                    mask_f = (m_arr[..., 1].astype(np.float32) / 255.0) * (m_arr[..., 3].astype(np.float32) / 255.0)
-                    arr[..., 0] = (arr[..., 0] * mask_f).astype(np.uint8)
-                    arr[..., 1] = (arr[..., 1] * mask_f).astype(np.uint8)
-                    arr[..., 2] = (arr[..., 2] * mask_f).astype(np.uint8)
-                    arr[..., 3] = (arr[..., 3] * mask_f).astype(np.uint8)
-                
-                painter.save()
-                if getattr(layer, "vector_mask", None) is not None and getattr(layer, "vector_mask_enabled", True):
-                    painter.setClipPath(layer.vector_mask)
-                painter.setCompositionMode(_get_composition_mode(getattr(layer, "blend_mode", "SourceOver")))
-                painter.setOpacity(layer.opacity)
-                painter.drawImage(layer.offset, fill_img)
-                painter.restore()
-
             else:
-                img_to_draw = layer.image
-                if getattr(layer, "mask", None) is not None and getattr(layer, "mask_enabled", True):
+                if ltype == "fill":
+                    img_to_draw = _render_fill_layer(layer, self.width, self.height)
+                    img_to_draw.is_copy = True
+                else:
+                    img_to_draw = layer.image
+
+                has_mask = getattr(layer, "mask", None) is not None and getattr(layer, "mask_enabled", True)
+                
+                if (has_mask or is_clipping) and not getattr(img_to_draw, "is_copy", False):
+                    img_to_draw = img_to_draw.copy()
+                    img_to_draw.is_copy = True
+
+                if has_mask or is_clipping:
                     import numpy as np
-                    ptr = layer.image.bits(); ptr.setsize(layer.image.sizeInBytes())
-                    bpl = layer.image.bytesPerLine()
-                    arr_full = np.ndarray((layer.height(), bpl // 4, 4), dtype=np.uint8, buffer=ptr).copy()
-                    arr = arr_full[:, :layer.width(), :]
+                    ptr = img_to_draw.bits(); ptr.setsize(img_to_draw.sizeInBytes())
+                    bpl = img_to_draw.bytesPerLine()
+                    arr_full = np.ndarray((img_to_draw.height(), bpl // 4, 4), dtype=np.uint8, buffer=ptr)
+                    arr = arr_full[:, :img_to_draw.width(), :]
+
+                    if has_mask:
+                        m_ptr = layer.mask.bits(); m_ptr.setsize(layer.mask.sizeInBytes())
+                        m_bpl = layer.mask.bytesPerLine()
+                        m_arr_full = np.ndarray((layer.mask.height(), m_bpl // 4, 4), dtype=np.uint8, buffer=m_ptr)
+                        m_arr = m_arr_full[:, :img_to_draw.width(), :]
+                        
+                        mask_f = (m_arr[..., 1].astype(np.float32) / 255.0) * (m_arr[..., 3].astype(np.float32) / 255.0)
+                        arr[..., 0] = (arr[..., 0] * mask_f).astype(np.uint8)
+                        arr[..., 1] = (arr[..., 1] * mask_f).astype(np.uint8)
+                        arr[..., 2] = (arr[..., 2] * mask_f).astype(np.uint8)
+                        arr[..., 3] = (arr[..., 3] * mask_f).astype(np.uint8)
+                        
+                    if is_clipping:
+                        ox, oy = layer.offset.x(), layer.offset.y()
+                        w, h = img_to_draw.width(), img_to_draw.height()
+                        dx1, dy1 = max(0, ox), max(0, oy)
+                        dx2, dy2 = min(self.width, ox + w), min(self.height, oy + h)
+                        
+                        clip_mask = np.zeros((h, w), dtype=np.float32)
+                        if dx1 < dx2 and dy1 < dy2:
+                            sx1, sy1 = dx1 - ox, dy1 - oy
+                            sx2, sy2 = sx1 + (dx2 - dx1), sy1 + (dy2 - dy1)
+                            clip_mask[sy1:sy2, sx1:sx2] = current_clip_alpha[dy1:dy2, dx1:dx2]
+                            
+                        arr[..., 0] = (arr[..., 0] * clip_mask).astype(np.uint8)
+                        arr[..., 1] = (arr[..., 1] * clip_mask).astype(np.uint8)
+                        arr[..., 2] = (arr[..., 2] * clip_mask).astype(np.uint8)
+                        arr[..., 3] = (arr[..., 3] * clip_mask).astype(np.uint8)
+
+                    img_to_draw = QImage(arr_full.data, img_to_draw.width(), img_to_draw.height(), bpl, QImage.Format.Format_ARGB32_Premultiplied)
+                    img_to_draw.ndarr = arr_full
+
+                if not is_clipping:
+                    import numpy as np
+                    base_alpha_img = QImage(self.width, self.height, QImage.Format.Format_ARGB32_Premultiplied)
+                    base_alpha_img.fill(0)
+                    ap = QPainter(base_alpha_img)
+                    if getattr(layer, "vector_mask", None) is not None and getattr(layer, "vector_mask_enabled", True):
+                        ap.setClipPath(layer.vector_mask)
+                    ap.setOpacity(layer.opacity)
+                    ap.drawImage(layer.offset, img_to_draw)
+                    ap.end()
                     
-                    m_ptr = layer.mask.bits(); m_ptr.setsize(layer.mask.sizeInBytes())
-                    m_bpl = layer.mask.bytesPerLine()
-                    m_arr_full = np.ndarray((layer.mask.height(), m_bpl // 4, 4), dtype=np.uint8, buffer=m_ptr)
-                    m_arr = m_arr_full[:, :layer.width(), :]
-                    
-                    mask_f = (m_arr[..., 1].astype(np.float32) / 255.0) * (m_arr[..., 3].astype(np.float32) / 255.0)
-                    arr[..., 0] = (arr[..., 0] * mask_f).astype(np.uint8)
-                    arr[..., 1] = (arr[..., 1] * mask_f).astype(np.uint8)
-                    arr[..., 2] = (arr[..., 2] * mask_f).astype(np.uint8)
-                    arr[..., 3] = (arr[..., 3] * mask_f).astype(np.uint8)
-                    
-                    img_to_draw = QImage(arr_full.data, layer.width(), layer.height(), bpl, QImage.Format.Format_ARGB32_Premultiplied)
-                    img_to_draw.ndarr = arr_full  # держим ссылку на массив в памяти
-                    
+                    ptr = base_alpha_img.bits(); ptr.setsize(base_alpha_img.sizeInBytes())
+                    arr_alpha = np.ndarray((self.height, base_alpha_img.bytesPerLine() // 4, 4), dtype=np.uint8, buffer=ptr)
+                    current_clip_alpha = arr_alpha[:, :self.width, 3].astype(np.float32) / 255.0
+
                 painter.save()
                 if getattr(layer, "vector_mask", None) is not None and getattr(layer, "vector_mask_enabled", True):
                     painter.setClipPath(layer.vector_mask)
@@ -269,11 +300,36 @@ class Document:
 
         if painter.isActive():
             painter.end()
+            
+        if getattr(self, "quick_mask_layer", None) is not None:
+            qm = self.quick_mask_layer.image
+            import numpy as np
+            ptr = qm.bits(); ptr.setsize(qm.sizeInBytes())
+            bpl = qm.bytesPerLine()
+            arr = np.ndarray((qm.height(), bpl // 4, 4), dtype=np.uint8, buffer=ptr)[:, :self.width, :]
+            
+            # Чёрный цвет (или альфа=0) станет красной плёнкой, белый — прозрачным
+            gray = 0.299*arr[..., 2] + 0.587*arr[..., 1] + 0.114*arr[..., 0]
+            mask_val = (255 - gray) * (arr[..., 3] / 255.0)
+            
+            red_overlay = np.zeros((qm.height(), self.width, 4), dtype=np.uint8)
+            red_overlay[..., 2] = 255 # R
+            red_overlay[..., 3] = (mask_val * 0.5).astype(np.uint8) # A
+            
+            red_img = QImage(red_overlay.data, self.width, qm.height(), self.width*4, QImage.Format.Format_ARGB32_Premultiplied)
+            red_img.ndarr = red_overlay # Защита от сборщика мусора
+            p2 = QPainter(result)
+            p2.drawImage(0, 0, red_img)
+            p2.end()
+            
         return result
 
     # ----------------------------------------------------------------- History
     def snapshot_layers(self) -> list[Layer]:
-        return [layer.copy() for layer in self.layers]
+        snap = [layer.copy() for layer in self.layers]
+        if getattr(self, "quick_mask_layer", None) is not None:
+            snap.append(self.quick_mask_layer.copy())
+        return snap
 
     def apply_layer_mask(self, layer):
         if getattr(layer, "mask", None) is None: return
@@ -298,14 +354,21 @@ class Document:
         layer.editing_mask = False
 
     def restore_layers(self, snapshot: list[Layer]):
-        self.layers = [layer.copy() for layer in snapshot]
+        self.layers = []
+        self.quick_mask_layer = None
+        for layer in snapshot:
+            if getattr(layer, "is_quick_mask", False):
+                self.quick_mask_layer = layer.copy()
+            else:
+                self.layers.append(layer.copy())
 
     # ------------------------------------------------------------------- Crop
     def apply_crop(self, rect: QRect):
         if rect.isEmpty():
             return
         tl = rect.topLeft()
-        for layer in self.layers:
+        all_layers = self.layers + ([self.quick_mask_layer] if getattr(self, "quick_mask_layer", None) else [])
+        for layer in all_layers:
             new_img = QImage(rect.width(), rect.height(), QImage.Format.Format_ARGB32_Premultiplied)
             new_img.fill(Qt.GlobalColor.transparent)
             p = QPainter(new_img)
@@ -360,7 +423,8 @@ class Document:
             QPointF(0, new_h)
         ])
 
-        for layer in self.layers:
+        all_layers = self.layers + ([self.quick_mask_layer] if getattr(self, "quick_mask_layer", None) else [])
+        for layer in all_layers:
             new_img = QImage(new_w, new_h, QImage.Format.Format_ARGB32_Premultiplied)
             new_img.fill(Qt.GlobalColor.transparent)
 

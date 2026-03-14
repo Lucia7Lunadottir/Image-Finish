@@ -35,7 +35,7 @@ def _build_tool_registry(text_parent):
                                     GradientTool, PerspectiveCropTool)
     from tools.lasso_tools import LassoTool, PolygonalLassoTool, MagneticLassoTool
     from tools.advanced_erasers import MagicEraserTool, BackgroundEraserTool
-    from tools.magic_wand_tool import MagicWandTool
+    from tools.magic_wand_tool import MagicWandTool, QuickSelectionTool, ObjectSelectionTool
 
     text = TextTool();  text._parent_widget  = text_parent
     textv = VerticalTypeTool(); textv._parent_widget = text_parent
@@ -69,6 +69,8 @@ def _build_tool_registry(text_parent):
         "PolygonalLasso": PolygonalLassoTool(),
         "MagneticLasso":  MagneticLassoTool(),
         "MagicWand": MagicWandTool(),
+        "QuickSelection": QuickSelectionTool(),
+        "ObjectSelection": ObjectSelectionTool(),
     }
 
 
@@ -179,6 +181,9 @@ class MainWindow(QMainWindow,
         self._act(select_m, "menu.deselect",   self._deselect,   QKeySequence("Ctrl+D"))
         self._act(select_m, "menu.reselect",   self._reselect,   QKeySequence("Shift+Ctrl+D"))
         self._act(select_m, "menu.inverse",    self._inverse_selection, QKeySequence("Shift+Ctrl+I"))
+        select_m.addSeparator()
+        self._act(select_m, "menu.color_range", self._color_range)
+        self._act(select_m, "menu.quick_mask", self._toggle_quick_mask, QKeySequence("Q"))
         edit_m.addSeparator()
         self._act(edit_m, "menu.fill_fg", self._fill_fg, QKeySequence("Alt+Delete"))
         self._act(edit_m, "menu.fill_bg", self._fill_bg, QKeySequence("Ctrl+Delete"))
@@ -232,6 +237,7 @@ class MainWindow(QMainWindow,
         self._act(layer_m, "menu.duplicate_layer", self._duplicate_layer, QKeySequence("Ctrl+J"))
         self._act(layer_m, "menu.delete_layer",    self._delete_layer)
         layer_m.addSeparator()
+        self._act(layer_m, "menu.create_clipping", self._toggle_clipping_mask, QKeySequence("Ctrl+Alt+G"))
 
         adj_m = self._menu(layer_m, "menu.new_adj_layer")
         self._act(adj_m, "menu.new_adj_bc",     lambda: self._new_adj_layer("brightness_contrast"))
@@ -372,6 +378,8 @@ class MainWindow(QMainWindow,
             self._layers_panel.layer_add_vector_mask.connect(self._add_vector_mask)
             self._layers_panel.layer_delete_vector_mask.connect(self._delete_vector_mask)
             self._layers_panel.layer_vmask_toggled.connect(self._on_layer_vmask_toggled)
+        if hasattr(self._layers_panel, "layer_clipping_toggled"):
+            self._layers_panel.layer_clipping_toggled.connect(self._on_layer_clipping_toggled)
         self._layers_panel.layer_merged_down.connect(self._merge_down)
         self._layers_panel.layer_flatten.connect(self._flatten)
         self._layers_panel.layer_edit.connect(self._on_edit_layer)
@@ -447,16 +455,16 @@ class MainWindow(QMainWindow,
     def _on_layer_blend_mode(self, mode: str):
         layer = self._document.get_active_layer()
         if layer and getattr(layer, "blend_mode", "SourceOver") != mode:
-            self._push_history(tr("history.layer_blend"))
             layer.blend_mode = mode
+            self._push_history(tr("history.layer_blend"))
             self._canvas_refresh()
 
     def _on_layer_alpha_locked(self, index: int, locked: bool):
         if 0 <= index < len(self._document.layers):
             layer = self._document.layers[index]
             if getattr(layer, "lock_alpha", False) != locked:
-                self._push_history(tr("history.lock_alpha"))
                 layer.lock_alpha = locked
+                self._push_history(tr("history.lock_alpha"))
                 self._refresh_layers()
 
     def _on_layer_target_changed(self, index: int, target: str):
@@ -470,15 +478,14 @@ class MainWindow(QMainWindow,
         if 0 <= index < len(self._document.layers):
             layer = self._document.layers[index]
             if getattr(layer, "mask", None) is not None:
-                self._push_history(tr("history.toggle_mask"))
                 layer.mask_enabled = not getattr(layer, "mask_enabled", True)
+                self._push_history(tr("history.toggle_mask"))
                 self._refresh_layers()
                 self._canvas_refresh()
 
     def _add_vector_mask(self):
         layer = self._document.get_active_layer()
         if layer and getattr(layer, "vector_mask", None) is None:
-            self._push_history(tr("history.add_vector_mask"))
             if self._document.selection and not self._document.selection.isEmpty():
                 layer.vector_mask = QPainterPath(self._document.selection)
             else:
@@ -486,14 +493,15 @@ class MainWindow(QMainWindow,
                 path.addRect(QRectF(0, 0, self._document.width, self._document.height))
                 layer.vector_mask = path
             layer.vector_mask_enabled = True
+            self._push_history(tr("history.add_vector_mask"))
             self._refresh_layers()
             self._canvas_refresh()
 
     def _delete_vector_mask(self):
         layer = self._document.get_active_layer()
         if layer and getattr(layer, "vector_mask", None) is not None:
-            self._push_history(tr("history.delete_vector_mask"))
             layer.vector_mask = None
+            self._push_history(tr("history.delete_vector_mask"))
             self._refresh_layers()
             self._canvas_refresh()
 
@@ -501,44 +509,56 @@ class MainWindow(QMainWindow,
         if 0 <= index < len(self._document.layers):
             layer = self._document.layers[index]
             if getattr(layer, "vector_mask", None) is not None:
-                self._push_history(tr("history.toggle_vector_mask"))
                 layer.vector_mask_enabled = not getattr(layer, "vector_mask_enabled", True)
+                self._push_history(tr("history.toggle_vector_mask"))
                 self._refresh_layers()
                 self._canvas_refresh()
+                
+    def _toggle_clipping_mask(self):
+        if self._document and self._document.get_active_layer():
+            self._on_layer_clipping_toggled(self._document.active_layer_index)
+            
+    def _on_layer_clipping_toggled(self, index: int):
+        if 0 < index < len(self._document.layers): # Нельзя применить к самому нижнему слою
+            layer = self._document.layers[index]
+            self._push_history(tr("history.clipping_mask"))
+            layer.clipping = not getattr(layer, "clipping", False)
+            self._refresh_layers()
+            self._canvas_refresh()
 
     def _add_mask(self):
         layer = self._document.get_active_layer()
         if layer and getattr(layer, "mask", None) is None:
-            self._push_history(tr("history.add_mask"))
             from PyQt6.QtGui import QImage, QColor
             layer.mask = QImage(layer.width(), layer.height(), QImage.Format.Format_ARGB32_Premultiplied)
             layer.mask.fill(QColor(255, 255, 255))
             layer.editing_mask = True
+            self._push_history(tr("history.add_mask"))
             self._refresh_layers()
             self._canvas_refresh()
 
     def _delete_mask(self):
         layer = self._document.get_active_layer()
         if layer and getattr(layer, "mask", None) is not None:
-            self._push_history(tr("history.delete_mask"))
             layer.mask = None
             layer.editing_mask = False
+            self._push_history(tr("history.delete_mask"))
             self._refresh_layers()
             self._canvas_refresh()
 
     def _apply_mask(self):
         layer = self._document.get_active_layer()
         if layer and getattr(layer, "mask", None) is not None:
-            self._push_history(tr("history.apply_mask"))
             self._document.apply_layer_mask(layer)
+            self._push_history(tr("history.apply_mask"))
             self._refresh_layers()
             self._canvas_refresh()
 
     def _invert_mask(self):
         layer = self._document.get_active_layer()
         if layer and getattr(layer, "mask", None) is not None:
-            self._push_history(tr("history.invert_mask"))
             layer.mask.invertPixels()
+            self._push_history(tr("history.invert_mask"))
             self._refresh_layers()
             self._canvas_refresh()
 
@@ -548,6 +568,77 @@ class MainWindow(QMainWindow,
             self._invert_mask()
         elif hasattr(super(), "_invert"):
             super()._invert()
+
+    def _toggle_quick_mask(self):
+        if not self._document: return
+        
+        from core.history import HistoryState
+        pre_state = HistoryState(
+            description=tr("history.quick_mask"),
+            layers_snapshot=self._document.snapshot_layers(),
+            active_layer_index=self._document.active_layer_index,
+            doc_width=self._document.width,
+            doc_height=self._document.height,
+            selection_snapshot=QPainterPath(self._document.selection) if self._document.selection else None,
+        )
+        
+        if getattr(self._document, "quick_mask_layer", None) is not None:
+            # Выход из режима Быстрой Маски
+            qm = self._document.quick_mask_layer.image
+            import numpy as np
+            from PyQt6.QtGui import QImage, QRegion, QBitmap
+            
+            ptr = qm.bits(); ptr.setsize(qm.sizeInBytes())
+            arr = np.ndarray((qm.height(), qm.bytesPerLine() // 4, 4), dtype=np.uint8, buffer=ptr)[:, :self._document.width, :]
+            
+            gray = 0.299*arr[..., 2] + 0.587*arr[..., 1] + 0.114*arr[..., 0]
+            mask_val = (255 - gray) * (arr[..., 3] / 255.0)
+            
+            sel_alpha = np.zeros((qm.height(), self._document.width, 4), dtype=np.uint8)
+            sel_alpha[mask_val < 128, 3] = 255
+            
+            sel_img = QImage(sel_alpha.data, self._document.width, qm.height(), self._document.width*4, QImage.Format.Format_RGBA8888)
+            path = QPainterPath()
+            path.addRegion(QRegion(QBitmap.fromImage(sel_img.createAlphaMask())))
+            
+            self._document.selection = path.simplified()
+            self._document.quick_mask_layer = None
+            
+            if hasattr(self, "_qm_old_fg"):
+                self._color_panel.set_fg(self._qm_old_fg)
+                self._canvas.fg_color = self._qm_old_fg
+                self._color_panel.set_bg(self._qm_old_bg)
+                self._canvas.bg_color = self._qm_old_bg
+        else:
+            # Вход в режим Быстрой маски
+            from core.layer import Layer
+            from PyQt6.QtGui import QPainter
+            
+            layer = Layer("Quick Mask", self._document.width, self._document.height)
+            layer.is_quick_mask = True
+            
+            sel = self._document.selection
+            if sel and not sel.isEmpty():
+                layer.image.fill(QColor(0, 0, 0))
+                p = QPainter(layer.image)
+                p.setClipPath(sel)
+                p.fillRect(layer.image.rect(), QColor(255, 255, 255))
+                p.end()
+            else:
+                layer.image.fill(QColor(255, 255, 255))
+            
+            self._document.quick_mask_layer = layer
+            
+            self._qm_old_fg = self._canvas.fg_color
+            self._qm_old_bg = self._canvas.bg_color
+            self._color_panel.set_fg(QColor(0, 0, 0))
+            self._canvas.fg_color = QColor(0, 0, 0)
+            self._color_panel.set_bg(QColor(255, 255, 255))
+            self._canvas.bg_color = QColor(255, 255, 255)
+            
+        self._history.push(pre_state)
+        self._canvas_refresh()
+        self._refresh_layers()
 
     def _get_adj_dialog(self, layer, t):
         if t == "levels":
@@ -586,18 +677,6 @@ class MainWindow(QMainWindow,
 
     def _new_adj_layer(self, adj_type: str):
         if not self._document: return
-        
-        # Захватываем состояние ДО добавления слоя
-        from core.history import HistoryState
-        pre_state = HistoryState(
-            description=tr("history.new_adj_layer"),
-            layers_snapshot=self._document.snapshot_layers(),
-            active_layer_index=self._document.active_layer_index,
-            doc_width=self._document.width,
-            doc_height=self._document.height,
-            selection_snapshot=QPainterPath(self._document.selection) if self._document.selection else None,
-        )
-        
         idx = self._document.active_layer_index
         layer = self._document.add_layer(tr("layer.name.adjustment"), idx + 1)
         layer.layer_type = "adjustment"
@@ -605,7 +684,7 @@ class MainWindow(QMainWindow,
         
         dlg = self._get_adj_dialog(layer, adj_type)
         if dlg and dlg.exec():
-            self._history.push(pre_state)
+            self._push_history(tr("history.new_adj_layer"))
             self._refresh_layers()
         else:
             self._document.layers.remove(layer)
@@ -618,36 +697,22 @@ class MainWindow(QMainWindow,
         if not layer:
             return
         ltype = getattr(layer, "layer_type", "raster")
-        
-        # Захватываем состояние ДО редактирования
-        from core.history import HistoryState
-        pre_state = HistoryState(
-            description=tr("history.edit_adj_layer") if ltype == "adjustment" else tr("history.edit_fill_layer"),
-            layers_snapshot=self._document.snapshot_layers(),
-            active_layer_index=self._document.active_layer_index,
-            doc_width=self._document.width,
-            doc_height=self._document.height,
-            selection_snapshot=QPainterPath(self._document.selection) if self._document.selection else None,
-        )
-        
         if ltype == "fill":
             from ui.fill_layer_dialog import FillLayerDialog
             dlg = FillLayerDialog(layer, self._canvas_refresh, self)
             if dlg.exec():
-                self._history.push(pre_state)
+                self._push_history(tr("history.edit_fill_layer"))
                 self._refresh_layers()
             else:
-                self._document.restore_layers(pre_state.layers_snapshot)
                 self._canvas_refresh()
         elif ltype == "adjustment":
             t = (layer.adjustment_data or {}).get("type", "")
             dlg = self._get_adj_dialog(layer, t)
             
             if dlg and dlg.exec():
-                self._history.push(pre_state)
+                self._push_history(tr("history.edit_adj_layer"))
                 self._refresh_layers()
             else:
-                self._document.restore_layers(pre_state.layers_snapshot)
                 self._canvas_refresh()
         elif hasattr(super(), "_on_edit_layer"):
             super()._on_edit_layer()

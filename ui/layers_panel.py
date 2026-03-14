@@ -44,6 +44,7 @@ class LayerItem(QWidget):
     target_clicked     = pyqtSignal(int, str)     # row_index, target ("image" | "mask")
     mask_toggled       = pyqtSignal(int)          # row_index
     vmask_toggled      = pyqtSignal(int)          # row_index
+    clipping_toggled   = pyqtSignal(int)          # row_index
 
     def __init__(self, layer, index: int, is_active: bool, parent=None):
         super().__init__(parent)
@@ -62,6 +63,12 @@ class LayerItem(QWidget):
         self._vis_btn.clicked.connect(
             lambda checked: self.visibility_toggled.emit(index, checked))
         lo.addWidget(self._vis_btn)
+
+        if getattr(layer, "clipping", False):
+            clip_lbl = QLabel("↳")
+            clip_lbl.setStyleSheet("color: #a6adc8; font-weight: bold; font-size: 16px;")
+            clip_lbl.setFixedWidth(14)
+            lo.addWidget(clip_lbl)
 
         # Thumbnail
         self.thumb_lbl = ClickableLabel()
@@ -207,6 +214,7 @@ class LayersPanel(QWidget):
     layer_add_vector_mask    = pyqtSignal()
     layer_delete_vector_mask = pyqtSignal()
     layer_vmask_toggled      = pyqtSignal(int)
+    layer_clipping_toggled   = pyqtSignal(int)
     layer_merged_down   = pyqtSignal()
     layer_flatten       = pyqtSignal()
     layer_edit          = pyqtSignal()
@@ -337,6 +345,7 @@ class LayersPanel(QWidget):
             widget.target_clicked.connect(self.layer_target_changed.emit)
             widget.mask_toggled.connect(self.layer_mask_toggled.emit)
             widget.vmask_toggled.connect(self.layer_vmask_toggled.emit)
+            widget.clipping_toggled.connect(self.layer_clipping_toggled.emit)
             item.setSizeHint(widget.sizeHint())
             self._list.setItemWidget(item, widget)
 
@@ -405,6 +414,13 @@ class LayersPanel(QWidget):
         ltype = getattr(layer, "layer_type", "raster") if layer else "raster"
 
         menu.addSeparator()
+        if layer:
+            active_idx = self._document.active_layer_index
+            if getattr(layer, "clipping", False):
+                menu.addAction(tr("ctx.release_clipping"), lambda *args, idx=active_idx: self.layer_clipping_toggled.emit(idx))
+            else:
+                menu.addAction(tr("ctx.create_clipping"), lambda *args, idx=active_idx: self.layer_clipping_toggled.emit(idx))
+        
         if layer and getattr(layer, "mask", None) is None:
             menu.addAction(tr("ctx.add_mask"), self.layer_add_mask.emit)
         elif layer:
