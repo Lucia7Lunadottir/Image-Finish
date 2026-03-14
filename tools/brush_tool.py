@@ -38,7 +38,7 @@ def _make_brush_stamp(size: int, hardness: float, mask: str) -> QImage:
         grad.setColorAt(0,          QColor(0, 0, 0, 255))
         grad.setColorAt(inner_stop, QColor(0, 0, 0, 255))
         grad.setColorAt(1.0,        QColor(0, 0, 0, 0))
-        p.setBrush(QBrush(grad))
+        p.setBrush(grad)
         p.setPen(Qt.PenStyle.NoPen)
         p.drawEllipse(QPointF(cx, cy), r, r)
         # Добавляем случайные "брызги" снаружи
@@ -55,10 +55,28 @@ def _make_brush_stamp(size: int, hardness: float, mask: str) -> QImage:
     else:  # round (default)
         grad = QRadialGradient(cx, cy, r)
         inner_stop = max(0.0, min(0.99, hardness))
-        grad.setColorAt(0,          QColor(0, 0, 0, 255))
+
+        # Common start for all round brushes
+        grad.setColorAt(0, QColor(0, 0, 0, 255))
         grad.setColorAt(inner_stop, QColor(0, 0, 0, 255))
-        grad.setColorAt(1.0,        QColor(0, 0, 0, 0))
-        p.setBrush(QBrush(grad))
+
+        # Smoother, quadratic falloff for soft brushes feels more natural
+        if inner_stop < 0.1:  # Apply to very soft brushes (hardness < 10%)
+            # Approximation of y=(1-x)^2 curve from inner_stop to 1.0
+            span = 1.0 - inner_stop
+            if span > 0:
+                # y = (1 - (x-is)/span)^2. We start from t=0.25
+                for i in range(1, 5):
+                    t = i / 4.0
+                    x = inner_stop + t * span
+                    y = (1.0 - t)**2
+                    grad.setColorAt(x, QColor(0, 0, 0, int(255 * y)))
+            else:  # this case is inner_stop >= 1, but for safety
+                grad.setColorAt(1.0, QColor(0, 0, 0, 0))
+        else:  # Original linear falloff for harder brushes
+            grad.setColorAt(1.0, QColor(0, 0, 0, 0))
+
+        p.setBrush(grad)
         p.setPen(Qt.PenStyle.NoPen)
         p.drawEllipse(QPointF(cx, cy), r, r)
 
@@ -73,7 +91,8 @@ class BrushTool(BaseTool):
 
     def __init__(self):
         self._last_pos: QPoint | None = None
-        self._stamp_cache: tuple | None = None   # (size, hardness, mask, QImage)
+        self._last_pressure: float = 1.0
+        self._stamp_cache: dict = {}  # key: (size, hardness, mask), val: QImage
         self._stroke_layer = None
         self._stroke_img: QImage | None = None
         self._stroke_opacity: float = 1.0
@@ -84,18 +103,21 @@ class BrushTool(BaseTool):
         layer = doc.get_active_layer()
         if not layer or layer.locked:
             return
+        self._last_pressure = float(opts.get("_pressure", 1.0))
         self._stroke_layer = layer
         self._stroke_img = QImage(layer.image.size(), QImage.Format.Format_ARGB32_Premultiplied)
         self._stroke_img.fill(Qt.GlobalColor.transparent)
         self._stroke_opacity = float(opts.get("brush_opacity", 1.0))
         sel = doc.selection
         self._stroke_clip = sel if (sel and not sel.isEmpty()) else None
-        self._paint(pos, pos, doc, fg, opts)
+        self._paint(pos, pos, doc, fg, opts, self._last_pressure, self._last_pressure)
 
     def on_move(self, pos, doc, fg, bg, opts):
+        curr_pressure = float(opts.get("_pressure", 1.0))
         if self._last_pos:
-            self._paint(self._last_pos, pos, doc, fg, opts)
+            self._paint(self._last_pos, pos, doc, fg, opts, self._last_pressure, curr_pressure)
         self._last_pos = pos
+        self._last_pressure = curr_pressure
 
     def on_release(self, pos, doc, fg, bg, opts):
         # Apply stroke buffer once (opacity per stroke)
@@ -104,7 +126,7 @@ class BrushTool(BaseTool):
             painter.setRenderHint(QPainter.RenderHint.Antialiasing)
             if self._stroke_clip is not None:
                 painter.setClipPath(self._stroke_clip)
-            painter.setCompositionMode(QPainter.CompositionMode.CompositionMode_SourceOver)
+            painter.setCompositionMode(self.stroke_composition_mode())
             painter.setOpacity(max(0.0, min(1.0, float(self._stroke_opacity))))
             painter.drawImage(0, 0, self._stroke_img)
             painter.end()
@@ -120,29 +142,90 @@ class BrushTool(BaseTool):
             return None
         return (self._stroke_img, QPoint(0, 0), float(self._stroke_opacity))
 
+    def stroke_composition_mode(self):
+        return QPainter.CompositionMode.CompositionMode_SourceOver
+
+    def _get_stamp(self, size: int, hardness: float, mask) -> QImage:
+        """
+        Возвращает «штамп» кисти, используя кэш.
+        """
+        actual_mask = mask
+        if isinstance(actual_mask, QPixmap):
+            actual_mask = actual_mask.toImage()
+        elif isinstance(actual_mask, str) and actual_mask not in ("round", "square", "scatter"):
+            tmp = QImage(actual_mask)
+            if not tmp.isNull():
+                actual_mask = tmp
+
+        cache_key = id(actual_mask) if isinstance(actual_mask, QImage) else actual_mask
+        full_key = (size, hardness, cache_key)
+
+        if full_key in self._stamp_cache:
+            return self._stamp_cache[full_key]
+
+        if isinstance(actual_mask, QImage) and not actual_mask.isNull():
+            # Для кастомных кистей, маска — это QImage. Масштабируем его до размера кисти.
+            # Игнорируем соотношение сторон, чтобы он соответствовал квадратной области штампа.
+            stamp = actual_mask.scaled(size, size, Qt.AspectRatioMode.IgnoreAspectRatio, Qt.TransformationMode.SmoothTransformation)
+            
+            # Если у кисти нет прозрачности (например, чёрно-белый исходник),
+            # она нарисуется сплошным квадратом. Вытягиваем альфу из яркости!
+            if not stamp.hasAlphaChannel():
+                stamp = stamp.convertToFormat(QImage.Format.Format_ARGB32)
+                import numpy as np
+                ptr = stamp.bits()
+                ptr.setsize(stamp.sizeInBytes())
+                arr = np.ndarray((stamp.height(), stamp.width(), 4), dtype=np.uint8, buffer=ptr)
+                
+                # Считаем яркость. Тёмное = кисть, белое = фон.
+                luma = (arr[..., 2]*0.299 + arr[..., 1]*0.587 + arr[..., 0]*0.114).astype(np.uint8)
+                
+                # Делаем альфа-канал из инвертированной яркости
+                arr[..., 3] = 255 - luma
+                # Основной цвет делаем чёрным (потом он окрасится в нужный цвет при рисовании)
+                arr[..., 0:3] = 0
+        else:
+            # Для стандартных кистей ("round", "square") генерируем штамп.
+            stamp = _make_brush_stamp(size, hardness, actual_mask)
+
+        # Ограничиваем кэш, чтобы не забить память при динамическом размере
+        if len(self._stamp_cache) > 50:
+            self._stamp_cache.clear()
+        self._stamp_cache[full_key] = stamp
+        return stamp
+
     # ── рисование штампами вдоль отрезка ────────────────────────────────────
-    def _paint(self, p1: QPoint, p2: QPoint, doc, color: QColor, opts: dict):
+    def _paint(self, p1: QPoint, p2: QPoint, doc, color: QColor, opts: dict, press1: float = 1.0, press2: float = 1.0):
         layer = self._stroke_layer
         if not layer or layer.locked or self._stroke_img is None:
             return
 
-        size     = max(1, int(opts.get("brush_size", 10)))
         # Opacity is applied once on release; keep full-strength within the stroke.
         hardness = float(opts.get("brush_hardness", 1.0))
         mask     = opts.get("brush_mask", "round")
+        angle    = float(opts.get("brush_angle", 0.0))
+        angle_random = bool(opts.get("brush_angle_random", False))
+        size_base = max(1, int(opts.get("brush_size", 10)))
+        size_dyn = bool(opts.get("brush_size_dynamic", False))
+        op_dyn   = bool(opts.get("brush_opacity_dynamic", False))
 
         # Для очень жёстких круглых кистей — быстрый QPen
-        if mask == "round" and hardness >= 0.98:
-            self._paint_fast(p1, p2, layer, color, size)
+        if mask == "round" and hardness >= 0.98 and not size_dyn and not op_dyn:
+            self._paint_fast(p1, p2, layer, color, size_base)
             return
 
         # Штамп-кисть: рисуем вдоль отрезка с шагом size/3
-        stamp = self._get_stamp(size, hardness, mask)
-        step  = max(1, size // 3)
+        step  = max(1, size_base // 3)
         dx    = p2.x() - p1.x()
         dy    = p2.y() - p1.y()
-        dist  = max(1, math.hypot(dx, dy))
-        steps = max(1, int(dist / step))
+        dist  = math.hypot(dx, dy)
+        
+        if dist == 0:
+            steps = 0
+            start_i = 0
+        else:
+            steps = max(1, int(dist / step))
+            start_i = 1
 
         c = QColor(color)
 
@@ -150,18 +233,34 @@ class BrushTool(BaseTool):
         painter.setRenderHint(QPainter.RenderHint.Antialiasing)
         if self._stroke_clip is not None:
             painter.setClipPath(self._stroke_clip)
-        painter.setCompositionMode(QPainter.CompositionMode.CompositionMode_SourceOver)
+        painter.setCompositionMode(QPainter.CompositionMode.CompositionMode_Lighten)
 
-        for i in range(steps + 1):
-            t  = i / steps
-            sx = p1.x() + dx * t - size / 2
-            sy = p1.y() + dy * t - size / 2
+        for i in range(start_i, steps + 1):
+            t = 0 if steps == 0 else i / steps
+            cur_press = press1 + (press2 - press1) * t
+            
+            cur_size = size_base
+            if size_dyn:
+                cur_size = max(1, int(size_base * cur_press))
+                
+            stamp = self._get_stamp(cur_size, hardness, mask)
+            
+            center_x = p1.x() + dx * t
+            center_y = p1.y() + dy * t
             # Тонируем штамп в цвет кисти
             painter.save()
-            painter.translate(sx, sy)
+            painter.translate(center_x, center_y)
+            current_angle = random.uniform(0, 360) if angle_random else angle
+            if current_angle != 0.0:
+                painter.rotate(current_angle)
+            painter.translate(-cur_size / 2.0, -cur_size / 2.0)
             # Применяем alpha-маску штампа
             colored = QImage(stamp.size(), QImage.Format.Format_ARGB32)
-            colored.fill(c)
+            stamp_color = QColor(c)
+            if op_dyn:
+                stamp_color.setAlpha(int(255 * cur_press))
+            colored.fill(stamp_color)
+            
             cp = QPainter(colored)
             cp.setCompositionMode(
                 QPainter.CompositionMode.CompositionMode_DestinationIn)
@@ -179,17 +278,17 @@ class BrushTool(BaseTool):
         painter.setRenderHint(QPainter.RenderHint.Antialiasing)
         if self._stroke_clip is not None:
             painter.setClipPath(self._stroke_clip)
-        pen = QPen(c, size, Qt.PenStyle.SolidLine,
-                   Qt.PenCapStyle.RoundCap, Qt.PenJoinStyle.RoundJoin)
+        
+        pen = QPen(c, size, Qt.PenStyle.SolidLine, Qt.PenCapStyle.RoundCap, Qt.PenJoinStyle.RoundJoin)
         painter.setPen(pen)
         painter.drawLine(p1, p2)
         painter.end()
 
-    def _get_stamp(self, size, hardness, mask) -> QImage:
-        """Кэш штампа — не пересчитываем если параметры не изменились."""
-        key = (size, round(hardness, 2), mask)
-        if self._stamp_cache and self._stamp_cache[:3] == key:
-            return self._stamp_cache[3]
-        img = _make_brush_stamp(size, hardness, mask)
-        self._stamp_cache = (*key, img)
-        return img
+
+class EraserTool(BrushTool):
+    name     = "Eraser"
+    icon     = "🧽"
+    shortcut = "E"
+
+    def stroke_composition_mode(self):
+        return QPainter.CompositionMode.CompositionMode_DestinationOut

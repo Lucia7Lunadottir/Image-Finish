@@ -2,7 +2,6 @@ from PyQt6.QtWidgets import QWidget, QHBoxLayout, QStackedWidget
 from PyQt6.QtCore import pyqtSignal
 
 from .tool_options.brush_options import BrushOptions
-from .tool_options.eraser_options import EraserOptions
 from .tool_options.fill_options import FillOptions
 from .tool_options.gradient_options import GradientOptions
 from .tool_options.select_options import SelectOptions
@@ -38,7 +37,7 @@ class ToolOptionsBar(QWidget):
     def _build_pages(self):
         self._pages["Brush"] = BrushOptions()
         self._pages["Fill"] = FillOptions()
-        self._pages["Eraser"] = EraserOptions()
+        self._pages["Eraser"] = self._pages["Brush"]
         self._pages["BackgroundEraser"] = BackgroundEraserOptions()
         # Magic Eraser использует толерантность, у тебя есть FillOptions, там как раз есть Tolerance
         self._pages["MagicEraser"] = self._pages["Fill"]

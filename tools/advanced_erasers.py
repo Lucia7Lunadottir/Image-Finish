@@ -1,7 +1,7 @@
 import math
 import numpy as np
 from PyQt6.QtCore import QPoint, Qt
-from PyQt6.QtGui import QColor, qRed, qGreen, qBlue, qAlpha
+from PyQt6.QtGui import QColor, qRed, qGreen, qBlue, qAlpha, QImage
 from tools.base_tool import BaseTool
 
 
@@ -30,31 +30,46 @@ class MagicEraserTool(BaseTool):
         # Подготавливаем цвета для быстрого сравнения
         tr, tg, tb = qRed(target_pixel), qGreen(target_pixel), qBlue(target_pixel)
 
-        # Толерантность от 0 до 100 превращаем в дистанцию RGB
         tolerance_pct = opts.get("fill_tolerance", 32)
-        max_dist = (255**2 * 3) ** 0.5
-        tolerance = (tolerance_pct / 100.0) * max_dist
+        max_dist_sq = 255**2 * 3
+        tolerance_sq = (tolerance_pct / 100.0)**2 * max_dist_sq
 
-        transparent = QColor(0, 0, 0, 0)
+        # --- NUMPY ОПТИМИЗАЦИЯ ---
+        ptr = img.bits()
+        ptr.setsize(img.sizeInBytes())
+        bpl = img.bytesPerLine()
 
-        # Быстрый поиск в глубину (DFS) на стеке
-        stack = [(sx, sy)]
-        visited = set(stack)
+        arr_full = np.ndarray((h, bpl // 4, 4), dtype=np.uint8, buffer=ptr)
+        arr = arr_full[:, :w, :]
+
+        # Векторно считаем маску совпадения цвета
+        B = arr[..., 0].astype(np.int32)
+        G = arr[..., 1].astype(np.int32)
+        R = arr[..., 2].astype(np.int32)
+        A = arr[..., 3]
+
+        dist_sq = (R - tr)**2 + (G - tg)**2 + (B - tb)**2
+        color_mask = (dist_sq <= tolerance_sq) & (A > 0)
+
+        if not color_mask[sy, sx]:
+            return
+
+        # Быстрый Flood Fill по логической маске вместо медленного img.pixel()
+        visited = np.zeros((h, w), dtype=bool)
+        stack = [(sy, sx)]
+        visited[sy, sx] = True
+        color_mask[sy, sx] = False
 
         while stack:
-            x, y = stack.pop()
-            img.setPixelColor(x, y, transparent)
+            y, x = stack.pop()
 
-            # Проверяем соседей (верх, низ, лево, право)
-            for dx, dy in ((-1, 0), (1, 0), (0, -1), (0, 1)):
-                nx, ny = x + dx, y + dy
-                if 0 <= nx < w and 0 <= ny < h and (nx, ny) not in visited:
-                    px = img.pixel(nx, ny)
-                    if qAlpha(px) > 0:
-                        dist = math.sqrt((qRed(px)-tr)**2 + (qGreen(px)-tg)**2 + (qBlue(px)-tb)**2)
-                        if dist <= tolerance:
-                            visited.add((nx, ny))
-                            stack.append((nx, ny))
+            if y > 0 and color_mask[y - 1, x]: visited[y - 1, x] = True; color_mask[y - 1, x] = False; stack.append((y - 1, x))
+            if y < h - 1 and color_mask[y + 1, x]: visited[y + 1, x] = True; color_mask[y + 1, x] = False; stack.append((y + 1, x))
+            if x > 0 and color_mask[y, x - 1]: visited[y, x - 1] = True; color_mask[y, x - 1] = False; stack.append((y, x - 1))
+            if x < w - 1 and color_mask[y, x + 1]: visited[y, x + 1] = True; color_mask[y, x + 1] = False; stack.append((y, x + 1))
+
+        # Мгновенно очищаем все найденные пиксели махом
+        arr[visited] = 0
 
     def on_move(self, pos, doc, fg, bg, opts): pass
     def on_release(self, pos, doc, fg, bg, opts): pass
@@ -99,7 +114,6 @@ class BackgroundEraserTool(BaseTool):
             return
 
         radius = max(1, opts.get("brush_size", 20) / 2)
-        # Оставляем легкий спейсинг, чтобы не ловить микро-дрожание мыши
         spacing = max(1.0, radius * 0.15)
 
         dx = pos.x() - self.last_paint_pos.x()
@@ -133,9 +147,8 @@ class BackgroundEraserTool(BaseTool):
         cx, cy = pos.x(), pos.y()
 
         radius = int(opts.get("brush_size", 20) / 2)
-        tolerance_pct = opts.get("fill_tolerance", 20)
+        tolerance_pct = opts.get("fill_tolerance", 32)
 
-        # Вычисляем границы квадрата (ROI), в котором будем работать
         min_x, max_x = max(0, cx - radius), min(w, cx + radius + 1)
         min_y, max_y = max(0, cy - radius), min(h, cy + radius + 1)
 
@@ -148,44 +161,31 @@ class BackgroundEraserTool(BaseTool):
         sb = sc & 0xFF
 
         # --- NUMPY МАГИЯ НАЧИНАЕТСЯ ЗДЕСЬ ---
-        # 1. Получаем указатель на сырую память QImage (без копирования!)
-        # --- NUMPY МАГИЯ НАЧИНАЕТСЯ ЗДЕСЬ ---
         ptr = img.bits()
         ptr.setsize(img.sizeInBytes())
         bpl = img.bytesPerLine()
 
-        # Учитываем выравнивание строк
         arr_full = np.ndarray((h, bpl // 4, 4), dtype=np.uint8, buffer=ptr)
         arr = arr_full[:, :w, :]
-
         roi = arr[min_y:max_y, min_x:max_x]
 
-        # 4. Создаем математическую круглую маску кисти с помощью сеток
         Y, X = np.ogrid[min_y - cy : max_y - cy, min_x - cx : max_x - cx]
         circle_mask = (X**2 + Y**2) <= radius**2
 
-        # 5. В памяти PyQt ARGB32 хранится задом наперед (little-endian): B, G, R, A
         roi_B = roi[..., 0].astype(np.int32)
         roi_G = roi[..., 1].astype(np.int32)
         roi_R = roi[..., 2].astype(np.int32)
         roi_A = roi[..., 3]
 
-        # 6. Маска альфа-канала (игнорируем то, что уже стерто)
         alpha_mask = roi_A > 0
 
-        # 7. Векторно считаем квадрат расстояния цветов для ВСЕХ пикселей махом
         color_dist_sq = (roi_R - sr)**2 + (roi_G - sg)**2 + (roi_B - sb)**2
-
         max_dist_sq = 255**2 * 3
         tolerance_sq = (tolerance_pct / 100.0)**2 * max_dist_sq
-
         color_mask = color_dist_sq <= tolerance_sq
 
-        # 8. Пересекаем маски: в круге + непрозрачный + подходит по цвету
         final_mask = circle_mask & alpha_mask & color_mask
-
-        # 9. Мгновенно зануляем все 4 канала (ARGB) у пикселей, прошедших проверку
         roi[final_mask] = 0
 
     def needs_history_push(self) -> bool: return True
-
+    def cursor(self): return Qt.CursorShape.CrossCursor
