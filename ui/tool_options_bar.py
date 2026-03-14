@@ -63,6 +63,8 @@ class ToolOptionsBar(QWidget):
         self._pages["PolygonalLasso"] = self._pages["Select"]
         self._pages["MagneticLasso"] = self._pages["Select"]
         self._pages["MagicWand"] = self._pages["Fill"]
+        self._pages["QuickSelection"] = self._pages["BackgroundEraser"]
+        self._pages["ObjectSelection"] = self._pages["Select"]
 
         for name, page in self._pages.items():
             self._stack.addWidget(page)

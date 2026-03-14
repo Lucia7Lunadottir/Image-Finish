@@ -292,6 +292,8 @@
   "tool.poly_lasso": "Poly Lasso",
   "tool.mag_lasso": "Magnetic lasso",
   "tool.magic_wand": "Magic Wand",
+  "tool.quick_selection": "Quick Selection",
+  "tool.object_selection": "Object Selection",
 
   "opts.hand_hint":          "Drag to pan the canvas",
   "opts.zoom_hint":          "Click to zoom in · Alt+click to zoom out",

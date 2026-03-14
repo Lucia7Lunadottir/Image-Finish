@@ -236,7 +236,8 @@ class CanvasWidget(QWidget):
 
         # 4. Выделение
         sel = self.document.selection
-        if sel and not sel.isEmpty():
+        in_qm = getattr(self.document, "quick_mask_layer", None) is not None
+        if sel and not sel.isEmpty() and not in_qm:
             painter.save()
             painter.translate(self._pan)
             painter.scale(self.zoom, self.zoom)
