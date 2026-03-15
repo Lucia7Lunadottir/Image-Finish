@@ -3,7 +3,7 @@ import math
 from PyQt6.QtWidgets import QWidget
 from PyQt6.QtCore import Qt, QPoint, QPointF, QRect, QRectF, pyqtSignal
 from PyQt6.QtGui import (QPainter, QColor, QPixmap, QBrush, QPen, QImage, QCursor, QInputDevice,
-                         QRadialGradient, QPainterPath, QPolygon, QPolygonF, QBitmap, QRegion)
+                         QRadialGradient, QPainterPath, QPolygon, QPolygonF, QBitmap, QRegion, QTransform)
 
 from tools.other_tools import (SelectTool, CropTool, ShapesTool,
                                HandTool, ZoomTool, RotateViewTool, GradientTool, PerspectiveCropTool)
@@ -216,6 +216,32 @@ class CanvasWidget(QWidget):
             painter.resetTransform()
         else:
             self._paint_canvas_content(painter)
+            
+        # Отрисовка имен Артбордов поверх всего холста
+        painter.save()
+        painter.translate(self._pan)
+        painter.scale(self.zoom, self.zoom)
+        painter.setRenderHint(QPainter.RenderHint.TextAntialiasing)
+        for layer in self.document.layers:
+            if getattr(layer, "layer_type", "") == "artboard" and getattr(layer, "artboard_rect", None):
+                ar = layer.artboard_rect
+                painter.setPen(QPen(QColor(120, 120, 120), max(1.0, 1.0/self.zoom)))
+                painter.setBrush(Qt.BrushStyle.NoBrush)
+                painter.drawRect(ar)
+                painter.setPen(QColor(200, 200, 200))
+                font = painter.font()
+                font.setPointSizeF(max(10.0, 12.0/self.zoom))
+                painter.setFont(font)
+                painter.drawText(ar.left(), ar.top() - max(4, int(4/self.zoom)), layer.name)
+        painter.restore()
+            
+        # 9. Tool overlays (e.g. Move Tool handles)
+        if hasattr(self.active_tool, "draw_overlays"):
+            painter.save()
+            painter.translate(self._pan)
+            painter.scale(self.zoom, self.zoom)
+            self.active_tool.draw_overlays(painter, max(1.0, 1.0 / self.zoom), self.document)
+            painter.restore()
 
         # Курсор кисти — всегда в координатах виджета, без поворота
         if self._show_brush_cursor and not self._panning and not self._space:
@@ -226,15 +252,17 @@ class CanvasWidget(QWidget):
     def _paint_canvas_content(self, painter: QPainter):
         """Renders checkerboard, composite, overlays (no brush cursor)."""
         dr = self._doc_rect_in_widget()
+        has_artboards = any(getattr(l, "layer_type", "") == "artboard" for l in self.document.layers)
 
         # 1. Шахматка
-        painter.save()
-        painter.setClipRect(dr)
-        painter.translate(self._pan)
-        painter.scale(self.zoom, self.zoom)
-        painter.fillRect(0, 0, self.document.width, self.document.height,
-                         QBrush(self._checker))
-        painter.restore()
+        if not has_artboards:
+            painter.save()
+            painter.setClipRect(dr)
+            painter.translate(self._pan)
+            painter.scale(self.zoom, self.zoom)
+            painter.fillRect(0, 0, self.document.width, self.document.height,
+                             QBrush(self._checker))
+            painter.restore()
 
         # 2. Композит (кэш)
         if self._cache_dirty or self._composite_cache is None:
@@ -247,9 +275,10 @@ class CanvasWidget(QWidget):
         painter.restore()
 
         # 3. Рамка документа
-        painter.setPen(QPen(QColor(80, 80, 100), 1))
-        painter.setBrush(Qt.BrushStyle.NoBrush)
-        painter.drawRect(dr.adjusted(0, 0, -1, -1))
+        if not has_artboards:
+            painter.setPen(QPen(QColor(80, 80, 100), 1))
+            painter.setBrush(Qt.BrushStyle.NoBrush)
+            painter.drawRect(dr.adjusted(0, 0, -1, -1))
 
         # 3.5. Оси симметрии (показываем, если активна кисть)
         mirror_x = bool(self.tool_opts.get("brush_mirror_x", False))
@@ -368,12 +397,29 @@ class CanvasWidget(QWidget):
         if self.active_tool and hasattr(self.active_tool, "floating_preview"):
             fp = self.active_tool.floating_preview()
             if fp:
-                img, tl = fp
-                painter.save()
-                painter.translate(self._pan)
-                painter.scale(self.zoom, self.zoom)
-                painter.drawImage(tl, img)
-                painter.restore()
+                if len(fp) == 4 and fp[0] == "transform":
+                    _, img, tl, transform = fp
+                    painter.save()
+                    painter.translate(self._pan)
+                    painter.scale(self.zoom, self.zoom)
+                    painter.setTransform(QTransform().translate(tl.x(), tl.y()) * transform, combine=True)
+                    painter.drawImage(0, 0, img)
+                    painter.restore()
+                elif len(fp) == 4 and fp[0] == "warp":
+                    _, src_img, patches, fast = fp
+                    painter.save()
+                    painter.translate(self._pan)
+                    painter.scale(self.zoom, self.zoom)
+                    from tools.warp_tool import WarpTool
+                    WarpTool.draw_warp_patches(painter, src_img, patches, fast)
+                    painter.restore()
+                else:
+                    img, tl = fp
+                    painter.save()
+                    painter.translate(self._pan)
+                    painter.scale(self.zoom, self.zoom)
+                    painter.drawImage(tl, img)
+                    painter.restore()
 
         # 5.2 Live stroke preview (BrushTool-style)
         if self.active_tool and hasattr(self.active_tool, "stroke_preview"):
@@ -511,6 +557,16 @@ class CanvasWidget(QWidget):
                 painter.drawEllipse(QPointF(p0), r, r)
                 painter.drawEllipse(QPointF(p1), r, r)
                 painter.restore()
+                
+        # 6.7 Превью Артборда
+        if hasattr(self.active_tool, "artboard_preview"):
+            ar = self.active_tool.artboard_preview()
+            if ar:
+                painter.save()
+                painter.translate(self._pan); painter.scale(self.zoom, self.zoom)
+                painter.setPen(QPen(QColor(100, 160, 255), max(1.5, 2.0 / self.zoom)))
+                painter.setBrush(QColor(255, 255, 255, 50))
+                painter.drawRect(ar); painter.restore()
 
         # 7. Crosshair для Штампа (откуда берется цвет)
         crosshair = getattr(self.active_tool, "_crosshair_pos", None)
@@ -737,6 +793,7 @@ class CanvasWidget(QWidget):
         self.tool_opts["_shift"] = bool(mods & Qt.KeyboardModifier.ShiftModifier)
         self.tool_opts["_ctrl"]  = bool(mods & Qt.KeyboardModifier.ControlModifier)
         self.tool_opts["_alt"]   = bool(mods & Qt.KeyboardModifier.AltModifier)
+        self.tool_opts["_zoom"]  = self.zoom
 
         is_pan = (ev.button() == Qt.MouseButton.MiddleButton or
                   (self._space and ev.button() == Qt.MouseButton.LeftButton))
@@ -789,6 +846,7 @@ class CanvasWidget(QWidget):
                     selection_snapshot=QPainterPath(self.document.selection) if self.document.selection else None,
                 )
 
+            old_layer_idx = self.document.active_layer_index if self.document else -1
             doc_pos = self.to_doc(ev.position())
             self.active_tool.on_press(doc_pos, self.document,
                                       self.fg_color, self.bg_color, self.tool_opts)
@@ -800,12 +858,15 @@ class CanvasWidget(QWidget):
             if getattr(self.active_tool, "needs_immediate_commit", False):
                 self._stroke_in_progress = False
                 self.document_changed.emit()
+            elif self.document and self.document.active_layer_index != old_layer_idx:
+                self.document_changed.emit()
 
     def mouseMoveEvent(self, ev):
         mods = ev.modifiers()
         self.tool_opts["_shift"] = bool(mods & Qt.KeyboardModifier.ShiftModifier)
         self.tool_opts["_ctrl"]  = bool(mods & Qt.KeyboardModifier.ControlModifier)
         self.tool_opts["_alt"]   = bool(mods & Qt.KeyboardModifier.AltModifier)
+        self.tool_opts["_zoom"]  = self.zoom
         
         if hasattr(ev, "device") and ev.device().type() == QInputDevice.DeviceType.Mouse:
             self.tool_opts["_pressure"] = 1.0
@@ -851,6 +912,11 @@ class CanvasWidget(QWidget):
             self._cache_dirty = True
             self.update()
             self.pixels_changed.emit()
+        else:
+            if self.active_tool and hasattr(self.active_tool, "on_hover"):
+                doc_pos = self.to_doc(ev.position())
+                self.active_tool.on_hover(doc_pos, self.document, self.fg_color, self.bg_color, self.tool_opts)
+                self._update_cursor()
 
     def mouseReleaseEvent(self, ev):
         if ev.button() == Qt.MouseButton.MiddleButton or (

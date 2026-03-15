@@ -13,7 +13,7 @@ class MagicEraserTool(BaseTool):
 
     def on_press(self, pos: QPoint, doc, fg, bg, opts):
         layer = doc.get_active_layer()
-        if not layer or layer.locked or layer.image.isNull():
+        if not layer or layer.locked or layer.image.isNull() or getattr(layer, "lock_pixels", False):
             return
             
         if getattr(layer, "lock_alpha", False):
@@ -102,7 +102,7 @@ class BackgroundEraserTool(BaseTool):
 
     def on_press(self, pos: QPoint, doc, fg, bg, opts):
         layer = doc.get_active_layer()
-        if not layer or layer.locked or layer.image.isNull():
+        if not layer or layer.locked or layer.image.isNull() or getattr(layer, "lock_pixels", False):
             self.sample_color = None
             return
             

@@ -104,7 +104,7 @@ class BrushTool(BaseTool):
     def on_press(self, pos, doc, fg, bg, opts):
         self._last_pos = pos
         layer = doc.get_active_layer()
-        if not layer or layer.locked:
+        if not layer or layer.locked or getattr(layer, "lock_pixels", False):
             return
         self._last_pressure = float(opts.get("_pressure", 1.0))
         self._stroke_layer = layer

@@ -1,5 +1,6 @@
 from PyQt6.QtGui import QImage, QColor, QPainterPath
-from PyQt6.QtCore import Qt, QPoint
+from PyQt6.QtCore import Qt, QPoint, QRect
+import uuid
 
 
 class Layer:
@@ -9,9 +10,16 @@ class Layer:
 
     def __init__(self, name: str, width: int, height: int, fill_color: QColor = None):
         self.name = name
+        self.layer_id = str(uuid.uuid4())
+        self.parent_id: str | None = None
+        self.expanded: bool = True
+        self.link_id: str | None = None
         self.visible: bool = True
         self.locked: bool = False
         self.lock_alpha: bool = False
+        self.lock_pixels: bool = False
+        self.lock_position: bool = False
+        self.lock_artboard: bool = False
         self.mask: QImage | None = None
         self.mask_enabled: bool = True
         self.editing_mask: bool = False
@@ -23,7 +31,7 @@ class Layer:
         self.blend_mode: str = "Normal"
         self.offset: QPoint = QPoint(0, 0)
 
-        # "raster" | "text" | "vector" | "adjustment" | "fill" | "smart_object"
+        # "raster" | "text" | "vector" | "adjustment" | "fill" | "smart_object" | "artboard" | "group"
         self.layer_type: str = "raster"
 
         self.image = QImage(width, height, QImage.Format.Format_ARGB32_Premultiplied)
@@ -37,14 +45,22 @@ class Layer:
         self.adjustment_data: dict | None = None  # adjustment layer params
         self.fill_data: dict | None = None        # fill layer params
         self.smart_data: dict | None = None       # smart object (stores original QImage)
+        self.artboard_rect: QRect | None = None   # For Artboards
 
     # ------------------------------------------------------------------
     def copy(self) -> "Layer":
         clone = Layer.__new__(Layer)
         clone.name = self.name
+        clone.layer_id = getattr(self, "layer_id", str(uuid.uuid4()))
+        clone.parent_id = getattr(self, "parent_id", None)
+        clone.expanded = getattr(self, "expanded", True)
+        clone.link_id = getattr(self, "link_id", None)
         clone.visible = self.visible
         clone.locked = self.locked
         clone.lock_alpha = getattr(self, "lock_alpha", False)
+        clone.lock_pixels = getattr(self, "lock_pixels", False)
+        clone.lock_position = getattr(self, "lock_position", False)
+        clone.lock_artboard = getattr(self, "lock_artboard", False)
         if getattr(self, "mask", None) is not None:
             clone.mask = self.mask.copy()
         else:
@@ -63,6 +79,10 @@ class Layer:
         clone.offset = QPoint(self.offset)
         clone.image = self.image.copy()
         clone.layer_type = getattr(self, "layer_type", "raster")
+        if getattr(self, "artboard_rect", None) is not None:
+            clone.artboard_rect = QRect(self.artboard_rect)
+        else:
+            clone.artboard_rect = None
         td = getattr(self, "text_data", None)
         clone.text_data = dict(td) if td else None
         sd = getattr(self, "shape_data", None)

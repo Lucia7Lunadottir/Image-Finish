@@ -11,6 +11,7 @@ from tools.text_tool        import (TextTool, VerticalTypeTool,
                                     _text_path_h, _text_path_v, _build_font)
 from tools.shapes_tool      import ShapesTool
 from tools.nav_tools        import HandTool, ZoomTool, RotateViewTool
+from tools.warp_tool        import WarpTool
 
 __all__ = [
     "SelectTool", "EllipticalSelectTool", "MoveTool", "EyedropperTool", "CropTool", "PerspectiveCropTool",
@@ -19,4 +20,5 @@ __all__ = [
     "ShapesTool",
     "HandTool", "ZoomTool", "RotateViewTool",
     "GradientTool",
+    "WarpTool",
 ]
