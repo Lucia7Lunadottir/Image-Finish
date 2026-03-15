@@ -12,7 +12,6 @@ class MagicWandTool(BaseTool, LassoMixin):
 
     def __init__(self):
         super().__init__()
-        self._tmp_mask = None  # Важно хранить ссылку на массив памяти, пока живет QImage
 
     def on_press(self, pos: QPoint, doc, fg, bg, opts):
         layer = doc.get_active_layer()
@@ -25,7 +24,7 @@ class MagicWandTool(BaseTool, LassoMixin):
             img = layer.image
             
         w, h = img.width(), img.height()
-        cx, cy = pos.x(), pos.y()
+        cx, cy = pos.x() - layer.offset.x(), pos.y() - layer.offset.y()
 
         if not (0 <= cx < w and 0 <= cy < h):
             return
@@ -44,10 +43,11 @@ class MagicWandTool(BaseTool, LassoMixin):
         contiguous = bool(opts.get("fill_contiguous", True))
 
         # 1. Читаем оригинальное изображение
-        ptr = img.bits()
-        ptr.setsize(img.sizeInBytes())
+        import ctypes
+        ptr = img.constBits()
+        buf = (ctypes.c_uint8 * img.sizeInBytes()).from_address(int(ptr))
         bpl = img.bytesPerLine()
-        arr = np.ndarray((h, w, 4), dtype=np.uint8, buffer=ptr, strides=(bpl, 4, 1))
+        arr = np.ndarray((h, bpl // 4, 4), dtype=np.uint8, buffer=buf)[:, :w, :]
 
         B = arr[..., 0].astype(np.int32)
         G = arr[..., 1].astype(np.int32)
@@ -84,13 +84,11 @@ class MagicWandTool(BaseTool, LassoMixin):
             visited[cy, cx] = True
 
         # 4. Собираем маску выделения через Альфа-канал
-        # Создаем пустой прозрачный массив [0, 0, 0, 0]
-        self._tmp_mask = np.zeros((h, w, 4), dtype=np.uint8)
-        # Делаем выделенную область непрозрачной: Alpha = 255
-        self._tmp_mask[visited, 3] = 255
-
-        # Format_RGBA8888 идеален, так как 4 байта на пиксель всегда выровнены!
-        mask_img = QImage(self._tmp_mask.data, w, h, w * 4, QImage.Format.Format_RGBA8888)
+        mask_img = QImage(w, h, QImage.Format.Format_RGBA8888)
+        mask_img.fill(0)
+        m_ptr = mask_img.bits()
+        m_buf = (ctypes.c_uint8 * mask_img.sizeInBytes()).from_address(int(m_ptr))
+        np.ndarray((h, w, 4), dtype=np.uint8, buffer=m_buf)[visited, 3] = 255
 
         # Строим Битмап строго по Альфа-каналу (никакой инверсии цветов!)
         bitmap = QBitmap.fromImage(mask_img.createAlphaMask())
@@ -102,6 +100,7 @@ class MagicWandTool(BaseTool, LassoMixin):
 
         # ГЛАВНАЯ МАГИЯ: Сливаем тысячи прямоугольников в один гладкий контур
         path = path.simplified()
+        path.translate(layer.offset.x(), layer.offset.y())
 
         self._apply_path(doc, path, opts)
 
@@ -153,11 +152,14 @@ class QuickSelectionTool(BaseTool, LassoMixin):
 
         if self._mask is not None and np.any(self._mask):
             h, w = self._mask.shape
-            tmp = np.zeros((h, w, 4), dtype=np.uint8)
-            tmp[self._mask, 3] = 255
-            mask_img = QImage(tmp.data, w, h, w * 4, QImage.Format.Format_RGBA8888)
+            mask_img = QImage(w, h, QImage.Format.Format_RGBA8888)
+            mask_img.fill(0)
+            m_ptr = mask_img.bits()
+            m_buf = (ctypes.c_uint8 * mask_img.sizeInBytes()).from_address(int(m_ptr))
+            np.ndarray((h, w, 4), dtype=np.uint8, buffer=m_buf)[self._mask, 3] = 255
             path = QPainterPath()
             path.addRegion(QRegion(QBitmap.fromImage(mask_img.createAlphaMask())))
+            path.translate(self._target_layer.offset.x(), self._target_layer.offset.y())
             self._apply_path(doc, path.simplified(), opts)
 
         self._mask = None
@@ -166,7 +168,7 @@ class QuickSelectionTool(BaseTool, LassoMixin):
     def _process_brush(self, pos, opts):
         if self._target_img is None or self._mask is None: return
 
-        cx, cy = pos.x(), pos.y()
+        cx, cy = pos.x() - self._target_layer.offset.x(), pos.y() - self._target_layer.offset.y()
         w, h = self._target_img.width(), self._target_img.height()
         if not (0 <= cx < w and 0 <= cy < h): return
 
@@ -203,11 +205,12 @@ class QuickSelectionTool(BaseTool, LassoMixin):
         # Отрисовка живого синего превью на холсте
         if self._mask is not None:
             h, w = self._mask.shape
-            tmp = np.zeros((h, w, 4), dtype=np.uint8)
-            tmp[self._mask] = [250, 150, 50, 100]  # Light Blue, BGRA
-            img = QImage(tmp.data, w, h, w * 4, QImage.Format.Format_ARGB32_Premultiplied)
-            img.ndarr = tmp
-            return (img, QPoint(0, 0), 1.0)
+            img = QImage(w, h, QImage.Format.Format_ARGB32_Premultiplied)
+            img.fill(0)
+            m_ptr = img.bits()
+            m_buf = (ctypes.c_uint8 * img.sizeInBytes()).from_address(int(m_ptr))
+            np.ndarray((h, w, 4), dtype=np.uint8, buffer=m_buf)[self._mask] = [250, 150, 50, 100]
+            return (img, self._target_layer.offset, 1.0)
         return None
 
     def needs_history_push(self): return True
@@ -246,9 +249,9 @@ class ObjectSelectionTool(BaseTool, LassoMixin):
 
         target_img = layer.mask if (getattr(layer, "editing_mask", False) and getattr(layer, "mask", None) is not None) else layer.image
 
-        rect = QRect(self._start, self._end).normalized()
+        doc_rect = QRect(self._start, self._end).normalized()
         w, h = target_img.width(), target_img.height()
-        rect = rect.intersected(QRect(0, 0, w, h))
+        rect = doc_rect.translated(-layer.offset).intersected(QRect(0, 0, w, h))
 
         if rect.width() < 10 or rect.height() < 10:
             self._start = None
@@ -256,9 +259,10 @@ class ObjectSelectionTool(BaseTool, LassoMixin):
 
         min_x, max_x, min_y, max_y = rect.left(), rect.right(), rect.top(), rect.bottom()
         
-        ptr = target_img.bits()
-        ptr.setsize(target_img.sizeInBytes())
-        arr_full = np.ndarray((h, target_img.bytesPerLine() // 4, 4), dtype=np.uint8, buffer=ptr)
+        import ctypes
+        ptr = target_img.constBits()
+        buf = (ctypes.c_uint8 * target_img.sizeInBytes()).from_address(int(ptr))
+        arr_full = np.ndarray((h, target_img.bytesPerLine() // 4, 4), dtype=np.uint8, buffer=buf)
         roi = arr_full[min_y:max_y+1, min_x:max_x+1]
 
         # Эвристика: извлекаем центр 40%
@@ -281,11 +285,14 @@ class ObjectSelectionTool(BaseTool, LassoMixin):
         local_mask = (dist_sq <= tolerance_sq) & (roi[..., 3] > 0)
         
         if np.any(local_mask):
-            full_mask = np.zeros((h, w, 4), dtype=np.uint8)
-            full_mask[min_y:max_y+1, min_x:max_x+1, 3][local_mask] = 255
-            mask_img = QImage(full_mask.data, w, h, w * 4, QImage.Format.Format_RGBA8888)
+            mask_img = QImage(w, h, QImage.Format.Format_RGBA8888)
+            mask_img.fill(0)
+            m_ptr = mask_img.bits()
+            m_buf = (ctypes.c_uint8 * mask_img.sizeInBytes()).from_address(int(m_ptr))
+            np.ndarray((h, w, 4), dtype=np.uint8, buffer=m_buf)[min_y:max_y+1, min_x:max_x+1, 3][local_mask] = 255
             path = QPainterPath()
             path.addRegion(QRegion(QBitmap.fromImage(mask_img.createAlphaMask())))
+            path.translate(layer.offset.x(), layer.offset.y())
             self._apply_path(doc, path.simplified(), opts)
 
         self._start = None

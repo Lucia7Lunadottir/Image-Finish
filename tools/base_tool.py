@@ -15,6 +15,8 @@ class BaseTool(ABC):
     icon: str = "🔧"
     #: Keyboard shortcut letter (optional)
     shortcut: str = ""
+    #: Tells CanvasWidget whether to trigger a heavy get_composite() during on_move
+    modifies_canvas_on_move: bool = False
 
     def on_press(self, pos: QPoint, doc, fg: QColor, bg: QColor, opts: dict):
         """Called on mouse-button-down."""

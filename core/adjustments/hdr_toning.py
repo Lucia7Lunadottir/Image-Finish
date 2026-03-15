@@ -16,7 +16,7 @@ Performance strategy (dialog):
 from PyQt6.QtGui import QImage
 
 from core.locale import tr
-from ui.adjustments_dialog import _to_argb32, _bits_ba, _from_ba, _AdjustDialog
+from ui.adjustments_dialog import _to_argb32, _const_arr, _in_place_arr, _AdjustDialog
 from core.adjustments._widgets import _FSliderRow
 
 
@@ -28,18 +28,18 @@ def _box_blur_ch(ch, r):
     h, w = ch.shape
     r = max(1, min(r, min(h, w) // 2 - 1))
 
-    cs = np.cumsum(ch, axis=1, dtype=np.float64)
-    cs = np.hstack([np.zeros((h, 1), dtype=np.float64), cs])
+    cs = np.cumsum(ch, axis=1, dtype=np.float32)
+    cs = np.hstack([np.zeros((h, 1), dtype=np.float32), cs])
     e  = np.minimum(np.arange(w) + r + 1, w)
     s  = np.maximum(np.arange(w) - r,     0)
-    row = (cs[:, e] - cs[:, s]) / (e - s).astype(np.float64)
+    row = (cs[:, e] - cs[:, s]) / (e - s).astype(np.float32)
 
-    cs2 = np.cumsum(row, axis=0, dtype=np.float64)
-    cs2 = np.vstack([np.zeros((1, w), dtype=np.float64), cs2])
+    cs2 = np.cumsum(row, axis=0, dtype=np.float32)
+    cs2 = np.vstack([np.zeros((1, w), dtype=np.float32), cs2])
     ev  = np.minimum(np.arange(h) + r + 1, h)          # 1-D (h,)
     sv  = np.maximum(np.arange(h) - r,     0)          # 1-D (h,)
     col = (cs2[ev, :] - cs2[sv, :])                    # (h, w)
-    col /= (ev - sv).astype(np.float64).reshape(-1, 1) # broadcast /= (h,1)
+    col /= (ev - sv).astype(np.float32).reshape(-1, 1) # broadcast /= (h,1)
     return col.astype(np.float32)
 
 
@@ -70,14 +70,15 @@ def apply_hdr_toning(src: QImage, radius: int, strength: float,
     img = _to_argb32(src)
     try:
         import numpy as np
-        ba, arr = _bits_ba(img)
+        img = img.copy()
+        arr = _in_place_arr(img)
         orig_f = arr[:, :, :3].astype(np.float32) / 255.0
 
         blurred = np.clip(_gauss_blur(orig_f, max(1, int(radius))), 0.0, 1.0)
         result  = _hdr_combine(np, orig_f, blurred, strength, gamma, detail)
 
         arr[:, :, :3] = result
-        return _from_ba(ba, img)
+        return img.convertToFormat(QImage.Format.Format_ARGB32_Premultiplied)
 
     except ImportError:
         return _hdr_fallback(img, radius, strength, gamma, detail)
@@ -143,7 +144,7 @@ class HDRToningDialog(_AdjustDialog):
         self._np_ok = False
         try:
             import numpy as np
-            _ba, _arr = _bits_ba(self._orig_argb32)
+            _arr = _const_arr(self._orig_argb32)
             self._orig_bgr   = np.ascontiguousarray(_arr[:, :, :3])  # BGR uint8
             self._orig_f     = self._orig_bgr.astype(np.float32) / 255.0
             self._orig_alpha = _arr[:, :, 3].copy()
@@ -203,5 +204,9 @@ class HDRToningDialog(_AdjustDialog):
         out = np.empty((h, w, 4), dtype=np.uint8)
         out[:, :, :3] = result_u8
         out[:, :,  3] = self._orig_alpha
-        self._layer.image = _from_ba(bytearray(out.tobytes()), self._orig_argb32)
+        
+        new_img = QImage(w, h, QImage.Format.Format_ARGB32)
+        import ctypes
+        ctypes.memmove(int(new_img.bits()), out.ctypes.data, new_img.sizeInBytes())
+        self._layer.image = new_img.convertToFormat(QImage.Format.Format_ARGB32_Premultiplied)
         self._canvas_refresh()

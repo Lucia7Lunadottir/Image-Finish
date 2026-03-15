@@ -17,3 +17,6 @@ class BaseOptions(QWidget):
         lbl = QLabel(tr(key))
         lbl.setObjectName("optLabel")
         return lbl
+
+    def retranslate(self):
+        pass

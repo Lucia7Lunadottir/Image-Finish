@@ -24,7 +24,8 @@ class FillTool(BaseTool):
             lock_alpha = getattr(layer, "lock_alpha", False)
             
         sel = doc.selection if (doc.selection and not doc.selection.isEmpty()) else None
-        self._flood_fill(target_img, pos.x(), pos.y(), fg, tolerance, sel, contiguous, lock_alpha)
+        local_pos = pos - layer.offset
+        self._flood_fill(target_img, local_pos.x(), local_pos.y(), fg, tolerance, sel, contiguous, lock_alpha, layer.offset)
 
     def on_move(self, pos, doc, fg, bg, opts): pass
     def on_release(self, pos, doc, fg, bg, opts): pass
@@ -33,7 +34,7 @@ class FillTool(BaseTool):
     # ---------------------------------------------------------------- Algorithm
     @staticmethod
     def _flood_fill(image: QImage, x: int, y: int, fill_color: QColor,
-                    tolerance: int, selection=None, contiguous: bool = True, lock_alpha: bool = False):
+                    tolerance: int, selection=None, contiguous: bool = True, lock_alpha: bool = False, offset: QPoint = QPoint(0,0)):
         w, h = image.width(), image.height()
         if not (0 <= x < w and 0 <= y < h):
             return
@@ -54,11 +55,10 @@ class FillTool(BaseTool):
         fr, fg_g, fb, fa = fill_color.red(), fill_color.green(), fill_color.blue(), fill_color.alpha()
 
         # --- NUMPY ОПТИМИЗАЦИЯ ---
-        ptr = image.bits()
-        ptr.setsize(image.sizeInBytes())
+        import ctypes
         bpl = image.bytesPerLine()
-
-        arr_full = np.ndarray((h, bpl // 4, 4), dtype=np.uint8, buffer=ptr)
+        arr_full = np.empty((h, bpl // 4, 4), dtype=np.uint8)
+        ctypes.memmove(arr_full.ctypes.data, int(image.constBits()), image.sizeInBytes())
         arr = arr_full[:, :w, :]
 
         B = arr[..., 0].astype(np.int32)
@@ -77,12 +77,12 @@ class FillTool(BaseTool):
             sel_img = QImage(w, h, QImage.Format.Format_Grayscale8)
             sel_img.fill(0)
             p = QPainter(sel_img)
+            p.translate(-offset)
             p.fillPath(selection, QColor(255))
             p.end()
             
-            sel_ptr = sel_img.bits()
-            sel_ptr.setsize(sel_img.sizeInBytes())
-            sel_arr = np.ndarray((h, sel_img.bytesPerLine()), dtype=np.uint8, buffer=sel_ptr)
+            sel_arr = np.empty((h, sel_img.bytesPerLine()), dtype=np.uint8)
+            ctypes.memmove(sel_arr.ctypes.data, int(sel_img.constBits()), sel_img.sizeInBytes())
             sel_arr = sel_arr[:, :w]
             
             color_mask &= (sel_arr > 0)
@@ -141,3 +141,5 @@ class FillTool(BaseTool):
             arr[final_fill, 1] = fg_g
             arr[final_fill, 2] = fr
             arr[final_fill, 3] = fa
+            
+        ctypes.memmove(int(image.bits()), arr_full.ctypes.data, image.sizeInBytes())

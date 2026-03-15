@@ -1,7 +1,7 @@
 from PyQt6.QtWidgets import (QMainWindow, QWidget, QHBoxLayout, QVBoxLayout,
                              QMenu, QStatusBar, QFileDialog, QMessageBox, QSplitter)
-from PyQt6.QtCore import Qt, QRectF, QRect, QPoint
-from PyQt6.QtGui import QAction, QKeySequence, QColor, QPainterPath
+from PyQt6.QtCore import Qt, QRectF, QRect, QPoint, QPointF
+from PyQt6.QtGui import QAction, QKeySequence, QColor, QPainterPath, QPainter, QBrush
 
 from ui.canvas_widget    import CanvasWidget
 from ui.toolbar          import ToolBar
@@ -24,9 +24,9 @@ from core.locale   import tr, available_languages, load as locale_load, current 
 # ── Tool registry ──────────────────────────────────────────────────────────────
 def _build_tool_registry(text_parent):
     from tools.brush_tool   import (BrushTool, EraserTool, CloneStampTool, PatternStampTool,
-                                    PencilTool, ColorReplacementTool, MixerBrushTool)
+                                    PencilTool, ColorReplacementTool, MixerBrushTool, HistoryBrushTool)
     from tools.fill_tool    import FillTool
-    from tools.effect_tools import BlurTool, SharpenTool, SmudgeTool
+    from tools.effect_tools import BlurTool, SharpenTool, SmudgeTool, DodgeTool, BurnTool, SpongeTool
     from tools.other_tools  import (SelectTool, MoveTool, EyedropperTool,
                                     EllipticalSelectTool,
                                     CropTool, TextTool, ShapesTool,
@@ -40,6 +40,14 @@ def _build_tool_registry(text_parent):
     from tools.magic_wand_tool import MagicWandTool, QuickSelectionTool, ObjectSelectionTool
     from tools.artboard_tool import ArtboardTool
     from tools.warp_tool import WarpTool
+    from tools.puppet_warp_tool import PuppetWarpTool
+    from tools.perspective_warp_tool import PerspectiveWarpTool
+    from tools.slice_tool import SliceTool
+    from tools.patch_tool import PatchTool, SpotHealingTool, HealingBrushTool, RedEyeTool
+    from tools.pen_tool import (PenTool, FreeformPenTool, CurvaturePenTool, 
+                                AddAnchorPointTool, DeleteAnchorPointTool, ConvertPointTool,
+                                PathSelectionTool, DirectSelectionTool)
+    from tools.frame_tool import FrameTool
 
     text = TextTool();  text._parent_widget  = text_parent
     textv = VerticalTypeTool(); textv._parent_widget = text_parent
@@ -55,21 +63,41 @@ def _build_tool_registry(text_parent):
         "Pencil":           PencilTool(),
         "ColorReplacement": ColorReplacementTool(),
         "MixerBrush":       MixerBrushTool(),
+        "HistoryBrush":     HistoryBrushTool(),
         "Fill":       FillTool(),
         "Blur":       BlurTool(),
         "Sharpen":    SharpenTool(),
         "Smudge":     SmudgeTool(),
+        "Dodge":      DodgeTool(),
+        "Burn":       BurnTool(),
+        "Sponge":     SpongeTool(),
         "Select":     SelectTool(),
         "EllipseSelect": EllipticalSelectTool(),
         "Move":       MoveTool(),
         "Warp":       WarpTool(),
+        "PuppetWarp": PuppetWarpTool(),
+        "PerspectiveWarp": PerspectiveWarpTool(),
         "Artboard":   ArtboardTool(),
         "Eyedropper": EyedropperTool(),
         "ColorSampler": ColorSamplerTool(),
         "Ruler":      RulerTool(),
         "Crop":       CropTool(),
         "Perspective Crop": PerspectiveCropTool(),
+        "Slice":      SliceTool(),
+        "SpotHealing":SpotHealingTool(),
+        "HealingBrush":HealingBrushTool(),
+        "Patch":      PatchTool(),
+        "RedEye":     RedEyeTool(),
         "Text":       text,
+        "Pen":        PenTool(),
+        "FreeformPen":FreeformPenTool(),
+        "CurvaturePen":CurvaturePenTool(),
+        "AddAnchor":  AddAnchorPointTool(),
+        "DeleteAnchor":DeleteAnchorPointTool(),
+        "ConvertPoint":ConvertPointTool(),
+        "PathSelection":PathSelectionTool(),
+        "DirectSelection":DirectSelectionTool(),
+        "Frame":      FrameTool(),
         "TextV":      textv,
         "TextHMask":  texthm,
         "TextVMask":  textvm,
@@ -102,6 +130,7 @@ class MainWindow(QMainWindow,
 
         self._document = Document(800, 600, QColor(255, 255, 255))
         self._history  = HistoryManager()
+        self._document.history = self._history
         self._tools    = _build_tool_registry(self)
         self._active_tool_name = "Brush"
 
@@ -181,6 +210,7 @@ class MainWindow(QMainWindow,
         self._act(file_m, "menu.save",       self._save,       QKeySequence.StandardKey.Save)
         self._act(file_m, "menu.save_as",    self._save_as,    QKeySequence("Ctrl+Shift+S"))
         self._act(file_m, "menu.export_png", self._export_png)
+        self._act(file_m, "menu.export_slices", self._export_slices)
         file_m.addSeparator()
         self._act(file_m, "menu.quit",       self.close,       QKeySequence.StandardKey.Quit)
 
@@ -194,6 +224,10 @@ class MainWindow(QMainWindow,
         self._act(edit_m, "menu.paste_new_layer", self._paste, QKeySequence.StandardKey.Paste)
         edit_m.addSeparator()
         self._act(edit_m, "menu.clear_layer",  self._clear_layer, QKeySequence("Delete"))
+        edit_m.addSeparator()
+        self._act(edit_m, "menu.define_brush", self._define_brush)
+        self._act(edit_m, "menu.define_pattern", self._define_pattern)
+        self._act(edit_m, "menu.define_shape", self._define_shape)
         # Select
         select_m = self._menu(mb, "menu.select")
         self._act(select_m, "menu.select_all", self._select_all, QKeySequence.StandardKey.SelectAll) # Ctrl+A
@@ -202,6 +236,18 @@ class MainWindow(QMainWindow,
         self._act(select_m, "menu.inverse",    self._inverse_selection, QKeySequence("Shift+Ctrl+I"))
         select_m.addSeparator()
         self._act(select_m, "menu.color_range", self._color_range)
+        self._act(select_m, "menu.focus_area", self._focus_area)
+        self._act(select_m, "menu.select_subject", self._select_subject)
+        self._act(select_m, "menu.select_sky", self._select_sky)
+        self._act(select_m, "menu.select_and_mask", self._select_and_mask, QKeySequence("Alt+Ctrl+R"))
+        select_m.addSeparator()
+        
+        modify_m = self._menu(select_m, "menu.modify")
+        self._act(modify_m, "menu.modify.border", lambda: self._modify_selection("border"))
+        self._act(modify_m, "menu.modify.smooth", lambda: self._modify_selection("smooth"))
+        self._act(modify_m, "menu.modify.expand", lambda: self._modify_selection("expand"))
+        self._act(modify_m, "menu.modify.contract", lambda: self._modify_selection("contract"))
+        self._act(modify_m, "menu.modify.feather", lambda: self._modify_selection("feather"), QKeySequence("Shift+F6"))
         self._act(select_m, "menu.quick_mask", self._toggle_quick_mask, QKeySequence("Q"))
         edit_m.addSeparator()
         self._act(edit_m, "menu.fill_fg", self._fill_fg, QKeySequence("Alt+Delete"))
@@ -306,6 +352,38 @@ class MainWindow(QMainWindow,
         self._act(view_m, "menu.zoom_out",   lambda: self._canvas.zoom_out(),   QKeySequence.StandardKey.ZoomOut)
         self._act(view_m, "menu.fit_window", lambda: self._canvas.reset_zoom(), QKeySequence("Ctrl+0"))
         view_m.addSeparator()
+
+        self._act_rulers = self._act(view_m, "menu.rulers", self._toggle_rulers, QKeySequence("Ctrl+R"))
+        self._act_rulers.setCheckable(True)
+        self._act_rulers.setChecked(False)
+
+        show_m = self._menu(view_m, "menu.show")
+        self._act_guides = self._act(show_m, "menu.show_guides", self._toggle_guides, QKeySequence("Ctrl+;"))
+        self._act_guides.setCheckable(True); self._act_guides.setChecked(True)
+        
+        self._act_grid = self._act(show_m, "menu.show_grid", self._toggle_grid, QKeySequence("Ctrl+'"))
+        self._act_grid.setCheckable(True); self._act_grid.setChecked(False)
+        
+        self._act_slices = self._act(show_m, "menu.show_slices", self._toggle_slices)
+        self._act_slices.setCheckable(True); self._act_slices.setChecked(True)
+
+        snap_m = self._menu(view_m, "menu.snap")
+        self._act_snap = self._act(snap_m, "menu.snap", self._toggle_snap, QKeySequence("Shift+Ctrl+;"))
+        self._act_snap.setCheckable(True); self._act_snap.setChecked(True)
+
+        snap_m.addSeparator()
+        self._act_snap_guides = self._act(snap_m, "menu.snap_guides", self._toggle_snap_guides)
+        self._act_snap_guides.setCheckable(True); self._act_snap_guides.setChecked(True)
+        self._act_snap_grid = self._act(snap_m, "menu.snap_grid", self._toggle_snap_grid)
+        self._act_snap_grid.setCheckable(True); self._act_snap_grid.setChecked(False)
+        self._act_snap_bounds = self._act(snap_m, "menu.snap_bounds", self._toggle_snap_bounds)
+        self._act_snap_bounds.setCheckable(True); self._act_snap_bounds.setChecked(True)
+        self._act_snap_layers = self._act(snap_m, "menu.snap_layers", self._toggle_snap_layers)
+        self._act_snap_layers.setCheckable(True); self._act_snap_layers.setChecked(True)
+
+        view_m.addSeparator()
+        self._act(view_m, "menu.clear_guides", self._clear_guides)
+        view_m.addSeparator()
         self._build_language_menu(view_m)
 
     def _act(self, menu: QMenu, key: str, slot, shortcut=None) -> QAction:
@@ -367,6 +445,7 @@ class MainWindow(QMainWindow,
         self._canvas.document_changed.connect(self._on_doc_changed)
         self._canvas.pixels_changed.connect(self._on_pixels_changed)
         self._canvas.color_picked.connect(self._color_panel.set_fg)
+        self._canvas.tool_state_changed.connect(self._opts_bar.update_tool_state)
         self._color_panel.fg_changed.connect(self._on_fg_changed)
         self._color_panel.bg_changed.connect(self._on_bg_changed)
         self._opts_bar.option_changed.connect(self._on_opt_changed)
@@ -413,10 +492,10 @@ class MainWindow(QMainWindow,
 
     # ================================================================= Tools
     def _commit_move_transform(self):
-        for t_name in ["Move", "Warp"]:
+        for t_name in ["Move", "Warp", "PuppetWarp", "PerspectiveWarp"]:
             tool = self._tools.get(t_name)
             if tool and getattr(tool, "is_transforming", False):
-                from core.history import HistoryState
+                from core.history import HistoryState, clone_work_path
                 
                 # Временно восстанавливаем исходное состояние слоя и выделения для чистого слепка
                 layer = self._document.get_active_layer()
@@ -448,6 +527,7 @@ class MainWindow(QMainWindow,
                     doc_width=self._document.width,
                     doc_height=self._document.height,
                     selection_snapshot=QPainterPath(self._document.selection) if self._document.selection else None,
+                    work_path_snapshot=clone_work_path(getattr(self._document, "work_path", None)),
                 )
                 
                 # Возвращаем "вырезанную" версию обратно для финального склеивания
@@ -487,6 +567,7 @@ class MainWindow(QMainWindow,
         self._canvas._update_cursor()
         self._opts_bar.switch_to(name)
         self._toolbar.set_active(name)
+        self._opts_bar.update_tool_state(None)
 
     def _on_layer_selected_wrap(self, index: int):
         self._commit_move_transform()
@@ -523,6 +604,33 @@ class MainWindow(QMainWindow,
             self._canvas_refresh()
 
     # ================================================================= Events
+    def _toggle_rulers(self):
+        self._canvas.show_rulers = self._act_rulers.isChecked(); self._canvas.update()
+    def _toggle_guides(self):
+        if hasattr(self._document, "show_guides"): self._document.show_guides = self._act_guides.isChecked(); self._canvas.update()
+    def _toggle_grid(self):
+        if hasattr(self._document, "show_grid"): self._document.show_grid = self._act_grid.isChecked(); self._canvas.update()
+    def _toggle_slices(self):
+        if hasattr(self._document, "show_slices"): self._document.show_slices = self._act_slices.isChecked(); self._canvas.update()
+    def _toggle_snap(self):
+        enabled = self._act_snap.isChecked()
+        self._act_snap_guides.setEnabled(enabled); self._act_snap_grid.setEnabled(enabled)
+        self._act_snap_bounds.setEnabled(enabled); self._act_snap_layers.setEnabled(enabled)
+        if hasattr(self._document, "snap_enabled"): self._document.snap_enabled = enabled
+    def _toggle_snap_guides(self):
+        if hasattr(self._document, "snap_to_guides"): self._document.snap_to_guides = self._act_snap_guides.isChecked()
+    def _toggle_snap_grid(self):
+        if hasattr(self._document, "snap_to_grid"): self._document.snap_to_grid = self._act_snap_grid.isChecked()
+    def _toggle_snap_bounds(self):
+        if hasattr(self._document, "snap_to_bounds"): self._document.snap_to_bounds = self._act_snap_bounds.isChecked()
+    def _toggle_snap_layers(self):
+        if hasattr(self._document, "snap_to_layers"): self._document.snap_to_layers = self._act_snap_layers.isChecked()
+    
+    def _clear_guides(self):
+        if hasattr(self._document, "guides_v"): self._document.guides_v.clear()
+        if hasattr(self._document, "guides_h"): self._document.guides_h.clear()
+        self._canvas.update()
+
     def _on_pixels_changed(self):
         self._update_status()
 
@@ -541,6 +649,7 @@ class MainWindow(QMainWindow,
         if hasattr(tool, "is_transforming") and tool.is_transforming:
             tool.cancel_transform(self._document)
             self._canvas_refresh()
+            self._opts_bar.update_tool_state(None)
             return
         super()._undo()
 
@@ -549,10 +658,12 @@ class MainWindow(QMainWindow,
         if hasattr(tool, "is_transforming") and tool.is_transforming:
             tool.cancel_transform(self._document)
             self._canvas_refresh()
+            self._opts_bar.update_tool_state(None)
             return
         super()._redo()
 
     def _push_history(self, description: str):
+        from core.history import clone_work_path
         self._history.push(HistoryState(
             description=description,
             layers_snapshot=self._document.snapshot_layers(),
@@ -560,6 +671,7 @@ class MainWindow(QMainWindow,
             doc_width=self._document.width,
             doc_height=self._document.height,
             selection_snapshot=QPainterPath(self._document.selection) if self._document.selection else None,
+            work_path_snapshot=clone_work_path(getattr(self._document, "work_path", None)),
         ))
 
     def _update_status(self, msg: str = ""):
@@ -575,6 +687,67 @@ class MainWindow(QMainWindow,
     def _update_title(self):
         self.setWindowTitle(tr("title.canvas", w=self._document.width, h=self._document.height))
 
+    def _align_layer(self, alignment: str):
+        doc = self._document
+        layer = doc.get_active_layer()
+        if not layer or layer.locked or getattr(layer, "layer_type", "raster") == "artboard":
+            return
+            
+        linked = [layer]
+        target_id = getattr(layer, "layer_id", None)
+        visited = set()
+        def get_descendants(p_id):
+            if not p_id or p_id in visited: return []
+            visited.add(p_id)
+            res = []
+            for l in doc.layers:
+                if getattr(l, "parent_id", None) == p_id:
+                    res.append(l)
+                    res.extend(get_descendants(getattr(l, "layer_id", None)))
+            return res
+            
+        if target_id and getattr(layer, "layer_type", "raster") == "group":
+            linked.extend(get_descendants(target_id))
+            
+        link_id = getattr(layer, "link_id", None)
+        if link_id:
+            for l in doc.layers:
+                if getattr(l, "link_id", None) == link_id and l not in linked:
+                    linked.append(l)
+                    
+        src_rect = QRectF()
+        for l in linked:
+            if getattr(l, "layer_type", "raster") in ("group", "artboard") or l.image.isNull(): continue
+            b = Document._nontransparent_bounds(l.image)
+            if not b.isEmpty(): src_rect = src_rect.united(QRectF(b).translated(QPointF(l.offset)))
+                
+        if src_rect.isEmpty(): return
+        
+        target_rect = None
+        if doc.selection and not doc.selection.isEmpty(): target_rect = doc.selection.boundingRect()
+        else:
+            p_id = getattr(layer, "parent_id", None)
+            while p_id:
+                parent = next((l for l in doc.layers if getattr(l, "layer_id", None) == p_id), None)
+                if not parent: break
+                if getattr(parent, "layer_type", "") == "artboard" and getattr(parent, "artboard_rect", None):
+                    target_rect = QRectF(parent.artboard_rect); break
+                p_id = getattr(parent, "parent_id", None)
+            if not target_rect: target_rect = QRectF(0, 0, doc.width, doc.height)
+                
+        dx, dy = 0, 0
+        if alignment == "left": dx = target_rect.left() - src_rect.left()
+        elif alignment == "center_h": dx = target_rect.center().x() - src_rect.center().x()
+        elif alignment == "right": dx = target_rect.right() - src_rect.right()
+        elif alignment == "top": dy = target_rect.top() - src_rect.top()
+        elif alignment == "center_v": dy = target_rect.center().y() - src_rect.center().y()
+        elif alignment == "bottom": dy = target_rect.bottom() - src_rect.bottom()
+        
+        if dx == 0 and dy == 0: return
+        self._push_history(tr("history.layer_moved"))
+        for l in linked: l.offset = l.offset + QPoint(int(dx), int(dy))
+        self._canvas_refresh()
+
     # ================================================================= Colour / Options
     def _on_fg_changed(self, c: QColor):
         self._canvas.fg_color = c
@@ -583,8 +756,17 @@ class MainWindow(QMainWindow,
         self._canvas.bg_color = c
 
     def _on_opt_changed(self, key: str, value):
+        if key == "align_layer":
+            self._align_layer(value)
+            return
         if key == "reset_view_rotation":
             self._canvas.reset_rotation()
+            return
+        if key == "transform_params":
+            tool = self._canvas.active_tool
+            if hasattr(tool, "set_transform_params"):
+                tool.set_transform_params(self._document, value)
+                self._canvas_refresh()
             return
         if key == "sampler_clear":
             tool = self._tools.get("ColorSampler")
@@ -596,6 +778,11 @@ class MainWindow(QMainWindow,
             if tool: tool.clear()
             self._canvas_refresh()
             return
+        if key == "clear_slices":
+            if hasattr(self._document, "slices"):
+                self._document.slices.clear()
+                self._canvas_refresh()
+            return
         if key == "move_apply":
             self._commit_move_transform()
             return
@@ -603,6 +790,30 @@ class MainWindow(QMainWindow,
             tool = self._canvas.active_tool
             if hasattr(tool, "is_transforming") and tool.is_transforming:
                 tool.cancel_transform(self._document)
+                self._canvas_refresh()
+                self._opts_bar.update_tool_state(None)
+            return
+        if key == "pen_action":
+            tool = self._canvas.active_tool
+            if hasattr(tool, "perform_action"):
+                result = tool.perform_action(self._document, value, self._canvas.fg_color)
+                if result:
+                    action, path = result
+                    if action == "selection":
+                        self._push_history(tr("history.quick_mask"))
+                        self._document.selection = path
+                    elif action == "shape":
+                        self._push_history("New Vector Shape")
+                        from core.layer import Layer
+                        n = sum(1 for l in self._document.layers if getattr(l, "layer_type", "raster") == "vector") + 1
+                        new_layer = self._document.add_layer(f"Path {n}", self._document.active_layer_index + 1)
+                        new_layer.layer_type = "vector"
+                        new_layer.vector_mask = QPainterPath(path)
+                        new_layer.vector_mask_enabled = True
+                        p = QPainter(new_layer.image)
+                        p.fillPath(path, QBrush(self._canvas.fg_color))
+                        p.end()
+                self._refresh_layers()
                 self._canvas_refresh()
             return
         self._canvas.tool_opts[key] = value
@@ -751,7 +962,7 @@ class MainWindow(QMainWindow,
     def _toggle_quick_mask(self):
         if not self._document: return
         
-        from core.history import HistoryState
+        from core.history import HistoryState, clone_work_path
         pre_state = HistoryState(
             description=tr("history.quick_mask"),
             layers_snapshot=self._document.snapshot_layers(),
@@ -759,6 +970,7 @@ class MainWindow(QMainWindow,
             doc_width=self._document.width,
             doc_height=self._document.height,
             selection_snapshot=QPainterPath(self._document.selection) if self._document.selection else None,
+            work_path_snapshot=clone_work_path(getattr(self._document, "work_path", None)),
         )
         
         if getattr(self._document, "quick_mask_layer", None) is not None:
@@ -895,6 +1107,103 @@ class MainWindow(QMainWindow,
                 self._canvas_refresh()
         elif hasattr(super(), "_on_edit_layer"):
             super()._on_edit_layer()
+            
+    def _export_slices(self):
+        slices = getattr(self._document, "slices", [])
+        if not slices:
+            QMessageBox.information(self, "ImageFinish", tr("err.no_slices"))
+            return
+        dir_path = QFileDialog.getExistingDirectory(self, tr("dlg.export_slices"))
+        if not dir_path: return
+        comp = self._document.get_composite()
+        count = 0
+        for i, r in enumerate(slices):
+            c = r.intersected(comp.rect())
+            if not c.isEmpty():
+                comp.copy(c).save(f"{dir_path}/slice_{i+1}.png")
+                count += 1
+        self._status.showMessage(tr("status.slices_exported", count=count))
+
+    def _get_define_image(self):
+        doc = self._document
+        comp = doc.get_composite()
+        if doc.selection and not doc.selection.isEmpty():
+            br = doc.selection.boundingRect().toRect().intersected(comp.rect())
+            if not br.isEmpty(): return comp.copy(br)
+        return comp.copy()
+
+    def _define_brush(self):
+        from PyQt6.QtWidgets import QInputDialog
+        import os
+        import numpy as np
+        from PyQt6.QtGui import QImage, QPainter
+        img = self._get_define_image()
+        name, ok = QInputDialog.getText(self, tr("dlg.define_brush_title"), tr("dlg.define_name"))
+        if not ok or not name.strip(): return
+        name = name.strip()
+        w, h = img.width(), img.height()
+        side = max(w, h)
+        sq_img = QImage(side, side, QImage.Format.Format_ARGB32_Premultiplied)
+        sq_img.fill(0)
+        p = QPainter(sq_img)
+        p.drawImage((side - w) // 2, (side - h) // 2, img)
+        p.end()
+        sq_img = sq_img.convertToFormat(QImage.Format.Format_ARGB32_Premultiplied)
+        ptr = sq_img.constBits()
+        ptr.setsize(sq_img.sizeInBytes())
+        arr = np.frombuffer(bytearray(ptr), dtype=np.uint8).reshape((side, side, 4))
+        del ptr
+        luma = (arr[..., 2]*0.299 + arr[..., 1]*0.587 + arr[..., 0]*0.114)
+        orig_alpha = arr[..., 3] / 255.0
+        brush_img = QImage(side, side, QImage.Format.Format_ARGB32_Premultiplied)
+        brush_img.fill(0)
+        b_ptr = brush_img.bits()
+        b_ptr.setsize(brush_img.sizeInBytes())
+        b_arr = np.frombuffer(b_ptr, dtype=np.uint8).reshape((side, side, 4))
+        b_arr[..., 3] = ((255 - luma) * orig_alpha).astype(np.uint8)
+        del b_arr
+        del b_ptr
+        base_dir = os.path.dirname(os.path.dirname(os.path.abspath(__file__)))
+        target_dir = os.path.join(base_dir, "brushes")
+        os.makedirs(target_dir, exist_ok=True)
+        path = os.path.join(target_dir, f"{name}.png")
+        brush_img.save(path)
+        brush_page = self._opts_bar._pages.get("Brush")
+        if hasattr(brush_page, "add_custom_brush"): brush_page.add_custom_brush(path, name)
+
+    def _define_pattern(self):
+        from PyQt6.QtWidgets import QInputDialog
+        import os
+        img = self._get_define_image()
+        name, ok = QInputDialog.getText(self, tr("dlg.define_pattern_title"), tr("dlg.define_name"))
+        if not ok or not name.strip(): return
+        name = name.strip()
+        base_dir = os.path.dirname(os.path.dirname(os.path.abspath(__file__)))
+        target_dir = os.path.join(base_dir, "patterns")
+        os.makedirs(target_dir, exist_ok=True)
+        path = os.path.join(target_dir, f"{name}.png")
+        img.save(path)
+        pat_page = self._opts_bar._pages.get("PatternStamp")
+        if hasattr(pat_page, "add_custom_pattern"): pat_page.add_custom_pattern(path, name)
+
+    def _define_shape(self):
+        from PyQt6.QtWidgets import QInputDialog, QMessageBox
+        import os, json
+        doc = self._document
+        if not doc.selection or doc.selection.isEmpty():
+            QMessageBox.warning(self, tr("err.title.error"), tr("err.no_selection_shape"))
+            return
+        name, ok = QInputDialog.getText(self, tr("dlg.define_shape_title"), tr("dlg.define_name"))
+        if not ok or not name.strip(): return
+        name = name.strip()
+        base_dir = os.path.dirname(os.path.dirname(os.path.abspath(__file__)))
+        target_dir = os.path.join(base_dir, "shapes")
+        os.makedirs(target_dir, exist_ok=True)
+        path = os.path.join(target_dir, f"{name}.json")
+        data = [{"type": int(e.type.value) if hasattr(e.type, 'value') else int(e.type), "x": e.x, "y": e.y} for i in range(doc.selection.elementCount()) for e in [doc.selection.elementAt(i)]]
+        with open(path, "w") as f: json.dump(data, f)
+        shapes_page = self._opts_bar._pages.get("Shapes")
+        if hasattr(shapes_page, "add_custom_shape"): shapes_page.add_custom_shape(path, name)
 
     def _on_apply_crop_requested(self):
         if self._active_tool_name == "Crop":
@@ -908,10 +1217,10 @@ class MainWindow(QMainWindow,
                 self._apply_crop()
             elif self._active_tool_name == "Perspective Crop":
                 self._apply_perspective_crop()
-            elif self._active_tool_name in ("Move", "Warp"):
+            elif self._active_tool_name in ("Move", "Warp", "PuppetWarp", "PerspectiveWarp"):
                 self._commit_move_transform()
         elif e.key() == Qt.Key.Key_Escape:
-            if self._active_tool_name in ("Move", "Warp"):
+            if self._active_tool_name in ("Move", "Warp", "PuppetWarp", "PerspectiveWarp"):
                 tool = self._canvas.active_tool
                 if hasattr(tool, "is_transforming") and tool.is_transforming:
                     tool.cancel_transform(self._document)

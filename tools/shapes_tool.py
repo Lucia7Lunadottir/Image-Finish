@@ -1,7 +1,8 @@
 import math
+import random
 
 from PyQt6.QtCore import QPoint, QRect, Qt
-from PyQt6.QtGui import QPainter, QPen, QBrush, QPolygon, QPainterPath
+from PyQt6.QtGui import QPainter, QPen, QBrush, QPolygon, QPainterPath, QTransform
 from tools.base_tool import BaseTool
 
 
@@ -104,6 +105,29 @@ class ShapesTool(BaseTool):
         path.closeSubpath()
         return path
 
+    @staticmethod
+    def _load_custom_shape(filepath: str) -> QPainterPath:
+        import json
+        path = QPainterPath()
+        try:
+            with open(filepath, "r") as f: data = json.load(f)
+            i = 0
+            while i < len(data):
+                d = data[i]
+                t = d["type"]
+                if t == 0:
+                    path.moveTo(d["x"], d["y"]); i += 1
+                elif t == 1:
+                    path.lineTo(d["x"], d["y"]); i += 1
+                elif t == 2:
+                    if i + 2 < len(data):
+                        d1 = data[i+1]; d2 = data[i+2]
+                        path.cubicTo(d["x"], d["y"], d1["x"], d1["y"], d2["x"], d2["y"])
+                    i += 3
+                else: i += 1
+        except Exception: pass
+        return path
+
     # ── Drawing ───────────────────────────────────────────────────────────────
 
     def _draw_shape(self, painter: QPainter, shape: str, rect: QRect,
@@ -122,7 +146,18 @@ class ShapesTool(BaseTool):
         else:
             painter.setBrush(QBrush(bg) if fill else QBrush(Qt.BrushStyle.NoBrush))
 
-        if shape == "ellipse":
+        if shape.startswith("custom:"):
+            custom_path = self._load_custom_shape(shape[7:])
+            if custom_path and not custom_path.isEmpty():
+                br = custom_path.boundingRect()
+                if not br.isEmpty():
+                    sx = rect.width() / br.width()
+                    sy = rect.height() / br.height()
+                    painter.save()
+                    painter.setTransform(QTransform().translate(rect.left(), rect.top()).scale(sx, sy).translate(-br.left(), -br.top()), combine=True)
+                    painter.drawPath(custom_path)
+                    painter.restore()
+        elif shape == "ellipse":
             painter.drawEllipse(rect)
         elif shape == "triangle":
             painter.drawPolygon(QPolygon([
@@ -153,12 +188,13 @@ class ShapesTool(BaseTool):
         self._shift       = bool(opts.get("_shift", False))
         self._sides       = int(opts.get("shape_sides", 6))
         self._angle       = int(opts.get("shape_angle", 0))
+        if opts.get("shape_angle_random", False):
+            self._angle = random.randint(0, 359)
 
     def on_move(self, pos, doc, fg, bg, opts):
         self._preview_end = pos
         self._shift       = bool(opts.get("_shift", False))
         self._sides       = int(opts.get("shape_sides", 6))
-        self._angle       = int(opts.get("shape_angle", 0))
 
     def preview_shape(self) -> dict | None:
         """Return a dict describing the live shape preview, or None."""
@@ -190,7 +226,7 @@ class ShapesTool(BaseTool):
         shape = opts.get("shape_type", "rect")
         fill  = bool(opts.get("shape_fill", False))
         sides = int(opts.get("shape_sides", 6))
-        angle = int(opts.get("shape_angle", 0))
+        angle = self._angle
 
         from core.layer import Layer
         n = sum(1 for l in doc.layers if getattr(l, "layer_type", "raster") == "vector") + 1

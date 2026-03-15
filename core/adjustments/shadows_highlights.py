@@ -1,7 +1,7 @@
 from PyQt6.QtGui import QImage
 
 from core.locale import tr
-from ui.adjustments_dialog import _to_argb32, _bits_ba, _from_ba, _AdjustDialog, _SliderRow
+from ui.adjustments_dialog import _to_argb32, _in_place_arr, _AdjustDialog, _SliderRow
 
 
 def apply_shadows_highlights(src: QImage, shadows: int,
@@ -16,9 +16,10 @@ def apply_shadows_highlights(src: QImage, shadows: int,
         sd = shadows    / 100.0 * np.power(1.0 - v / 255.0, 1.5) * (255.0 - v) * 0.5
         hd = highlights / 100.0 * np.power(v / 255.0,       1.5) * v            * 0.5
         lut = np.clip(v + sd - hd, 0, 255).astype(np.uint8)
-        ba, arr = _bits_ba(img)
+        img = img.copy()
+        arr = _in_place_arr(img)
         arr[:, :, :3] = lut[arr[:, :, :3]]
-        return _from_ba(ba, img)
+        return img.convertToFormat(QImage.Format.Format_ARGB32_Premultiplied)
     except ImportError:
         lut = []
         for v in range(256):

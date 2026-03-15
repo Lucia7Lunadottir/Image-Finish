@@ -39,8 +39,8 @@ class GradientTool(BaseTool):
             self._start = None
             return
 
-        sx, sy = self._start.x(), self._start.y()
-        ex, ey = pos.x(), pos.y()
+        sx, sy = self._start.x() - layer.offset.x(), self._start.y() - layer.offset.y()
+        ex, ey = pos.x() - layer.offset.x(), pos.y() - layer.offset.y()
         if sx == ex and sy == ey:
             self._start = None
             return
@@ -74,7 +74,7 @@ class GradientTool(BaseTool):
         painter = QPainter(target_img)
         painter.setOpacity(opacity)
         if doc.selection and not doc.selection.isEmpty():
-            painter.setClipPath(doc.selection)
+            painter.setClipPath(doc.selection.translated(-layer.offset.x(), -layer.offset.y()))
 
         self._apply_gradient(painter, gtype,
                              target_img.width(), target_img.height(),

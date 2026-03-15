@@ -31,17 +31,19 @@ def _qimage_to_np(img: QImage):
     """QImage ARGB32 → numpy (H, W, 4) uint8."""
     img = img.convertToFormat(QImage.Format.Format_ARGB32)
     w, h = img.width(), img.height()
-    ptr = img.bits()
-    ptr.setsize(h * w * 4)
-    arr = np.frombuffer(ptr, dtype=np.uint8).reshape((h, w, 4)).copy()
-    return arr  # channels: B G R A  (Qt ARGB32 in memory = BGRA on LE)
+    import ctypes, numpy as np
+    arr = np.empty((h, img.bytesPerLine() // 4, 4), dtype=np.uint8)
+    ctypes.memmove(arr.ctypes.data, int(img.constBits()), img.sizeInBytes())
+    return arr[:, :w, :]
 
 
 def _np_to_qimage(arr) -> QImage:
     h, w = arr.shape[:2]
-    arr = np.ascontiguousarray(arr)
-    img = QImage(arr.data, w, h, w * 4, QImage.Format.Format_ARGB32)
-    return img.copy()   # .copy() detaches from numpy buffer
+    import ctypes, numpy as np
+    arr_c = np.ascontiguousarray(arr)
+    img = QImage(w, h, QImage.Format.Format_ARGB32)
+    ctypes.memmove(int(img.bits()), arr_c.ctypes.data, min(img.sizeInBytes(), arr_c.nbytes))
+    return img
 
 
 def _circle_mask(src_rect: QRect, cx: int, cy: int, r: int):
@@ -52,6 +54,17 @@ def _circle_mask(src_rect: QRect, cx: int, cy: int, r: int):
     xx, yy = np.meshgrid(xs, ys)
     return (xx**2 + yy**2 <= r**2).astype(np.float32)[:, :, np.newaxis]
 
+
+def _soft_circle_mask(src_rect: QRect, cx: int, cy: int, r: int):
+    """Плавная радиальная маска (0.0 - 1.0) для мягкой кисти тонирования."""
+    pw, ph = src_rect.width(), src_rect.height()
+    xs = np.arange(pw) + src_rect.left() - cx
+    ys = np.arange(ph) + src_rect.top() - cy
+    xx, yy = np.meshgrid(xs, ys)
+    dist = np.sqrt(xx**2 + yy**2)
+    mask = np.clip(1.0 - (dist / max(1, r)), 0.0, 1.0)
+    mask = mask * mask * (3.0 - 2.0 * mask) # Smoothstep
+    return mask[:, :, np.newaxis].astype(np.float32)
 
 def _box_blur_np(arr, radius: int):
     """Fast separable box blur на numpy."""
@@ -110,6 +123,7 @@ class BlurTool(BaseTool):
     name     = "Blur"
     icon     = "💧"
     shortcut = "R"
+    modifies_canvas_on_move = True
 
     def __init__(self):
         self._last: QPoint | None = None
@@ -134,7 +148,7 @@ class BlurTool(BaseTool):
         strength = float(opts.get("effect_strength", 0.5))
         radius   = max(1, int(size * strength * 0.5))
 
-        cx, cy = pos.x(), pos.y()
+        cx, cy = pos.x() - layer.offset.x(), pos.y() - layer.offset.y()
         clip = doc.selection if (doc.selection and not doc.selection.isEmpty()) else None
 
         if _HAS_NUMPY:
@@ -143,7 +157,7 @@ class BlurTool(BaseTool):
                 QRect(cx - r, cy - r, size, size),
                 layer.image.width(), layer.image.height())
             if clip:
-                src_rect = src_rect.intersected(clip.boundingRect().toRect())
+                src_rect = src_rect.intersected(clip.boundingRect().toRect().translated(-layer.offset))
             if src_rect.isEmpty():
                 return
             patch = _qimage_to_np(layer.image.copy(src_rect))
@@ -155,7 +169,7 @@ class BlurTool(BaseTool):
             result_img = _np_to_qimage(blended)
             p = QPainter(layer.image)
             if clip:
-                p.setClipPath(clip)
+                p.setClipPath(clip.translated(-layer.offset.x(), -layer.offset.y()))
             p.drawImage(src_rect.topLeft(), result_img)
             p.end()
         else:
@@ -168,6 +182,7 @@ class SharpenTool(BaseTool):
     name     = "Sharpen"
     icon     = "🔺"
     shortcut = "Y"
+    modifies_canvas_on_move = True
 
     def __init__(self):
         self._last: QPoint | None = None
@@ -193,7 +208,7 @@ class SharpenTool(BaseTool):
         size     = max(4, int(opts.get("brush_size", 20)))
         strength = float(opts.get("effect_strength", 1.0))
 
-        cx, cy = pos.x(), pos.y()
+        cx, cy = pos.x() - layer.offset.x(), pos.y() - layer.offset.y()
         clip = doc.selection if (doc.selection and not doc.selection.isEmpty()) else None
 
         r = size // 2
@@ -201,7 +216,7 @@ class SharpenTool(BaseTool):
             QRect(cx - r, cy - r, size, size),
             layer.image.width(), layer.image.height())
         if clip:
-            src_rect = src_rect.intersected(clip.boundingRect().toRect())
+                src_rect = src_rect.intersected(clip.boundingRect().toRect().translated(-layer.offset))
         if src_rect.isEmpty():
             return
         patch = _qimage_to_np(layer.image.copy(src_rect))
@@ -212,7 +227,7 @@ class SharpenTool(BaseTool):
         result_img = _np_to_qimage(blended)
         p = QPainter(layer.image)
         if clip:
-            p.setClipPath(clip)
+            p.setClipPath(clip.translated(-layer.offset.x(), -layer.offset.y()))
         p.drawImage(src_rect.topLeft(), result_img)
         p.end()
 
@@ -226,6 +241,7 @@ class SmudgeTool(BaseTool):
     name     = "Smudge"
     icon     = "👆"
     shortcut = "W"
+    modifies_canvas_on_move = True
 
     def __init__(self):
         self._last:  QPoint | None = None
@@ -253,7 +269,7 @@ class SmudgeTool(BaseTool):
         strength = float(opts.get("effect_strength", 0.7))
         clip = doc.selection if (doc.selection and not doc.selection.isEmpty()) else None
 
-        cx, cy = pos.x(), pos.y()
+        cx, cy = pos.x() - layer.offset.x(), pos.y() - layer.offset.y()
 
         if _HAS_NUMPY:
             r = size // 2
@@ -261,7 +277,7 @@ class SmudgeTool(BaseTool):
                 QRect(cx - r, cy - r, size, size),
                 layer.image.width(), layer.image.height())
             if clip:
-                src_rect = src_rect.intersected(clip.boundingRect().toRect())
+                src_rect = src_rect.intersected(clip.boundingRect().toRect().translated(-layer.offset))
             if not src_rect.isEmpty():
                 patch = _qimage_to_np(layer.image.copy(src_rect))
                 # Смешиваем пиксели патча с «каплей» цвета, только внутри круга
@@ -274,7 +290,7 @@ class SmudgeTool(BaseTool):
                 result_img = _np_to_qimage(blended)
                 p = QPainter(layer.image)
                 if clip:
-                    p.setClipPath(clip)
+                    p.setClipPath(clip.translated(-layer.offset.x(), -layer.offset.y()))
                 p.drawImage(src_rect.topLeft(), result_img)
                 p.end()
                 # Обновляем «каплю» — берём усреднённый цвет патча
@@ -286,13 +302,13 @@ class SmudgeTool(BaseTool):
             p = QPainter(layer.image)
             p.setRenderHint(QPainter.RenderHint.Antialiasing)
             if clip:
-                p.setClipPath(clip)
+                p.setClipPath(clip.translated(-layer.offset.x(), -layer.offset.y()))
             c = QColor(self._color)
             c.setAlphaF(strength * 0.6)
             pen = QPen(c, size, Qt.PenStyle.SolidLine,
                        Qt.PenCapStyle.RoundCap, Qt.PenJoinStyle.RoundJoin)
             p.setPen(pen)
-            p.drawLine(self._last, pos)
+            p.drawLine(self._last - layer.offset, pos - layer.offset)
             p.end()
             # обновляем каплю
             x, y = pos.x(), pos.y()
@@ -309,3 +325,163 @@ class SmudgeTool(BaseTool):
     def on_release(self, pos, doc, fg, bg, opts):
         self._last  = None
         self._color = None
+
+
+# ═══════════════════════════════════════════════════════════════ DodgeTool
+class DodgeTool(BaseTool):
+    name     = "Dodge"
+    icon     = "🌔"
+    shortcut = "O"
+    modifies_canvas_on_move = True
+
+    def __init__(self):
+        self._last: QPoint | None = None
+
+    def on_press(self, pos, doc, fg, bg, opts):
+        self._last = pos
+        self._apply(pos, doc, opts)
+
+    def on_move(self, pos, doc, fg, bg, opts):
+        if self._last: self._apply(pos, doc, opts)
+        self._last = pos
+
+    def on_release(self, pos, doc, fg, bg, opts):
+        self._last = None
+
+    def _apply(self, pos: QPoint, doc, opts: dict):
+        if not _HAS_NUMPY: return
+        layer = doc.get_active_layer()
+        if not layer or layer.locked: return
+        
+        size = max(4, int(opts.get("brush_size", 20)))
+        strength = float(opts.get("effect_strength", 0.5))
+        cx, cy = pos.x() - layer.offset.x(), pos.y() - layer.offset.y()
+        clip = doc.selection if (doc.selection and not doc.selection.isEmpty()) else None
+
+        r = size // 2
+        src_rect = _clamp_rect(QRect(cx - r, cy - r, size, size), layer.image.width(), layer.image.height())
+        if clip: src_rect = src_rect.intersected(clip.boundingRect().toRect().translated(-layer.offset))
+        if src_rect.isEmpty(): return
+
+        patch = _qimage_to_np(layer.image.copy(src_rect))
+        circle = _soft_circle_mask(src_rect, cx, cy, r)
+        
+        rgb = patch[..., :3].astype(np.float32)
+        factor = strength * 0.2 * circle
+        res_rgb = rgb + (255.0 - rgb) * factor
+        patch[..., :3] = np.clip(res_rgb, 0, 255).astype(np.uint8)
+        
+        result_img = _np_to_qimage(patch)
+        p = QPainter(layer.image)
+        if clip: p.setClipPath(clip.translated(-layer.offset.x(), -layer.offset.y()))
+        p.drawImage(src_rect.topLeft(), result_img)
+        p.end()
+
+
+# ═══════════════════════════════════════════════════════════════ BurnTool
+class BurnTool(BaseTool):
+    name     = "Burn"
+    icon     = "🌒"
+    shortcut = "O"
+    modifies_canvas_on_move = True
+
+    def __init__(self):
+        self._last: QPoint | None = None
+
+    def on_press(self, pos, doc, fg, bg, opts):
+        self._last = pos
+        self._apply(pos, doc, opts)
+
+    def on_move(self, pos, doc, fg, bg, opts):
+        if self._last: self._apply(pos, doc, opts)
+        self._last = pos
+
+    def on_release(self, pos, doc, fg, bg, opts):
+        self._last = None
+
+    def _apply(self, pos: QPoint, doc, opts: dict):
+        if not _HAS_NUMPY: return
+        layer = doc.get_active_layer()
+        if not layer or layer.locked: return
+        
+        size = max(4, int(opts.get("brush_size", 20)))
+        strength = float(opts.get("effect_strength", 0.5))
+        cx, cy = pos.x() - layer.offset.x(), pos.y() - layer.offset.y()
+        r = size // 2
+        clip = doc.selection if (doc.selection and not doc.selection.isEmpty()) else None
+
+        src_rect = _clamp_rect(QRect(cx - r, cy - r, size, size), layer.image.width(), layer.image.height())
+        if clip: src_rect = src_rect.intersected(clip.boundingRect().toRect().translated(-layer.offset))
+        if src_rect.isEmpty(): return
+
+        patch = _qimage_to_np(layer.image.copy(src_rect))
+        circle = _soft_circle_mask(src_rect, cx, cy, r)
+        
+        rgb = patch[..., :3].astype(np.float32)
+        factor = strength * 0.2 * circle
+        res_rgb = rgb * (1.0 - factor)
+        patch[..., :3] = np.clip(res_rgb, 0, 255).astype(np.uint8)
+        
+        result_img = _np_to_qimage(patch)
+        p = QPainter(layer.image)
+        if clip: p.setClipPath(clip.translated(-layer.offset.x(), -layer.offset.y()))
+        p.drawImage(src_rect.topLeft(), result_img)
+        p.end()
+
+
+# ═══════════════════════════════════════════════════════════════ SpongeTool
+class SpongeTool(BaseTool):
+    name     = "Sponge"
+    icon     = "🧽"
+    shortcut = "O"
+    modifies_canvas_on_move = True
+
+    def __init__(self):
+        self._last: QPoint | None = None
+
+    def on_press(self, pos, doc, fg, bg, opts):
+        self._last = pos
+        self._apply(pos, doc, opts)
+
+    def on_move(self, pos, doc, fg, bg, opts):
+        if self._last: self._apply(pos, doc, opts)
+        self._last = pos
+
+    def on_release(self, pos, doc, fg, bg, opts):
+        self._last = None
+
+    def _apply(self, pos: QPoint, doc, opts: dict):
+        if not _HAS_NUMPY: return
+        layer = doc.get_active_layer()
+        if not layer or layer.locked: return
+        
+        size = max(4, int(opts.get("brush_size", 20)))
+        strength = float(opts.get("effect_strength", 0.5))
+        mode = opts.get("sponge_mode", "desaturate")
+        cx, cy = pos.x() - layer.offset.x(), pos.y() - layer.offset.y()
+        r = size // 2
+        clip = doc.selection if (doc.selection and not doc.selection.isEmpty()) else None
+
+        src_rect = _clamp_rect(QRect(cx - r, cy - r, size, size), layer.image.width(), layer.image.height())
+        if clip: src_rect = src_rect.intersected(clip.boundingRect().toRect().translated(-layer.offset))
+        if src_rect.isEmpty(): return
+
+        patch = _qimage_to_np(layer.image.copy(src_rect))
+        circle = _soft_circle_mask(src_rect, cx, cy, r)
+        
+        rgb = patch[..., :3].astype(np.float32)
+        gray = (0.114 * rgb[..., 0] + 0.587 * rgb[..., 1] + 0.299 * rgb[..., 2])[..., np.newaxis]
+        factor = strength * 0.2 * circle
+        
+        if mode == "desaturate":
+            res_rgb = rgb * (1.0 - factor) + gray * factor
+        else:
+            res_rgb = rgb + (rgb - gray) * factor
+            
+        patch[..., :3] = np.clip(res_rgb, 0, 255).astype(np.uint8)
+        
+        result_img = _np_to_qimage(patch)
+        p = QPainter(layer.image)
+        if clip: p.setClipPath(clip.translated(-layer.offset.x(), -layer.offset.y()))
+        p.drawImage(src_rect.topLeft(), result_img)
+        p.end()

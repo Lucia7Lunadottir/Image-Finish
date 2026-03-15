@@ -1,3 +1,5 @@
+import os
+import glob
 from PyQt6.QtWidgets import (QWidget, QHBoxLayout, QLabel,
                              QSlider, QSpinBox, QComboBox, QCheckBox)
 from PyQt6.QtCore import Qt
@@ -19,14 +21,23 @@ class ShapesOptions(BaseOptions):
         super().__init__(parent)
         self.layout.setSpacing(14)
         
-        _SHAPE_VALUES = ("rect", "ellipse", "triangle", "polygon", "line", "star", "arrow", "cross")
+        self._SHAPE_VALUES = ["rect", "ellipse", "triangle", "polygon", "line", "star", "arrow", "cross"]
         _SHAPE_KEYS = (
             "opts.shape.rect", "opts.shape.ellipse", "opts.shape.triangle",
             "opts.shape.polygon", "opts.shape.line", "opts.shape.star",
             "opts.shape.arrow", "opts.shape.cross",
         )
-        combo = QComboBox()
-        combo.addItems([tr(k) for k in _SHAPE_KEYS])
+        self._combo = QComboBox()
+        self._combo.addItems([tr(k) for k in _SHAPE_KEYS])
+        
+        self._custom_shapes = []
+        base_dir = os.path.dirname(os.path.dirname(os.path.dirname(os.path.abspath(__file__))))
+        shapes_dir = os.path.join(base_dir, "shapes")
+        if os.path.exists(shapes_dir):
+            for f in sorted(glob.glob(os.path.join(shapes_dir, "*.json"))):
+                name = os.path.splitext(os.path.basename(f))[0]
+                self._combo.addItem(name)
+                self._custom_shapes.append(f)
 
         sides_lbl = self._lbl("opts.shape.sides")
         sides_sp = QSpinBox()
@@ -45,16 +56,19 @@ class ShapesOptions(BaseOptions):
         angle_sp.setSuffix("°")
         angle_sp.setWrapping(True)
         angle_sp.valueChanged.connect(lambda v: self.option_changed.emit("shape_angle", v))
+        
+        self._angle_random_cb = QCheckBox(tr("opts.angle_random"))
+        self._angle_random_cb.toggled.connect(lambda v: self.option_changed.emit("shape_angle_random", v))
 
         def _on_shape_change(i):
-            shape = _SHAPE_VALUES[i] if 0 <= i < len(_SHAPE_VALUES) else "rect"
+            shape = self._SHAPE_VALUES[i] if i < len(self._SHAPE_VALUES) else "custom:" + self._custom_shapes[i - len(self._SHAPE_VALUES)]
             self.option_changed.emit("shape_type", shape)
             sides_lbl.setVisible(shape == "polygon")
             sides_sp.setVisible(shape == "polygon")
             angle_lbl.setVisible(shape != "line")
             angle_sp.setVisible(shape != "line")
 
-        combo.currentIndexChanged.connect(_on_shape_change)
+        self._combo.currentIndexChanged.connect(_on_shape_change)
 
         sl = _hslider(1, 50, 2)
         sp = QSpinBox()
@@ -69,13 +83,19 @@ class ShapesOptions(BaseOptions):
         fill_cb.toggled.connect(lambda v: self.option_changed.emit("shape_fill", v))
 
         self.layout.addWidget(self._lbl("opts.shape"))
-        self.layout.addWidget(combo)
+        self.layout.addWidget(self._combo)
         self.layout.addWidget(sides_lbl)
         self.layout.addWidget(sides_sp)
         self.layout.addWidget(angle_lbl)
         self.layout.addWidget(angle_sp)
+        self.layout.addWidget(self._angle_random_cb)
         self.layout.addWidget(fill_cb)
         self.layout.addWidget(self._lbl("opts.stroke"))
         self.layout.addWidget(sl)
         self.layout.addWidget(sp)
         self.layout.addStretch()
+        
+    def add_custom_shape(self, path, name):
+        self._combo.addItem(name)
+        self._custom_shapes.append(path)
+        self._combo.setCurrentIndex(self._combo.count() - 1)

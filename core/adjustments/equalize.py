@@ -1,6 +1,6 @@
 from PyQt6.QtGui import QImage
 
-from ui.adjustments_dialog import _to_argb32, _bits_ba, _from_ba
+from ui.adjustments_dialog import _to_argb32, _in_place_arr
 
 
 def apply_equalize(src: QImage) -> QImage:
@@ -8,7 +8,8 @@ def apply_equalize(src: QImage) -> QImage:
     img = _to_argb32(src)
     try:
         import numpy as np
-        ba, arr = _bits_ba(img)
+        img = img.copy()
+        arr = _in_place_arr(img)
         R = arr[:, :, 2].astype(np.float32)
         G = arr[:, :, 1].astype(np.float32)
         B = arr[:, :, 0].astype(np.float32)
@@ -28,7 +29,7 @@ def apply_equalize(src: QImage) -> QImage:
         arr[:, :, 2] = np.clip(R * scale, 0, 255).astype(np.uint8)
         arr[:, :, 1] = np.clip(G * scale, 0, 255).astype(np.uint8)
         arr[:, :, 0] = np.clip(B * scale, 0, 255).astype(np.uint8)
-        return _from_ba(ba, img)
+        return img.convertToFormat(QImage.Format.Format_ARGB32_Premultiplied)
     except ImportError:
         # Fallback: per-channel equalization
         result = img.copy()

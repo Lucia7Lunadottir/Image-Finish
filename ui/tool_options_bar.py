@@ -9,13 +9,18 @@ from .tool_options.shapes_options import ShapesOptions
 from .tool_options.text_options import TextOptions
 from .tool_options.crop_options import CropOptions
 from .tool_options.perspective_crop_options import PerspectiveCropOptions
-from .tool_options.effect_options import EffectOptions
+from .tool_options.effect_options import EffectOptions, SpongeOptions
 from .tool_options.rotate_view_options import RotateViewOptions
 from .tool_options.empty_options import EmptyOptions
 from .tool_options.bg_eraser_options import BackgroundEraserOptions
 from .tool_options.pattern_stamp_options import PatternStampOptions
 from .tool_options.measure_options import ColorSamplerOptions, RulerOptions
 from .tool_options.move_options import MoveOptions
+from .tool_options.slice_options import SliceOptions
+from .tool_options.patch_options import PatchOptions, SpotHealingOptions, RedEyeOptions
+from .tool_options.pen_options import PenOptions
+from .tool_options.frame_options import FrameOptions
+from .tool_options.magnetic_lasso_options import MagneticLassoOptions
 
 class ToolOptionsBar(QWidget):
     option_changed = pyqtSignal(str, object)
@@ -57,6 +62,7 @@ class ToolOptionsBar(QWidget):
         self._pages["Pencil"] = self._pages["Brush"]
         self._pages["ColorReplacement"] = self._pages["Brush"]
         self._pages["MixerBrush"] = self._pages["Brush"]
+        self._pages["HistoryBrush"] = self._pages["Brush"]
         self._pages["CloneStamp"] = self._pages["Brush"]
         self._pages["PatternStamp"] = PatternStampOptions()
         self._pages["Fill"] = FillOptions()
@@ -83,21 +89,40 @@ class ToolOptionsBar(QWidget):
             self._move_auto_cb.stateChanged.connect(lambda v: self.option_changed.emit("move_auto_select", bool(v)))
             move_layout.insertWidget(0, self._move_auto_cb)
         self._pages["Warp"] = MoveOptions("opts.warp_hint")
+        self._pages["PuppetWarp"] = MoveOptions("opts.puppet_warp_hint")
+        self._pages["PerspectiveWarp"] = MoveOptions("opts.perspective_warp_hint")
         self._pages["Artboard"] = EmptyOptions("tool.artboard")
         self._pages["Eyedropper"] = EmptyOptions("tool.eyedropper")
         self._pages["ColorSampler"] = ColorSamplerOptions()
+        self._pages["Patch"] = PatchOptions()
+        self._pages["SpotHealing"] = SpotHealingOptions("opts.spot_healing_hint")
+        self._pages["HealingBrush"] = SpotHealingOptions("opts.healing_brush_hint")
+        self._pages["RedEye"] = RedEyeOptions()
+        self._pages["Pen"] = PenOptions()
+        self._pages["FreeformPen"] = self._pages["Pen"]
+        self._pages["CurvaturePen"] = self._pages["Pen"]
+        self._pages["AddAnchor"] = self._pages["Pen"]
+        self._pages["DeleteAnchor"] = self._pages["Pen"]
+        self._pages["ConvertPoint"] = self._pages["Pen"]
+        self._pages["PathSelection"] = self._pages["Pen"]
+        self._pages["DirectSelection"] = self._pages["Pen"]
         self._pages["Ruler"] = RulerOptions()
         self._pages["Crop"] = CropOptions()
         self._pages["Perspective Crop"] = PerspectiveCropOptions()
+        self._pages["Frame"] = FrameOptions()
+        self._pages["Slice"] = SliceOptions()
         self._pages["Blur"] = EffectOptions("opts.effect.blur")
         self._pages["Sharpen"] = EffectOptions("opts.effect.sharpen")
         self._pages["Smudge"] = EffectOptions("opts.effect.smudge")
+        self._pages["Dodge"] = EffectOptions("opts.effect.dodge")
+        self._pages["Burn"] = EffectOptions("opts.effect.burn")
+        self._pages["Sponge"] = SpongeOptions()
         self._pages["Hand"] = EmptyOptions("opts.hand_hint")
         self._pages["Zoom"] = EmptyOptions("opts.zoom_hint")
         self._pages["RotateView"] = RotateViewOptions()
         self._pages["Lasso"] = self._pages["Select"]
         self._pages["PolygonalLasso"] = self._pages["Select"]
-        self._pages["MagneticLasso"] = self._pages["Select"]
+        self._pages["MagneticLasso"] = MagneticLassoOptions()
         self._pages["MagicWand"] = self._pages["Fill"]
         self._pages["QuickSelection"] = self._pages["BackgroundEraser"]
         self._pages["ObjectSelection"] = self._pages["Select"]
@@ -120,6 +145,11 @@ class ToolOptionsBar(QWidget):
                 current.setSizePolicy(QSizePolicy.Policy.Ignored, QSizePolicy.Policy.Ignored)
             page.setSizePolicy(QSizePolicy.Policy.Preferred, QSizePolicy.Policy.Preferred)
             self._stack.setCurrentWidget(page)
+
+    def update_tool_state(self, state: object):
+        current = self._stack.currentWidget()
+        if hasattr(current, "update_params"):
+            current.update_params(state)
 
     def retranslate(self):
         # Используем set, чтобы не обновлять одну и ту же панель (например, BrushOptions) несколько раз

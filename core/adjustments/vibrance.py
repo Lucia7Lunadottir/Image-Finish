@@ -1,7 +1,7 @@
 from PyQt6.QtGui import QImage
 
 from core.locale import tr
-from ui.adjustments_dialog import _to_argb32, _bits_ba, _from_ba, _AdjustDialog, _SliderRow
+from ui.adjustments_dialog import _to_argb32, _in_place_arr, _AdjustDialog, _SliderRow
 
 
 def apply_vibrance(src: QImage, vibrance: int, saturation: int) -> QImage:
@@ -10,7 +10,8 @@ def apply_vibrance(src: QImage, vibrance: int, saturation: int) -> QImage:
     img = _to_argb32(src)
     try:
         import numpy as np
-        ba, arr = _bits_ba(img)
+        img = img.copy()
+        arr = _in_place_arr(img)
         B = arr[:, :, 0].astype(np.float32) / 255.0
         G = arr[:, :, 1].astype(np.float32) / 255.0
         R = arr[:, :, 2].astype(np.float32) / 255.0
@@ -54,7 +55,7 @@ def apply_vibrance(src: QImage, vibrance: int, saturation: int) -> QImage:
         arr[:, :, 2] = np.clip((R2 + mv) * 255, 0, 255).astype(np.uint8)
         arr[:, :, 1] = np.clip((G2 + mv) * 255, 0, 255).astype(np.uint8)
         arr[:, :, 0] = np.clip((B2 + mv) * 255, 0, 255).astype(np.uint8)
-        return _from_ba(ba, img)
+        return img.convertToFormat(QImage.Format.Format_ARGB32_Premultiplied)
     except ImportError:
         import colorsys
         result = img.copy()

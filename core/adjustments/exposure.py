@@ -1,7 +1,7 @@
 from PyQt6.QtGui import QImage
 
 from core.locale import tr
-from ui.adjustments_dialog import _to_argb32, _bits_ba, _from_ba, _AdjustDialog
+from ui.adjustments_dialog import _to_argb32, _in_place_arr, _AdjustDialog
 from core.adjustments._widgets import _FSliderRow
 
 
@@ -17,9 +17,10 @@ def apply_exposure(src: QImage, exposure: float, offset: float,
         linear = np.clip(linear * (2.0 ** exposure) + offset, 0.0, None)
         linear = linear ** (1.0 / gamma)
         lut    = np.clip(linear ** (1.0 / 2.2) * 255.0, 0, 255).astype(np.uint8)
-        ba, arr = _bits_ba(img)
+        img = img.copy()
+        arr = _in_place_arr(img)
         arr[:, :, :3] = lut[arr[:, :, :3]]
-        return _from_ba(ba, img)
+        return img.convertToFormat(QImage.Format.Format_ARGB32_Premultiplied)
     except ImportError:
         lut = []
         for i in range(256):

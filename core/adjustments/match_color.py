@@ -2,17 +2,13 @@ from PyQt6.QtWidgets import QHBoxLayout, QLabel, QComboBox
 from PyQt6.QtGui import QImage
 
 from core.locale import tr
-from ui.adjustments_dialog import _to_argb32, _bits_ba, _from_ba, _AdjustDialog, _SliderRow
+from ui.adjustments_dialog import _to_argb32, _const_arr, _in_place_arr, _AdjustDialog, _SliderRow
 
 
 def _to_float_bgr(img: QImage):
     """Return H×W×3 float32 numpy array (BGR, 0..1) from an ARGB32 QImage."""
     import numpy as np
-    ptr = img.bits()
-    ptr.setsize(img.sizeInBytes())
-    ba = bytearray(ptr)
-    arr = np.frombuffer(ba, dtype=np.uint8).reshape(
-        (img.height(), img.width(), 4)).astype(np.float32) / 255.0
+    arr = _const_arr(img).astype(np.float32) / 255.0
     return arr[:, :, :3]          # drop alpha, keep BGR
 
 
@@ -110,9 +106,10 @@ def apply_match_color(src: QImage, source_img: QImage,
         blend = 1.0 - fade / 100.0
         result_bgr = tgt_bgr * (1.0 - blend) + matched_bgr * blend
 
-        ba, arr = _bits_ba(img)
+        img = img.copy()
+        arr = _in_place_arr(img)
         arr[:, :, :3] = np.clip(result_bgr * 255.0, 0, 255).astype(np.uint8)
-        return _from_ba(ba, img)
+        return img.convertToFormat(QImage.Format.Format_ARGB32_Premultiplied)
     except ImportError:
         return img.convertToFormat(QImage.Format.Format_ARGB32_Premultiplied)
 

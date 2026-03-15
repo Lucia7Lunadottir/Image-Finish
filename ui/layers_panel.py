@@ -249,6 +249,7 @@ class LayerItem(QWidget):
             "fill":        ("F", "#cba6f7", "layer.type.fill"),
             "smart_object":("S", "#f9e2af", "layer.type.smart_object"),
             "artboard":    ("◩", "#a6adc8", "layer.type.artboard"),
+            "frame":       ("⛶", "#89dceb", "layer.type.frame"),
             "group":       ("📁", "#f9e2af", "layer.type.group"),
         }
         if ltype in _BADGES:

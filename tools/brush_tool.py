@@ -136,16 +136,17 @@ class BrushTool(BaseTool):
             lock_a = getattr(layer, "lock_alpha", False) and target is layer.image
             
             if lock_a:
+                import ctypes
                 w, h = target.width(), target.height()
                 ptr = target.bits()
-                ptr.setsize(target.sizeInBytes())
-                arr = np.ndarray((h, w, 4), dtype=np.uint8, buffer=ptr)
+                buf = (ctypes.c_uint8 * target.sizeInBytes()).from_address(int(ptr))
+                arr = np.ndarray((h, target.bytesPerLine() // 4, 4), dtype=np.uint8, buffer=buf)
                 orig_alpha = arr[..., 3].copy()
 
             painter = QPainter(target)
             painter.setRenderHint(QPainter.RenderHint.Antialiasing)
             if self._stroke_clip is not None:
-                painter.setClipPath(self._stroke_clip)
+                painter.setClipPath(self._stroke_clip.translated(-layer.offset.x(), -layer.offset.y()))
             painter.setCompositionMode(self.stroke_composition_mode(opts))
             painter.setOpacity(max(0.0, min(1.0, float(self._stroke_opacity))))
             painter.drawImage(0, 0, self._stroke_img)
@@ -171,7 +172,8 @@ class BrushTool(BaseTool):
         """Return (QImage, top_left: QPoint, opacity: float) for live canvas overlay."""
         if self._stroke_img is None:
             return None
-        return (self._stroke_img, QPoint(0, 0), float(self._stroke_opacity))
+        offset = self._stroke_layer.offset if self._stroke_layer else QPoint(0, 0)
+        return (self._stroke_img, offset, float(self._stroke_opacity))
 
     def stroke_composition_mode(self, opts=None):
         if opts is None: opts = {}
@@ -220,9 +222,10 @@ class BrushTool(BaseTool):
             if not stamp.hasAlphaChannel():
                 stamp = stamp.convertToFormat(QImage.Format.Format_ARGB32)
                 import numpy as np
+                import ctypes
                 ptr = stamp.bits()
-                ptr.setsize(stamp.sizeInBytes())
-                arr = np.ndarray((stamp.height(), stamp.width(), 4), dtype=np.uint8, buffer=ptr)
+                buf = (ctypes.c_uint8 * stamp.sizeInBytes()).from_address(int(ptr))
+                arr = np.ndarray((stamp.height(), stamp.bytesPerLine() // 4, 4), dtype=np.uint8, buffer=buf)
                 
                 # Считаем яркость. Тёмное = кисть, белое = фон.
                 luma = (arr[..., 2]*0.299 + arr[..., 1]*0.587 + arr[..., 0]*0.114).astype(np.uint8)
@@ -290,7 +293,7 @@ class BrushTool(BaseTool):
         painter = QPainter(self._stroke_img)
         painter.setRenderHint(QPainter.RenderHint.Antialiasing)
         if self._stroke_clip is not None:
-            painter.setClipPath(self._stroke_clip)
+            painter.setClipPath(self._stroke_clip.translated(-layer.offset.x(), -layer.offset.y()))
         
         if getattr(self, "name", "") == "MixerBrush":
             painter.setCompositionMode(QPainter.CompositionMode.CompositionMode_SourceOver)
@@ -365,7 +368,7 @@ class BrushTool(BaseTool):
         if getattr(self, "name", "") != "Pencil":
             painter.setRenderHint(QPainter.RenderHint.Antialiasing)
         if self._stroke_clip is not None:
-            painter.setClipPath(self._stroke_clip)
+            painter.setClipPath(self._stroke_clip.translated(-layer.offset.x(), -layer.offset.y()))
             
         mirror_x = bool(opts.get("brush_mirror_x", False))
         mirror_y = bool(opts.get("brush_mirror_y", False))
@@ -378,7 +381,8 @@ class BrushTool(BaseTool):
         pen = QPen(c, size, Qt.PenStyle.SolidLine, Qt.PenCapStyle.RoundCap, Qt.PenJoinStyle.RoundJoin)
         painter.setPen(pen)
         for a, b in list(dict.fromkeys(pairs)):
-            painter.drawLine(QPoint(int(a[0]), int(a[1])), QPoint(int(b[0]), int(b[1])))
+            painter.drawLine(QPoint(int(a[0] - layer.offset.x()), int(a[1] - layer.offset.y())), 
+                             QPoint(int(b[0] - layer.offset.x()), int(b[1] - layer.offset.y())))
         painter.end()
 
 
@@ -422,6 +426,7 @@ class CloneStampTool(BrushTool):
         if not layer or layer.locked:
             return
         self._source_img = layer.image.copy()
+        self._source_offset = layer.offset
 
         super().on_press(pos, doc, fg, bg, opts)
 
@@ -441,6 +446,7 @@ class CloneStampTool(BrushTool):
         super().on_release(pos, doc, fg, bg, opts)
         self._paint_offset = None
         self._source_img = None
+        self._source_offset = None
         self._crosshair_pos = None
 
     def _paint(self, p1: QPoint, p2: QPoint, doc, color: QColor, opts: dict, press1: float = 1.0, press2: float = 1.0):
@@ -468,7 +474,7 @@ class CloneStampTool(BrushTool):
         painter = QPainter(self._stroke_img)
         painter.setRenderHint(QPainter.RenderHint.Antialiasing)
         if self._stroke_clip is not None:
-            painter.setClipPath(self._stroke_clip)
+            painter.setClipPath(self._stroke_clip.translated(-layer.offset.x(), -layer.offset.y()))
         
         painter.setCompositionMode(QPainter.CompositionMode.CompositionMode_SourceOver)
 
@@ -480,16 +486,18 @@ class CloneStampTool(BrushTool):
             
             cx, cy = p1.x() + dx * t, p1.y() + dy * t
             
-            centers = [(cx, cy)]
-            if mirror_x: centers.extend([(doc_w - c[0], c[1]) for c in centers])
-            if mirror_y: centers.extend([(c[0], doc_h - c[1]) for c in centers])
+            centers_doc = [(cx, cy)]
+            if mirror_x: centers_doc.extend([(doc_w - c[0], c[1]) for c in centers_doc])
+            if mirror_y: centers_doc.extend([(c[0], doc_h - c[1]) for c in centers_doc])
             
-            orig_src_cx = cx - self._paint_offset.x()
-            orig_src_cy = cy - self._paint_offset.y()
-
-            for target_cx, target_cy in list(dict.fromkeys(centers)):
-                src_cx = doc_w - orig_src_cx if target_cx != cx else orig_src_cx
-                src_cy = doc_h - orig_src_cy if target_cy != cy else orig_src_cy
+            for target_doc_cx, target_doc_cy in list(dict.fromkeys(centers_doc)):
+                target_cx = target_doc_cx - layer.offset.x()
+                target_cy = target_doc_cy - layer.offset.y()
+                
+                orig_src_doc_cx = target_doc_cx - self._paint_offset.x()
+                orig_src_doc_cy = target_doc_cy - self._paint_offset.y()
+                src_cx = orig_src_doc_cx - self._source_offset.x()
+                src_cy = orig_src_doc_cy - self._source_offset.y()
                 
                 painter.save()
                 painter.translate(target_cx, target_cy)
@@ -532,9 +540,10 @@ class PencilTool(BrushTool):
     def _get_stamp(self, size: int, hardness: float, mask) -> QImage:
         # Карандаш всегда имеет 100% жесткость и бинарный альфа-канал
         stamp = super()._get_stamp(size, 1.0, mask).copy()
+        import ctypes
         ptr = stamp.bits()
-        ptr.setsize(stamp.sizeInBytes())
-        arr = np.ndarray((stamp.height(), stamp.width(), 4), dtype=np.uint8, buffer=ptr)
+        buf = (ctypes.c_uint8 * stamp.sizeInBytes()).from_address(int(ptr))
+        arr = np.ndarray((stamp.height(), stamp.bytesPerLine() // 4, 4), dtype=np.uint8, buffer=buf)
         arr[arr[..., 3] < 128, 3] = 0
         arr[arr[..., 3] >= 128, 3] = 255
         return stamp
@@ -577,3 +586,116 @@ class MixerBrushTool(BrushTool):
                     self._mix_color = QColor(r, g, b, 255)
         
         super().on_move(pos, doc, self._mix_color, bg, opts)
+
+
+class HistoryBrushTool(BrushTool):
+    name     = "HistoryBrush"
+    icon     = "🕰️"
+    shortcut = "Y"
+
+    def __init__(self):
+        super().__init__()
+        self._source_img = None
+
+    def on_press(self, pos, doc, fg, bg, opts):
+        layer = doc.get_active_layer()
+        if not layer or layer.locked or getattr(layer, "lock_pixels", False):
+            return
+
+        history = getattr(doc, "history", None)
+        if history and history._undo_stack:
+            # Берём оригинальный снимок самого первого состояния документа
+            initial_state = history._undo_stack[0]
+            src_layer = next((l for l in initial_state.layers_snapshot if l.layer_id == layer.layer_id), None)
+            if src_layer:
+                self._source_img = src_layer.image.copy()
+            elif initial_state.layers_snapshot:
+                self._source_img = initial_state.layers_snapshot[0].image.copy()
+        
+        if not self._source_img:
+            self._source_img = layer.image.copy()
+
+        super().on_press(pos, doc, fg, bg, opts)
+
+    def on_release(self, pos, doc, fg, bg, opts):
+        super().on_release(pos, doc, fg, bg, opts)
+        self._source_img = None
+
+    def _paint(self, p1: QPoint, p2: QPoint, doc, color: QColor, opts: dict, press1: float = 1.0, press2: float = 1.0):
+        if not self._source_img: return
+        layer = self._stroke_layer
+        if not layer or layer.locked or self._stroke_img is None:
+            return
+
+        hardness = float(opts.get("brush_hardness", 1.0))
+        mask     = opts.get("brush_mask", "round")
+        angle    = float(opts.get("brush_angle", 0.0))
+        angle_random = bool(opts.get("brush_angle_random", False))
+        size_base = max(1, int(opts.get("brush_size", 10)))
+        size_dyn = bool(opts.get("brush_size_dynamic", False))
+        mirror_x = bool(opts.get("brush_mirror_x", False))
+        mirror_y = bool(opts.get("brush_mirror_y", False))
+        doc_w, doc_h = doc.width, doc.height
+
+        step  = max(1, size_base // 3)
+        dx, dy = p2.x() - p1.x(), p2.y() - p1.y()
+        dist  = math.hypot(dx, dy)
+        
+        steps = 0 if dist == 0 else max(1, int(dist / step))
+        start_i = 0 if dist == 0 else 1
+
+        painter = QPainter(self._stroke_img)
+        painter.setRenderHint(QPainter.RenderHint.Antialiasing)
+        if self._stroke_clip is not None:
+            painter.setClipPath(self._stroke_clip.translated(-layer.offset.x(), -layer.offset.y()))
+        
+        painter.setCompositionMode(QPainter.CompositionMode.CompositionMode_SourceOver)
+
+        for i in range(start_i, steps + 1):
+            t = 0 if steps == 0 else i / steps
+            cur_press = press1 + (press2 - press1) * t
+            cur_size = max(1, int(size_base * cur_press)) if size_dyn else size_base
+            stamp = self._get_stamp(cur_size, hardness, mask)
+            
+            cx, cy = p1.x() + dx * t, p1.y() + dy * t
+            
+            centers_doc = [(cx, cy)]
+            if mirror_x: centers_doc.extend([(doc_w - c[0], c[1]) for c in centers_doc])
+            if mirror_y: centers_doc.extend([(c[0], doc_h - c[1]) for c in centers_doc])
+            
+            for target_doc_cx, target_doc_cy in list(dict.fromkeys(centers_doc)):
+                target_cx = target_doc_cx - layer.offset.x()
+                target_cy = target_doc_cy - layer.offset.y()
+                painter.save()
+                painter.translate(target_cx, target_cy)
+                current_angle = random.uniform(0, 360) if angle_random else angle
+                if current_angle != 0.0:
+                    painter.setRenderHint(QPainter.RenderHint.SmoothPixmapTransform)
+                    painter.rotate(current_angle)
+                painter.translate(-cur_size / 2.0, -cur_size / 2.0)
+                
+                patch = QImage(stamp.size(), QImage.Format.Format_ARGB32_Premultiplied)
+                patch.fill(Qt.GlobalColor.transparent)
+                
+                pp = QPainter(patch)
+                pp.drawImage(0, 0, stamp)
+                pp.setCompositionMode(QPainter.CompositionMode.CompositionMode_SourceIn)
+                pp.translate(cur_size / 2.0, cur_size / 2.0)
+                if current_angle != 0.0:
+                    pp.rotate(-current_angle)  # Отменяем вращение кисти, чтобы текстура истории оставалась прямой
+                pp.translate(-target_cx, -target_cy)
+                pp.drawImage(0, 0, self._source_img)
+                pp.end()
+                
+                if opts.get("brush_opacity_dynamic", False):
+                    alpha_mask = QImage(patch.size(), QImage.Format.Format_ARGB32_Premultiplied)
+                    alpha_mask.fill(QColor(0,0,0, int(255*cur_press)))
+                    pp2 = QPainter(patch)
+                    pp2.setCompositionMode(QPainter.CompositionMode.CompositionMode_DestinationIn)
+                    pp2.drawImage(0, 0, alpha_mask)
+                    pp2.end()
+                
+                painter.drawImage(0, 0, patch)
+                painter.restore()
+
+        painter.end()

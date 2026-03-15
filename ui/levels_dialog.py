@@ -11,7 +11,7 @@ from PyQt6.QtGui import (
     QImage, QPainter, QColor, QLinearGradient, QBrush, QPen, QPolygon,
 )
 from core.locale import tr
-from ui.adjustments_dialog import _to_argb32, _bits_ba, _from_ba
+from ui.adjustments_dialog import _to_argb32
 
 
 # ── pixel math ───────────────────────────────────────────────────────────────
@@ -21,11 +21,15 @@ def compute_histogram(img: QImage) -> list:
     argb = _to_argb32(img)
     try:
         import numpy as np
-        ba, arr = _bits_ba(argb)
+        ptr = argb.constBits()
+        ptr.setsize(argb.sizeInBytes())
+        arr = np.frombuffer(ptr, dtype=np.uint8).reshape((argb.height(), argb.width(), 4))
         # BGRA layout: R=2, G=1, B=0
         lum = (0.299 * arr[:, :, 2].astype(np.float32)
              + 0.587 * arr[:, :, 1].astype(np.float32)
              + 0.114 * arr[:, :, 0].astype(np.float32)).astype(np.uint8)
+        del arr
+        del ptr
         counts, _ = np.histogram(lum, bins=256, range=(0, 256))
         return counts.tolist()
     except ImportError:
@@ -62,10 +66,15 @@ def apply_levels(src: QImage,
     img = _to_argb32(src)
     try:
         import numpy as np
-        ba, arr = _bits_ba(img)
+        img = img.copy()
+        ptr = img.bits()
+        ptr.setsize(img.sizeInBytes())
+        arr = np.frombuffer(ptr, dtype=np.uint8).reshape((img.height(), img.width(), 4))
         lut_np = np.frombuffer(lut, dtype=np.uint8)
         arr[:, :, :3] = lut_np[arr[:, :, :3]]
-        return _from_ba(ba, img)
+        del arr
+        del ptr
+        return img.convertToFormat(QImage.Format.Format_ARGB32_Premultiplied)
     except ImportError:
         for y in range(img.height()):
             for x in range(img.width()):

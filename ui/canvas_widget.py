@@ -10,13 +10,16 @@ from tools.other_tools import (SelectTool, CropTool, ShapesTool,
 
 # Инструменты с кистью — для них показываем кружок-курсор
 _BRUSH_TOOLS = {"Brush", "Eraser", "BackgroundEraser", "Blur", "Sharpen", "Smudge", "CloneStamp", "PatternStamp",
-                "Pencil", "ColorReplacement", "MixerBrush"}
+                "Pencil", "ColorReplacement", "MixerBrush", 
+                "SpotHealing", "HealingBrush", "HistoryBrush",
+                "Dodge", "Burn", "Sponge"}
 
 
 class CanvasWidget(QWidget):
     document_changed = pyqtSignal()
     pixels_changed   = pyqtSignal()
     color_picked     = pyqtSignal(QColor)
+    tool_state_changed = pyqtSignal(object)
 
     def __init__(self, parent=None):
         super().__init__(parent)
@@ -57,6 +60,7 @@ class CanvasWidget(QWidget):
             "shape_sides":    6,
             "shape_angle":    0,
             "effect_strength": 0.5,
+            "crop_overlay":   "thirds",
         }
 
         self.zoom: float   = 1.0
@@ -78,6 +82,9 @@ class CanvasWidget(QWidget):
 
         self._composite_cache: QImage | None = None
         self._cache_dirty: bool = True
+
+        self.show_rulers: bool = False
+        self._dragging_guide = None
 
         self.setMouseTracking(True)
         self.setFocusPolicy(Qt.FocusPolicy.StrongFocus)
@@ -187,6 +194,40 @@ class CanvasWidget(QWidget):
         self.zoom = new_zoom
         self.update()
 
+    def _draw_rulers(self, painter: QPainter):
+        R = 20
+        w, h = self.width(), self.height()
+        painter.fillRect(0, 0, w, R, QColor(40, 40, 45))
+        painter.fillRect(0, 0, R, h, QColor(40, 40, 45))
+        painter.fillRect(0, 0, R, R, QColor(30, 30, 35))
+        
+        painter.setPen(QColor(150, 150, 150))
+        font = painter.font()
+        font.setPointSize(8)
+        painter.setFont(font)
+        
+        start_x = - (self._pan.x() / self.zoom)
+        end_x = start_x + w / self.zoom
+        step = 100
+        if self.zoom > 2: step = 10
+        elif self.zoom > 0.5: step = 50
+        elif self.zoom < 0.2: step = 500
+        
+        first_x = int(start_x // step) * step
+        for x in range(first_x, int(end_x) + step, step):
+            wx = int(x * self.zoom + self._pan.x())
+            if wx > R:
+                painter.drawLine(wx, R - 6, wx, R); painter.drawText(wx + 2, R - 2, str(x))
+                
+        start_y = - (self._pan.y() / self.zoom)
+        end_y = start_y + h / self.zoom
+        first_y = int(start_y // step) * step
+        for y in range(first_y, int(end_y) + step, step):
+            wy = int(y * self.zoom + self._pan.y())
+            if wy > R:
+                painter.drawLine(R - 6, wy, R, wy)
+                painter.save(); painter.translate(R - 2, wy + 2); painter.rotate(-90); painter.drawText(0, 0, str(y)); painter.restore()
+
     # ──────────────────────────────────────── отрисовка
     def paintEvent(self, _event):
         painter = QPainter(self)
@@ -247,6 +288,9 @@ class CanvasWidget(QWidget):
         if self._show_brush_cursor and not self._panning and not self._space:
             self._draw_brush_cursor(painter)
 
+        if self.show_rulers:
+            self._draw_rulers(painter)
+
         painter.end()
 
     def _paint_canvas_content(self, painter: QPainter):
@@ -273,6 +317,50 @@ class CanvasWidget(QWidget):
         painter.scale(self.zoom, self.zoom)
         painter.drawImage(0, 0, self._composite_cache)
         painter.restore()
+
+        # Grid
+        if getattr(self.document, "show_grid", False):
+            painter.save(); painter.translate(self._pan); painter.scale(self.zoom, self.zoom)
+            painter.setPen(QPen(QColor(128, 128, 128, 100), max(1.0, 1.0/self.zoom), Qt.PenStyle.DotLine))
+            gs = max(5, getattr(self.document, "grid_size", 50))
+            for x in range(0, self.document.width, gs): painter.drawLine(QPointF(x, 0), QPointF(x, self.document.height))
+            for y in range(0, self.document.height, gs): painter.drawLine(QPointF(0, y), QPointF(self.document.width, y))
+            painter.restore()
+
+        # Guides
+        if getattr(self.document, "show_guides", False):
+            painter.save(); painter.translate(self._pan); painter.scale(self.zoom, self.zoom)
+            pw = max(1.0, 1.0 / self.zoom)
+            painter.setPen(QPen(QColor(0, 255, 255, 200), pw))
+            for gx in getattr(self.document, "guides_v", []): painter.drawLine(QPointF(gx, -10000), QPointF(gx, 10000))
+            for gy in getattr(self.document, "guides_h", []): painter.drawLine(QPointF(-10000, gy), QPointF(10000, gy))
+                
+            if getattr(self, "_dragging_guide", None):
+                gtype, val, _ = self._dragging_guide
+                painter.setPen(QPen(QColor(0, 255, 255, 255), pw))
+                if gtype == 'v':
+                    painter.drawLine(QPointF(val, -10000), QPointF(val, 10000))
+                else:
+                    painter.drawLine(QPointF(-10000, val), QPointF(10000, val))
+            painter.restore()
+
+        # Slices
+        if getattr(self.document, "show_slices", True):
+            slices = getattr(self.document, "slices", [])
+            if slices:
+                painter.save()
+                painter.translate(self._pan); painter.scale(self.zoom, self.zoom)
+                pw = max(1.0, 1.0 / self.zoom)
+                painter.setPen(QPen(QColor(0, 150, 255, 200), pw))
+                font = painter.font(); font.setPointSizeF(max(8.0, 10.0 / self.zoom)); painter.setFont(font)
+                for i, r in enumerate(slices):
+                    painter.setBrush(QColor(0, 150, 255, 20)); painter.drawRect(r)
+                    badge_rect = QRectF(r.left(), r.top(), 24 / self.zoom, 16 / self.zoom)
+                    painter.fillRect(badge_rect, QColor(0, 150, 255, 200))
+                    painter.setPen(QColor(255, 255, 255))
+                    painter.drawText(badge_rect, Qt.AlignmentFlag.AlignCenter, str(i+1))
+                    painter.setPen(QPen(QColor(0, 150, 255, 200), pw))
+                painter.restore()
 
         # 3. Рамка документа
         if not has_artboards:
@@ -453,6 +541,36 @@ class CanvasWidget(QWidget):
             painter.setPen(QPen(QColor(255, 200, 0), max(1, 1 / self.zoom)))
             painter.setBrush(Qt.BrushStyle.NoBrush)
             painter.drawRect(cr)
+            
+            overlay = self.tool_opts.get("crop_overlay", "thirds")
+            if overlay != "none":
+                painter.setPen(QPen(QColor(255, 255, 255, 150), max(1.0, 1.0 / self.zoom), Qt.PenStyle.DashLine))
+                w, h = cr.width(), cr.height()
+                if overlay == "thirds":
+                    painter.drawLine(QPointF(cr.left(), cr.top() + h/3), QPointF(cr.right(), cr.top() + h/3))
+                    painter.drawLine(QPointF(cr.left(), cr.top() + h*2/3), QPointF(cr.right(), cr.top() + h*2/3))
+                    painter.drawLine(QPointF(cr.left() + w/3, cr.top()), QPointF(cr.left() + w/3, cr.bottom()))
+                    painter.drawLine(QPointF(cr.left() + w*2/3, cr.top()), QPointF(cr.left() + w*2/3, cr.bottom()))
+                elif overlay == "grid":
+                    for i in range(1, 5):
+                        painter.drawLine(QPointF(cr.left(), cr.top() + h*i/5), QPointF(cr.right(), cr.top() + h*i/5))
+                        painter.drawLine(QPointF(cr.left() + w*i/5, cr.top()), QPointF(cr.left() + w*i/5, cr.bottom()))
+                elif overlay == "diagonal":
+                    painter.drawLine(cr.topLeft(), cr.bottomRight())
+                    painter.drawLine(cr.topRight(), cr.bottomLeft())
+                    
+            # Отрисовка маркеров для редактирования
+            painter.setBrush(QColor(255, 255, 255))
+            pw = max(1.0, 1.0 / self.zoom)
+            painter.setPen(QPen(QColor(0, 0, 0), pw))
+            s = 3 * pw
+            pts = [cr.topLeft(), QPointF(cr.center().x(), cr.top()), cr.topRight(),
+                   QPointF(cr.right(), cr.center().y()), cr.bottomRight(),
+                   QPointF(cr.center().x(), cr.bottom()), cr.bottomLeft(),
+                   QPointF(cr.left(), cr.center().y())]
+            for pt in pts:
+                painter.drawRect(QRectF(pt.x() - s, pt.y() - s, s*2, s*2))
+
             painter.restore()
 
         # 6.1. Превью перспективного кропа
@@ -473,6 +591,26 @@ class CanvasWidget(QWidget):
                 painter.setPen(QPen(QColor(255, 200, 0), max(1, 1 / self.zoom)))
                 painter.setBrush(Qt.BrushStyle.NoBrush)
                 painter.drawPolygon(quad)
+                
+                overlay = self.tool_opts.get("crop_overlay", "thirds")
+                if overlay != "none" and len(quad) == 4:
+                    painter.setPen(QPen(QColor(255, 255, 255, 150), max(1.0, 1.0 / self.zoom), Qt.PenStyle.DashLine))
+                    pts = [QPointF(quad[i]) for i in range(4)]
+                    p0, p1, p2, p3 = pts[0], pts[1], pts[2], pts[3]
+                    
+                    def lerp(a, b, t): return a + (b - a) * t
+                    
+                    if overlay == "thirds":
+                        for t in (1/3, 2/3):
+                            painter.drawLine(lerp(p0, p3, t), lerp(p1, p2, t))
+                            painter.drawLine(lerp(p0, p1, t), lerp(p3, p2, t))
+                    elif overlay == "grid":
+                        for t in (1/5, 2/5, 3/5, 4/5):
+                            painter.drawLine(lerp(p0, p3, t), lerp(p1, p2, t))
+                            painter.drawLine(lerp(p0, p1, t), lerp(p3, p2, t))
+                    elif overlay == "diagonal":
+                        painter.drawLine(p0, p2)
+                        painter.drawLine(p1, p3)
 
             # Отрисовка узлов и направляющих линий (показываем всегда, пока есть точки)
             if self.active_tool.points:
@@ -514,7 +652,18 @@ class CanvasWidget(QWidget):
                     painter.translate(cx, cy)
                     painter.rotate(angle)
                     painter.translate(-cx, -cy)
-                if shape == "ellipse":
+                if shape.startswith("custom:"):
+                    custom_path = ShapesTool._load_custom_shape(shape[7:])
+                    if custom_path and not custom_path.isEmpty():
+                        br = custom_path.boundingRect()
+                        if not br.isEmpty():
+                            sx = rect.width() / br.width()
+                            sy = rect.height() / br.height()
+                            painter.save()
+                            painter.setTransform(QTransform().translate(rect.left(), rect.top()).scale(sx, sy).translate(-br.left(), -br.top()), combine=True)
+                            painter.drawPath(custom_path)
+                            painter.restore()
+                elif shape == "ellipse":
                     painter.drawEllipse(rect)
                 elif shape == "triangle":
                     painter.drawPolygon(QPolygon([
@@ -779,6 +928,12 @@ class CanvasWidget(QWidget):
                 painter.drawLine(ctx, cty - 3, ctx, cty + 3)
 
         painter.restore()
+        
+    def _emit_tool_state(self):
+        if hasattr(self.active_tool, "get_transform_params"):
+            self.tool_state_changed.emit(self.active_tool.get_transform_params())
+        else:
+            self.tool_state_changed.emit(None)
 
     # ──────────────────────────────────────── мышь
     def tabletEvent(self, ev):
@@ -789,6 +944,38 @@ class CanvasWidget(QWidget):
         if not self.document:
             return
             
+        if getattr(self, "show_rulers", False):
+            R = 20
+            pos = ev.position()
+            if pos.x() < R and pos.y() > R:
+                self._dragging_guide = ('v', self.to_doc(pos).x(), None)
+                self.setCursor(Qt.CursorShape.SplitHCursor)
+                return
+            elif pos.y() < R and pos.x() > R:
+                self._dragging_guide = ('h', self.to_doc(pos).y(), None)
+                self.setCursor(Qt.CursorShape.SplitVCursor)
+                return
+
+        if getattr(self.active_tool, "name", "") == "Move" and not self._space:
+            doc_pos = self.to_doc(ev.position())
+            snap = 5 / max(0.01, self.zoom)
+            hit_v, hit_h = None, None
+            if getattr(self.document, "show_guides", False):
+                for i, gx in enumerate(getattr(self.document, "guides_v", [])):
+                    if abs(gx - doc_pos.x()) < snap: hit_v = (i, gx)
+                for i, gy in enumerate(getattr(self.document, "guides_h", [])):
+                    if abs(gy - doc_pos.y()) < snap: hit_h = (i, gy)
+            if hit_v:
+                self._dragging_guide = ('v', hit_v[1], hit_v[0])
+                if hasattr(self.document, "guides_v"): self.document.guides_v.pop(hit_v[0])
+                self.setCursor(Qt.CursorShape.SplitHCursor); self.update()
+                return
+            elif hit_h:
+                self._dragging_guide = ('h', hit_h[1], hit_h[0])
+                if hasattr(self.document, "guides_h"): self.document.guides_h.pop(hit_h[0])
+                self.setCursor(Qt.CursorShape.SplitVCursor); self.update()
+                return
+
         mods = ev.modifiers()
         self.tool_opts["_shift"] = bool(mods & Qt.KeyboardModifier.ShiftModifier)
         self.tool_opts["_ctrl"]  = bool(mods & Qt.KeyboardModifier.ControlModifier)
@@ -836,7 +1023,7 @@ class CanvasWidget(QWidget):
             self.tool_opts["_alt"]   = bool(mods & Qt.KeyboardModifier.AltModifier)
 
             if self.active_tool.needs_history_push():
-                from core.history import HistoryState
+                from core.history import HistoryState, clone_work_path
                 self._pre_stroke_state = HistoryState(
                     description=self.active_tool.name,
                     layers_snapshot=self.document.snapshot_layers(),
@@ -844,6 +1031,7 @@ class CanvasWidget(QWidget):
                     doc_width=self.document.width,
                     doc_height=self.document.height,
                     selection_snapshot=QPainterPath(self.document.selection) if self.document.selection else None,
+                    work_path_snapshot=clone_work_path(getattr(self.document, "work_path", None)),
                 )
 
             old_layer_idx = self.document.active_layer_index if self.document else -1
@@ -860,6 +1048,8 @@ class CanvasWidget(QWidget):
                 self.document_changed.emit()
             elif self.document and self.document.active_layer_index != old_layer_idx:
                 self.document_changed.emit()
+                
+        self._emit_tool_state()
 
     def mouseMoveEvent(self, ev):
         mods = ev.modifiers()
@@ -872,6 +1062,13 @@ class CanvasWidget(QWidget):
             self.tool_opts["_pressure"] = 1.0
 
         self._mouse_pos = ev.position()
+
+        if getattr(self, "_dragging_guide", None) is not None:
+            doc_pos = self.to_doc(ev.position())
+            gtype, _, orig_idx = self._dragging_guide
+            self._dragging_guide = (gtype, doc_pos.x() if gtype == 'v' else doc_pos.y(), orig_idx)
+            self.update()
+            return
 
         if self._panning and self._pan_last is not None:
             delta = ev.position() - self._pan_last
@@ -909,16 +1106,38 @@ class CanvasWidget(QWidget):
             doc_pos = self.to_doc(ev.position())
             self.active_tool.on_move(doc_pos, self.document,
                                      self.fg_color, self.bg_color, self.tool_opts)
-            self._cache_dirty = True
+            if getattr(self.active_tool, "modifies_canvas_on_move", False):
+                self._cache_dirty = True
             self.update()
             self.pixels_changed.emit()
+            
+            # Сборка "молодого" мусора (Gen 0) прямо во время рисования каждые 10 кадров
+            self._move_counter = getattr(self, "_move_counter", 0) + 1
+            if self._move_counter % 10 == 0:
+                import gc; gc.collect(0)
         else:
             if self.active_tool and hasattr(self.active_tool, "on_hover"):
                 doc_pos = self.to_doc(ev.position())
                 self.active_tool.on_hover(doc_pos, self.document, self.fg_color, self.bg_color, self.tool_opts)
                 self._update_cursor()
+        self._emit_tool_state()
 
     def mouseReleaseEvent(self, ev):
+        if getattr(self, "_dragging_guide", None) is not None:
+            gtype, val, _ = self._dragging_guide
+            wx, wy = self.to_widget(QPoint(int(val), 0)).x(), self.to_widget(QPoint(0, int(val))).y()
+            R = 20 if self.show_rulers else 0
+            if gtype == 'v' and wx > R:
+                if not hasattr(self.document, "guides_v"): self.document.guides_v = []
+                self.document.guides_v.append(val)
+            elif gtype == 'h' and wy > R:
+                if not hasattr(self.document, "guides_h"): self.document.guides_h = []
+                self.document.guides_h.append(val)
+            self._dragging_guide = None
+            self._update_cursor()
+            self.update()
+            return
+            
         if ev.button() == Qt.MouseButton.MiddleButton or (
                 self._panning and ev.button() == Qt.MouseButton.LeftButton):
             self._panning = False
@@ -940,6 +1159,11 @@ class CanvasWidget(QWidget):
             self._cache_dirty = True
             self.update()
             self.document_changed.emit()
+            
+            # Принудительно очищаем мусор после каждого мазка для защиты от утечек памяти PyQt/NumPy
+            import gc
+            gc.collect()
+        self._emit_tool_state()
 
     def enterEvent(self, ev):
         self._update_cursor()

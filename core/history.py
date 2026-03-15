@@ -1,6 +1,19 @@
 from dataclasses import dataclass, field
 from core.layer import Layer
 from PyQt6.QtGui import QPainterPath
+from PyQt6.QtCore import QPointF
+
+
+def clone_work_path(wp: dict | None) -> dict:
+    if not wp: return {"nodes": [], "closed": False}
+    nodes = []
+    for n in wp.get("nodes", []):
+        nodes.append({
+            "p": QPointF(n["p"]),
+            "c1": QPointF(n["c1"]),
+            "c2": QPointF(n["c2"])
+        })
+    return {"nodes": nodes, "closed": wp.get("closed", False)}
 
 
 @dataclass
@@ -11,6 +24,7 @@ class HistoryState:
     doc_width:  int = 0
     doc_height: int = 0
     selection_snapshot: QPainterPath | None = None
+    work_path_snapshot: dict | None = None
 
 
 class HistoryManager:

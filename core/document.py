@@ -1,4 +1,4 @@
-from PyQt6.QtGui import QImage, QPainter, QColor, QPainterPath, QLinearGradient, QBrush, qAlpha, QPolygonF, QTransform
+from PyQt6.QtGui import QImage, QPainter, QColor, QPainterPath, QLinearGradient, QBrush, qAlpha, QPolygonF, QTransform, QPen
 from PyQt6.QtCore import Qt, QRect, QRectF, QPoint, QPointF
 from .layer import Layer
 
@@ -101,6 +101,20 @@ class Document:
         self.active_layer_index: int = 0
         self.selection: QPainterPath | None = None  # active selection (may be non-rectangular)
         self.quick_mask_layer: Layer | None = None
+        
+        self.guides_v: list[float] = []
+        self.guides_h: list[float] = []
+        self.slices: list[QRect] = []
+        self.work_path: dict = {"nodes": [], "closed": False}
+        self.show_slices: bool = True
+        self.show_guides: bool = True
+        self.show_grid: bool = False
+        self.grid_size: int = 50
+        self.snap_enabled: bool = True
+        self.snap_to_guides: bool = True
+        self.snap_to_grid: bool = False
+        self.snap_to_bounds: bool = True
+        self.snap_to_layers: bool = True
 
         # Create default background layer
         bg = bg_color if bg_color else QColor(255, 255, 255)
@@ -180,177 +194,213 @@ class Document:
             
         state = {'clip_alpha': None}
         
-        def render_layer(layer, layer_artboard_rect):
+        def render_layer_list(layers, layer_artboard_rect):
             nonlocal painter
-            if not layer.visible:
-                return
-                
-            ltype = getattr(layer, "layer_type", "raster")
-            is_clipping = getattr(layer, "clipping", False)
-            
-            if ltype == "artboard":
-                ar = getattr(layer, "artboard_rect", None)
-                if ar:
-                    painter.fillRect(ar, QColor(255, 255, 255))
-                state['clip_alpha'] = None
-                for child in children_map.get(getattr(layer, "layer_id", None), []):
-                    render_layer(child, ar)
-                return
-                
-            if ltype == "group":
-                state['clip_alpha'] = None
-                for child in children_map.get(getattr(layer, "layer_id", None), []):
-                    render_layer(child, layer_artboard_rect)
-                return
-            
-            if is_clipping and state['clip_alpha'] is None:
-                return
-
-            if ltype == "adjustment":
-                painter.end()
-                
-                backup = result.copy()
-                adjusted = _apply_layer_adjustment(backup, layer)
-                
-                import numpy as np
-                ptr_b = backup.bits(); ptr_b.setsize(backup.sizeInBytes())
-                arr_b = np.ndarray((backup.height(), backup.bytesPerLine() // 4, 4), dtype=np.uint8, buffer=ptr_b)
-                
-                ptr_a = adjusted.bits(); ptr_a.setsize(adjusted.sizeInBytes())
-                arr_a = np.ndarray((adjusted.height(), adjusted.bytesPerLine() // 4, 4), dtype=np.uint8, buffer=ptr_a)
-                
-                frac = np.full((backup.height(), backup.width()), layer.opacity, dtype=np.float32)
-                
-                has_mask = getattr(layer, "mask", None) is not None and getattr(layer, "mask_enabled", True)
-                if has_mask:
-                    m_ptr = layer.mask.bits(); m_ptr.setsize(layer.mask.sizeInBytes())
-                    m_arr = np.ndarray((layer.mask.height(), layer.mask.bytesPerLine() // 4, 4), dtype=np.uint8, buffer=m_ptr)
-                    mw = min(backup.width(), layer.mask.width())
-                    mh = min(backup.height(), layer.mask.height())
-                    mask_f = (m_arr[:mh, :mw, 1].astype(np.float32) / 255.0) * \
-                             (m_arr[:mh, :mw, 3].astype(np.float32) / 255.0)
-                    frac[:mh, :mw] *= mask_f
+            for i, layer in enumerate(layers):
+                if not layer.visible:
+                    continue
                     
-                has_vmask = getattr(layer, "vector_mask", None) is not None and getattr(layer, "vector_mask_enabled", True)
-                if has_vmask:
-                    vmask_img = QImage(backup.width(), backup.height(), QImage.Format.Format_Grayscale8)
-                    vmask_img.fill(0)
-                    vp = QPainter(vmask_img)
-                    vp.fillPath(layer.vector_mask, QColor(255, 255, 255))
-                    vp.end()
-                    v_ptr = vmask_img.bits(); v_ptr.setsize(vmask_img.sizeInBytes())
-                    v_arr = np.ndarray((backup.height(), vmask_img.bytesPerLine()), dtype=np.uint8, buffer=v_ptr)
-                    vmask_f = v_arr[:backup.height(), :backup.width()].astype(np.float32) / 255.0
-                    frac *= vmask_f
-                    
-                if layer_artboard_rect:
-                    ax, ay, aw, ah = layer_artboard_rect.getRect()
-                    ax = max(0, min(self.width, ax))
-                    ay = max(0, min(self.height, ay))
-                    aw = max(0, min(self.width - ax, aw))
-                    ah = max(0, min(self.height - ay, ah))
-                    mask_art = np.zeros((self.height, self.width), dtype=np.float32)
-                    mask_art[ay:ay+ah, ax:ax+aw] = 1.0
-                    frac *= mask_art
-
-                if is_clipping and state['clip_alpha'] is not None:
-                    frac *= state['clip_alpha']
+                ltype = getattr(layer, "layer_type", "raster")
+                is_clipping = getattr(layer, "clipping", False)
                 
-                frac_4 = frac[..., np.newaxis]
+                next_clipping = False
+                if i + 1 < len(layers):
+                    nl = layers[i+1]
+                    if getattr(nl, "clipping", False) and nl.visible:
+                        next_clipping = True
                 
-                ptr_res = result.bits(); ptr_res.setsize(result.sizeInBytes())
-                arr_res = np.ndarray((result.height(), result.bytesPerLine() // 4, 4), dtype=np.uint8, buffer=ptr_res)
-                
-                arr_res[:backup.height(), :backup.width(), :] = (
-                    arr_b[:backup.height(), :backup.width(), :] * (1.0 - frac_4) + 
-                    arr_a[:backup.height(), :backup.width(), :] * frac_4
-                ).astype(np.uint8)
-                
-                if not is_clipping:
+                if ltype == "artboard":
+                    ar = getattr(layer, "artboard_rect", None)
+                    if ar:
+                        painter.fillRect(ar, QColor(255, 255, 255))
                     state['clip_alpha'] = None
-                
-                painter = QPainter(result)
-
-            else:
-                if ltype == "fill":
-                    img_to_draw = _render_fill_layer(layer, self.width, self.height)
-                    img_to_draw.is_copy = True
-                else:
-                    img_to_draw = layer.image
-
-                has_mask = getattr(layer, "mask", None) is not None and getattr(layer, "mask_enabled", True)
-                
-                if (has_mask or is_clipping) and not getattr(img_to_draw, "is_copy", False):
-                    img_to_draw = img_to_draw.copy()
-                    img_to_draw.is_copy = True
-
-                if has_mask or is_clipping:
-                    import numpy as np
-                    ptr = img_to_draw.bits(); ptr.setsize(img_to_draw.sizeInBytes())
-                    bpl = img_to_draw.bytesPerLine()
-                    arr_full = np.ndarray((img_to_draw.height(), bpl // 4, 4), dtype=np.uint8, buffer=ptr)
-                    arr = arr_full[:, :img_to_draw.width(), :]
-
-                    if has_mask:
-                        m_ptr = layer.mask.bits(); m_ptr.setsize(layer.mask.sizeInBytes())
-                        m_bpl = layer.mask.bytesPerLine()
-                        m_arr_full = np.ndarray((layer.mask.height(), m_bpl // 4, 4), dtype=np.uint8, buffer=m_ptr)
-                        m_arr = m_arr_full[:, :img_to_draw.width(), :]
-                        
-                        mask_f = (m_arr[..., 1].astype(np.float32) / 255.0) * (m_arr[..., 3].astype(np.float32) / 255.0)
-                        arr[..., 0] = (arr[..., 0] * mask_f).astype(np.uint8)
-                        arr[..., 1] = (arr[..., 1] * mask_f).astype(np.uint8)
-                        arr[..., 2] = (arr[..., 2] * mask_f).astype(np.uint8)
-                        arr[..., 3] = (arr[..., 3] * mask_f).astype(np.uint8)
-                        
-                    if is_clipping:
-                        ox, oy = layer.offset.x(), layer.offset.y()
-                        w, h = img_to_draw.width(), img_to_draw.height()
-                        dx1, dy1 = max(0, ox), max(0, oy)
-                        dx2, dy2 = min(self.width, ox + w), min(self.height, oy + h)
-                        
-                        clip_mask = np.zeros((h, w), dtype=np.float32)
-                        if dx1 < dx2 and dy1 < dy2:
-                            sx1, sy1 = dx1 - ox, dy1 - oy
-                            sx2, sy2 = sx1 + (dx2 - dx1), sy1 + (dy2 - dy1)
-                            clip_mask[sy1:sy2, sx1:sx2] = state['clip_alpha'][dy1:dy2, dx1:dx2]
-                            
-                        arr[..., 0] = (arr[..., 0] * clip_mask).astype(np.uint8)
-                        arr[..., 1] = (arr[..., 1] * clip_mask).astype(np.uint8)
-                        arr[..., 2] = (arr[..., 2] * clip_mask).astype(np.uint8)
-                        arr[..., 3] = (arr[..., 3] * clip_mask).astype(np.uint8)
-
-                    img_to_draw = QImage(arr_full.data, img_to_draw.width(), img_to_draw.height(), bpl, QImage.Format.Format_ARGB32_Premultiplied)
-                    img_to_draw.ndarr = arr_full
-
-                if not is_clipping:
-                    import numpy as np
-                    base_alpha_img = QImage(self.width, self.height, QImage.Format.Format_ARGB32_Premultiplied)
-                    base_alpha_img.fill(0)
-                    ap = QPainter(base_alpha_img)
-                    if getattr(layer, "vector_mask", None) is not None and getattr(layer, "vector_mask_enabled", True):
-                        ap.setClipPath(layer.vector_mask)
-                    ap.setOpacity(layer.opacity)
-                    ap.drawImage(layer.offset, img_to_draw)
-                    ap.end()
+                    render_layer_list(children_map.get(getattr(layer, "layer_id", None), []), ar)
+                    continue
                     
-                    ptr = base_alpha_img.bits(); ptr.setsize(base_alpha_img.sizeInBytes())
-                    arr_alpha = np.ndarray((self.height, base_alpha_img.bytesPerLine() // 4, 4), dtype=np.uint8, buffer=ptr)
-                    state['clip_alpha'] = arr_alpha[:, :self.width, 3].astype(np.float32) / 255.0
+                if ltype == "group":
+                    state['clip_alpha'] = None
+                    render_layer_list(children_map.get(getattr(layer, "layer_id", None), []), layer_artboard_rect)
+                    continue
+                
+                if is_clipping and state['clip_alpha'] is None:
+                    continue
 
-                painter.save()
-                if layer_artboard_rect:
-                    painter.setClipRect(layer_artboard_rect)
+                if ltype == "adjustment":
+                    painter.end()
+                    
+                    backup = result.copy()
+                    adjusted = _apply_layer_adjustment(backup, layer)
+                    
+                    import numpy as np
+                    import ctypes
+                    arr_b = np.empty((backup.height(), backup.bytesPerLine() // 4, 4), dtype=np.uint8)
+                    ctypes.memmove(arr_b.ctypes.data, int(backup.constBits()), backup.sizeInBytes())
+                    
+                    arr_a = np.empty((adjusted.height(), adjusted.bytesPerLine() // 4, 4), dtype=np.uint8)
+                    ctypes.memmove(arr_a.ctypes.data, int(adjusted.constBits()), adjusted.sizeInBytes())
+                    
+                    frac = np.full((backup.height(), backup.width()), layer.opacity, dtype=np.float32)
+                    
+                    has_mask = getattr(layer, "mask", None) is not None and getattr(layer, "mask_enabled", True)
+                    if has_mask:
+                        m_arr = np.empty((layer.mask.height(), layer.mask.bytesPerLine() // 4, 4), dtype=np.uint8)
+                        ctypes.memmove(m_arr.ctypes.data, int(layer.mask.constBits()), layer.mask.sizeInBytes())
+                        mw = min(backup.width(), layer.mask.width())
+                        mh = min(backup.height(), layer.mask.height())
+                        mask_f = m_arr[:mh, :mw, 1].astype(np.float32) / 255.0
+                        frac[:mh, :mw] *= mask_f
+                        
+                    has_vmask = getattr(layer, "vector_mask", None) is not None and getattr(layer, "vector_mask_enabled", True)
+                    if has_vmask:
+                        vmask_img = QImage(backup.width(), backup.height(), QImage.Format.Format_Grayscale8)
+                        vmask_img.fill(0)
+                        vp = QPainter(vmask_img)
+                        vp.fillPath(layer.vector_mask, QColor(255, 255, 255))
+                        vp.end()
+                        v_ptr = vmask_img.bits(); v_ptr.setsize(vmask_img.sizeInBytes())
+                        v_arr = np.ndarray((backup.height(), vmask_img.bytesPerLine()), dtype=np.uint8, buffer=v_ptr)
+                        vmask_f = v_arr[:backup.height(), :backup.width()].astype(np.float32) / 255.0
+                        frac *= vmask_f
+                        
+                    if layer_artboard_rect:
+                        ax, ay, aw, ah = layer_artboard_rect.getRect()
+                        ax = max(0, min(self.width, ax))
+                        ay = max(0, min(self.height, ay))
+                        aw = max(0, min(self.width - ax, aw))
+                        ah = max(0, min(self.height - ay, ah))
+                        mask_art = np.zeros((self.height, self.width), dtype=np.float32)
+                        mask_art[ay:ay+ah, ax:ax+aw] = 1.0
+                        frac *= mask_art
 
-                if getattr(layer, "vector_mask", None) is not None and getattr(layer, "vector_mask_enabled", True):
-                    painter.setClipPath(layer.vector_mask, Qt.ClipOperation.IntersectClip)
-                painter.setCompositionMode(_get_composition_mode(getattr(layer, "blend_mode", "SourceOver")))
-                painter.setOpacity(layer.opacity)
-                painter.drawImage(layer.offset, img_to_draw)
-                painter.restore()
+                    if is_clipping and state['clip_alpha'] is not None:
+                        frac *= state['clip_alpha']
+                    
+                    frac_4 = frac[..., np.newaxis]
+                    
+                    h_end, w_end = backup.height(), backup.width()
+                    roi_a = arr_a[:h_end, :w_end, :].astype(np.float32)
+                    roi_b = arr_b[:h_end, :w_end, :].astype(np.float32)
+                    
+                    roi_a -= roi_b
+                    roi_a *= frac_4.astype(np.float32)
+                    roi_a += roi_b
+                    arr_b[:h_end, :w_end, :] = roi_a.astype(np.uint8)
+                    ctypes.memmove(int(result.bits()), arr_b.ctypes.data, result.sizeInBytes())
+                    
+                    if not is_clipping:
+                        state['clip_alpha'] = None
+                    
+                    painter = QPainter(result)
 
-        for layer in children_map.get(None, []):
-            render_layer(layer, None)
+                elif ltype == "frame":
+                    img_to_draw = layer.image
+                    is_empty = (img_to_draw.width() <= 1 and img_to_draw.height() <= 1)
+                    fd = getattr(layer, "frame_data", {})
+                    f_rect = fd.get("rect", QRectF(0, 0, 100, 100))
+                    
+                    path = QPainterPath()
+                    if fd.get("shape") == "ellipse": path.addEllipse(f_rect)
+                    else: path.addRect(f_rect)
+                        
+                    painter.save()
+                    if layer_artboard_rect:
+                        painter.setClipRect(layer_artboard_rect)
+                        
+                    painter.setClipPath(path, Qt.ClipOperation.IntersectClip)
+                    
+                    if is_empty:
+                        painter.fillRect(f_rect, QColor(220, 220, 220))
+                        painter.setPen(QPen(QColor(150, 150, 150), 2))
+                        if fd.get("shape") == "rect":
+                            painter.drawLine(f_rect.topLeft(), f_rect.bottomRight())
+                            painter.drawLine(f_rect.topRight(), f_rect.bottomLeft())
+                    else:
+                        painter.setOpacity(layer.opacity)
+                        painter.setCompositionMode(_get_composition_mode(getattr(layer, "blend_mode", "SourceOver")))
+                        painter.drawImage(layer.offset, img_to_draw)
+                        
+                    painter.restore()
+                    continue
+
+                else:
+                    if ltype == "fill":
+                        img_to_draw = _render_fill_layer(layer, self.width, self.height)
+                        img_to_draw.is_copy = True
+                    else:
+                        img_to_draw = layer.image
+
+                    has_mask = getattr(layer, "mask", None) is not None and getattr(layer, "mask_enabled", True)
+                    
+                    if (has_mask or is_clipping) and not getattr(img_to_draw, "is_copy", False):
+                        img_to_draw = img_to_draw.copy()
+                        img_to_draw.is_copy = True
+
+                    if has_mask or is_clipping:
+                        import numpy as np
+                        import ctypes
+                        arr_full = np.empty((img_to_draw.height(), img_to_draw.bytesPerLine() // 4, 4), dtype=np.uint8)
+                        ctypes.memmove(arr_full.ctypes.data, int(img_to_draw.constBits()), img_to_draw.sizeInBytes())
+                        arr = arr_full[:, :img_to_draw.width(), :]
+
+                        if has_mask:
+                            m_arr_full = np.empty((layer.mask.height(), layer.mask.bytesPerLine() // 4, 4), dtype=np.uint8)
+                            ctypes.memmove(m_arr_full.ctypes.data, int(layer.mask.constBits()), layer.mask.sizeInBytes())
+                            m_arr = m_arr_full[:, :img_to_draw.width(), :]
+                            
+                            mask_f = m_arr[..., 1].astype(np.float32) / 255.0
+                            arr[..., 0] = (arr[..., 0] * mask_f).astype(np.uint8)
+                            arr[..., 1] = (arr[..., 1] * mask_f).astype(np.uint8)
+                            arr[..., 2] = (arr[..., 2] * mask_f).astype(np.uint8)
+                            arr[..., 3] = (arr[..., 3] * mask_f).astype(np.uint8)
+                            
+                        if is_clipping:
+                            ox, oy = layer.offset.x(), layer.offset.y()
+                            w, h = img_to_draw.width(), img_to_draw.height()
+                            dx1, dy1 = max(0, ox), max(0, oy)
+                            dx2, dy2 = min(self.width, ox + w), min(self.height, oy + h)
+                            
+                            clip_mask = np.zeros((h, w), dtype=np.float32)
+                            if dx1 < dx2 and dy1 < dy2:
+                                sx1, sy1 = dx1 - ox, dy1 - oy
+                                sx2, sy2 = sx1 + (dx2 - dx1), sy1 + (dy2 - dy1)
+                                clip_mask[sy1:sy2, sx1:sx2] = state['clip_alpha'][dy1:dy2, dx1:dx2]
+                                
+                            arr[..., 0] = (arr[..., 0] * clip_mask).astype(np.uint8)
+                            arr[..., 1] = (arr[..., 1] * clip_mask).astype(np.uint8)
+                            arr[..., 2] = (arr[..., 2] * clip_mask).astype(np.uint8)
+                            arr[..., 3] = (arr[..., 3] * clip_mask).astype(np.uint8)
+                            
+
+                    if not is_clipping and next_clipping:
+                        import numpy as np
+                        import ctypes
+                        base_alpha_img = QImage(self.width, self.height, QImage.Format.Format_ARGB32_Premultiplied)
+                        base_alpha_img.fill(0)
+                        ap = QPainter(base_alpha_img)
+                        if getattr(layer, "vector_mask", None) is not None and getattr(layer, "vector_mask_enabled", True):
+                            ap.setClipPath(layer.vector_mask)
+                        ap.setOpacity(layer.opacity)
+                        ap.drawImage(layer.offset, img_to_draw)
+                        ap.end()
+                        
+                        arr_alpha = np.empty((self.height, base_alpha_img.bytesPerLine() // 4, 4), dtype=np.uint8)
+                        ctypes.memmove(arr_alpha.ctypes.data, int(base_alpha_img.constBits()), base_alpha_img.sizeInBytes())
+                        state['clip_alpha'] = arr_alpha[:, :self.width, 3].astype(np.float32).copy() / 255.0
+                    elif not is_clipping:
+                        state['clip_alpha'] = None
+
+                    painter.save()
+                    if layer_artboard_rect:
+                        painter.setClipRect(layer_artboard_rect)
+
+                    if getattr(layer, "vector_mask", None) is not None and getattr(layer, "vector_mask_enabled", True):
+                        painter.setClipPath(layer.vector_mask, Qt.ClipOperation.IntersectClip)
+                    painter.setCompositionMode(_get_composition_mode(getattr(layer, "blend_mode", "SourceOver")))
+                    painter.setOpacity(layer.opacity)
+                    painter.drawImage(layer.offset, img_to_draw)
+                    painter.restore()
+
+        render_layer_list(children_map.get(None, []), None)
 
         if painter.isActive():
             painter.end()
@@ -367,14 +417,23 @@ class Document:
             mask_val = (255 - gray) * (arr[..., 3] / 255.0)
             
             red_overlay = np.zeros((qm.height(), self.width, 4), dtype=np.uint8)
-            red_overlay[..., 2] = 255 # R
-            red_overlay[..., 3] = (mask_val * 0.5).astype(np.uint8) # A
+            alpha = (mask_val * 0.5).astype(np.uint8)
+            red_overlay[..., 2] = alpha # R (Premultiplied)
+            red_overlay[..., 3] = alpha # A
             
-            red_img = QImage(red_overlay.data, self.width, qm.height(), self.width*4, QImage.Format.Format_ARGB32_Premultiplied)
-            red_img.ndarr = red_overlay # Защита от сборщика мусора
+            red_img = QImage(self.width, qm.height(), QImage.Format.Format_ARGB32_Premultiplied)
+            r_ptr = red_img.bits()
+            r_ptr.setsize(red_img.sizeInBytes())
+            r_arr = np.frombuffer(r_ptr, dtype=np.uint8).reshape((qm.height(), self.width, 4))
+            r_arr[:] = red_overlay
+            del r_arr
+            del r_ptr
             p2 = QPainter(result)
             p2.drawImage(0, 0, red_img)
             p2.end()
+            
+            del arr
+            del ptr
             
         return result
 
@@ -390,16 +449,19 @@ class Document:
         import numpy as np
         if getattr(layer, "layer_type", "raster") != "raster":
             layer.layer_type = "raster"
+        import ctypes
         w, h = layer.width(), layer.height()
-        ptr = layer.image.bits(); ptr.setsize(layer.image.sizeInBytes())
+        ptr = layer.image.bits()
+        buf = (ctypes.c_uint8 * layer.image.sizeInBytes()).from_address(int(ptr))
         bpl = layer.image.bytesPerLine()
-        arr_full = np.ndarray((h, bpl // 4, 4), dtype=np.uint8, buffer=ptr)
+        arr_full = np.ndarray((h, bpl // 4, 4), dtype=np.uint8, buffer=buf)
         arr = arr_full[:, :w, :]
-        m_ptr = layer.mask.bits(); m_ptr.setsize(layer.mask.sizeInBytes())
+        m_ptr = layer.mask.constBits()
+        m_buf = (ctypes.c_uint8 * layer.mask.sizeInBytes()).from_address(int(m_ptr))
         m_bpl = layer.mask.bytesPerLine()
-        m_arr_full = np.ndarray((h, m_bpl // 4, 4), dtype=np.uint8, buffer=m_ptr)
+        m_arr_full = np.ndarray((h, m_bpl // 4, 4), dtype=np.uint8, buffer=m_buf)
         m_arr = m_arr_full[:, :w, :]
-        mask_f = (m_arr[..., 1].astype(np.float32) / 255.0) * (m_arr[..., 3].astype(np.float32) / 255.0)
+        mask_f = m_arr[..., 1].astype(np.float32) / 255.0
         arr[..., 0] = (arr[..., 0] * mask_f).astype(np.uint8)
         arr[..., 1] = (arr[..., 1] * mask_f).astype(np.uint8)
         arr[..., 2] = (arr[..., 2] * mask_f).astype(np.uint8)
@@ -513,10 +575,11 @@ class Document:
 
         try:
             import numpy as np
-            ptr = img.bits()
-            ptr.setsize(img.sizeInBytes())
-            arr = np.ndarray((h, img.bytesPerLine() // 4, 4), dtype=np.uint8, buffer=ptr)[:, :w, :]
-            alpha = arr[..., 3]
+            import ctypes
+            ptr = img.constBits()
+            buf = (ctypes.c_uint8 * img.sizeInBytes()).from_address(int(ptr))
+            arr = np.ndarray((h, img.bytesPerLine() // 4, 4), dtype=np.uint8, buffer=buf)[:, :w, :]
+            alpha = arr[..., 3].copy()
             rows = np.any(alpha, axis=1)
             if not np.any(rows): return QRect()
             cols = np.any(alpha, axis=0)

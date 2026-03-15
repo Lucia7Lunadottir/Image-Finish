@@ -72,6 +72,12 @@ class PatternStampOptions(BrushOptions):
         else:
             self.option_changed.emit("brush_pattern", data)
 
+    def add_custom_pattern(self, path, name):
+        new_idx = self._pattern_combo.count() - 1
+        self._pattern_combo.insertItem(new_idx, QIcon(path), name, path)
+        self._pattern_combo.setCurrentIndex(new_idx)
+        self.option_changed.emit("brush_pattern", path)
+
     def _on_scale_slider_change(self, value):
         self._scale_spin.blockSignals(True)
         self._scale_spin.setValue(value)

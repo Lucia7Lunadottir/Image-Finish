@@ -9,6 +9,7 @@ class MoveTool(BaseTool):
     name = "Move"
     icon = "✋"
     shortcut = "V"
+    modifies_canvas_on_move = True
 
     def __init__(self):
         super().__init__()
@@ -32,6 +33,8 @@ class MoveTool(BaseTool):
         self._is_floating = False
         self._linked_children = []
         self._start_poly = []
+        self._smart_guides = []
+        self._snap_targets = []
 
     def _get_handle_hit(self, pos: QPointF, opts: dict):
         if self._bounds.isEmpty(): return 'move'
@@ -100,6 +103,19 @@ class MoveTool(BaseTool):
             self._total_transform = QTransform()
             self._linked_children = []
             
+            self._snap_targets = []
+            if getattr(doc, "snap_to_layers", True):
+                for l in doc.layers:
+                    if l is layer or not l.visible: continue
+                    lr = None
+                    if getattr(l, "layer_type", "raster") == "artboard" and getattr(l, "artboard_rect", None):
+                        lr = QRectF(l.artboard_rect)
+                    elif not l.image.isNull():
+                        b = Document._nontransparent_bounds(l.image)
+                        if not b.isEmpty(): lr = QRectF(b).translated(QPointF(l.offset))
+                    if lr:
+                        self._snap_targets.append(lr)
+            
             target_id = getattr(layer, "layer_id", None)
             visited_ids = set()
             def get_descendants(p_id):
@@ -150,43 +166,55 @@ class MoveTool(BaseTool):
                 self._is_floating = True
                 self._bounds = sel.boundingRect()
                 br = self._bounds.toRect()
-                self._original_img = layer.image.copy(br)
-                self._original_offset = br.topLeft()
+                
+                local_br = br.translated(-layer.offset).intersected(layer.image.rect())
+                if local_br.isEmpty():
+                    self.is_transforming = False
+                    return
+                    
+                self._original_img = layer.image.copy(local_br)
+                self._original_offset = layer.offset + local_br.topLeft()
                 self._sel_origin = QPainterPath(sel)
                 
                 # Clean Numpy Cut for perfectly smooth selection extraction
                 import numpy as np
-                mask_img = QImage(br.width(), br.height(), QImage.Format.Format_Grayscale8)
+                import ctypes
+                mask_img = QImage(local_br.width(), local_br.height(), QImage.Format.Format_Grayscale8)
                 mask_img.fill(0)
                 p = QPainter(mask_img)
-                p.translate(-br.x(), -br.y())
+                p.translate(-self._original_offset.x(), -self._original_offset.y())
                 p.fillPath(sel, QColor(255, 255, 255))
                 p.end()
                 
-                m_ptr = mask_img.bits(); m_ptr.setsize(mask_img.sizeInBytes())
-                m_arr = np.ndarray((br.height(), mask_img.bytesPerLine()), dtype=np.uint8, buffer=m_ptr)
-                mask_f = m_arr[:, :br.width()].astype(np.float32) / 255.0
+                m_arr = np.empty((local_br.height(), mask_img.bytesPerLine()), dtype=np.uint8)
+                ctypes.memmove(m_arr.ctypes.data, int(mask_img.constBits()), mask_img.sizeInBytes())
+                mask_f = m_arr[:, :local_br.width()].astype(np.float32) / 255.0
                 
-                f_ptr = self._original_img.bits(); f_ptr.setsize(self._original_img.sizeInBytes())
-                f_arr = np.ndarray((br.height(), self._original_img.bytesPerLine() // 4, 4), dtype=np.uint8, buffer=f_ptr)
+                f_arr = np.empty((local_br.height(), self._original_img.bytesPerLine() // 4, 4), dtype=np.uint8)
+                ctypes.memmove(f_arr.ctypes.data, int(self._original_img.constBits()), self._original_img.sizeInBytes())
+                for c in range(4): f_arr[:local_br.height(), :local_br.width(), c] = (f_arr[:local_br.height(), :local_br.width(), c] * mask_f).astype(np.uint8)
+                ctypes.memmove(int(self._original_img.bits()), f_arr.ctypes.data, self._original_img.sizeInBytes())
                 
-                for c in range(4): f_arr[:br.height(), :br.width(), c] = (f_arr[:br.height(), :br.width(), c] * mask_f).astype(np.uint8)
-                
-                l_ptr = layer.image.bits(); l_ptr.setsize(layer.image.sizeInBytes())
-                l_arr = np.ndarray((layer.height(), layer.image.bytesPerLine() // 4, 4), dtype=np.uint8, buffer=l_ptr)
+                l_arr = np.empty((layer.height(), layer.image.bytesPerLine() // 4, 4), dtype=np.uint8)
+                ctypes.memmove(l_arr.ctypes.data, int(layer.image.constBits()), layer.image.sizeInBytes())
                 
                 inv_mask_f = 1.0 - mask_f
-                sy, sx = br.y(), br.x()
-                l_roi = l_arr[sy:sy+br.height(), sx:sx+br.width()]
+                sy, sx = local_br.y(), local_br.x()
+                l_roi = l_arr[sy:sy+local_br.height(), sx:sx+local_br.width()]
                 for c in range(4): l_roi[..., c] = (l_roi[..., c] * inv_mask_f).astype(np.uint8)
+                ctypes.memmove(int(layer.image.bits()), l_arr.ctypes.data, layer.image.sizeInBytes())
                 
             else:
                 self._is_floating = False
-                br = Document._nontransparent_bounds(layer.image)
-                if br.isEmpty():
-                    self._bounds = QRectF(layer.offset.x(), layer.offset.y(), layer.width(), layer.height())
+                if getattr(layer, "layer_type", "raster") == "frame":
+                    self._bounds = QRectF(getattr(layer, "frame_data", {}).get("rect", QRectF(0,0,100,100)))
+                    self._original_rect = self._bounds.toRect()
                 else:
-                    self._bounds = QRectF(br).translated(QPointF(layer.offset))
+                    br = Document._nontransparent_bounds(layer.image)
+                    if br.isEmpty():
+                        self._bounds = QRectF(layer.offset.x(), layer.offset.y(), layer.width(), layer.height())
+                    else:
+                        self._bounds = QRectF(br).translated(QPointF(layer.offset))
                 self._original_img = layer.image.copy()
                 self._original_offset = layer.offset
                 self._sel_origin = None
@@ -217,7 +245,53 @@ class MoveTool(BaseTool):
         edge_indices = {'t': (0,1), 'r': (1,2), 'b': (2,3), 'l': (3,0)}
         
         if self._mode == 'move':
-            for i in range(4): pts[i] = pts[i] + delta
+            dx, dy = delta.x(), delta.y()
+            orig_poly = QPolygonF([self._bounds.topLeft(), self._bounds.topRight(), self._bounds.bottomRight(), self._bounds.bottomLeft()])
+            br = self._base_transform.map(orig_poly).boundingRect()
+            new_br = br.translated(dx, dy)
+            
+            self._smart_guides = []
+            
+            if not opts.get("_ctrl", False) and getattr(doc, "snap_enabled", True):
+                snap_threshold = 8 / max(0.01, opts.get("_zoom", 1.0))
+                best_dx, best_dy = dx, dy
+                min_dx, min_dy = float('inf'), float('inf')
+                
+                txs, tys = [], []
+                if getattr(doc, "snap_to_bounds", True):
+                    txs.extend([0, doc.width / 2.0, doc.width]); tys.extend([0, doc.height / 2.0, doc.height])
+                if getattr(doc, "snap_to_guides", True) and getattr(doc, "show_guides", True):
+                    txs.extend(getattr(doc, "guides_v", [])); tys.extend(getattr(doc, "guides_h", []))
+                if getattr(doc, "snap_to_grid", False) and getattr(doc, "show_grid", False):
+                    gs = getattr(doc, "grid_size", 50)
+                    gx1, gx2 = int(new_br.left() // gs), int(new_br.right() // gs) + 1
+                    gy1, gy2 = int(new_br.top() // gs), int(new_br.bottom() // gs) + 1
+                    txs.extend([i * gs for i in range(gx1, gx2+1)])
+                    tys.extend([i * gs for i in range(gy1, gy2+1)])
+                if getattr(doc, "snap_to_layers", True) and hasattr(self, "_snap_targets"):
+                    for lr in self._snap_targets:
+                        txs.extend([lr.left(), lr.center().x(), lr.right()])
+                        tys.extend([lr.top(), lr.center().y(), lr.bottom()])
+                            
+                txs = list(set(txs)); tys = list(set(tys))
+                pxs = [new_br.left(), new_br.center().x(), new_br.right()]
+                pys = [new_br.top(), new_br.center().y(), new_br.bottom()]
+                
+                snapped_x, snapped_y = None, None
+                for tx in txs:
+                    for px in pxs:
+                        if abs(tx - px) < snap_threshold and abs(tx - px) < min_dx:
+                            min_dx, best_dx, snapped_x = abs(tx - px), dx + (tx - px), tx
+                for ty in tys:
+                    for py in pys:
+                        if abs(ty - py) < snap_threshold and abs(ty - py) < min_dy:
+                            min_dy, best_dy, snapped_y = abs(ty - py), dy + (ty - py), ty
+                            
+                delta = QPointF(best_dx, best_dy)
+                if snapped_x is not None: self._smart_guides.append(('v', snapped_x))
+                if snapped_y is not None: self._smart_guides.append(('h', snapped_y))
+                
+            for i in range(4): pts[i] = self._start_poly[i] + delta
             
         elif self._mode == 'rotate':
             center = self._base_transform.map(self._bounds.center())
@@ -390,6 +464,14 @@ class MoveTool(BaseTool):
     def draw_overlays(self, painter: QPainter, pw: float, doc):
         if not self.is_transforming: return
         
+        if hasattr(self, "_smart_guides") and self._smart_guides:
+            painter.save()
+            painter.setPen(QPen(QColor(255, 0, 255, 200), max(1.0, pw)))
+            for gtype, val in self._smart_guides:
+                if gtype == 'v': painter.drawLine(QPointF(val, -10000), QPointF(val, 10000))
+                elif gtype == 'h': painter.drawLine(QPointF(-10000, val), QPointF(10000, val))
+            painter.restore()
+            
         orig_poly = QPolygonF([self._bounds.topLeft(), self._bounds.topRight(), self._bounds.bottomRight(), self._bounds.bottomLeft()])
         poly = self._total_transform.map(orig_poly)
         pts = [QPointF(poly[i]) for i in range(4)]
@@ -429,6 +511,8 @@ class MoveTool(BaseTool):
             self._reset_state()
             doc.fit_to_artboards()
             return
+        elif getattr(layer, "layer_type", "raster") == "frame":
+            layer.frame_data["rect"] = final_t.mapRect(QRectF(self._original_rect))
         elif getattr(layer, "layer_type", "raster") == "group":
             self._reset_state()
             return
@@ -470,11 +554,55 @@ class MoveTool(BaseTool):
             layer.offset = self._offset_backup
             if getattr(layer, "layer_type", "raster") == "artboard":
                 layer.artboard_rect = QRect(self._original_rect) if self._original_rect else None
+            elif getattr(layer, "layer_type", "raster") == "frame":
+                layer.frame_data["rect"] = QRectF(self._original_rect) if self._original_rect else QRectF()
             if self._sel_origin: doc.selection = self._sel_origin
             
         for kid_data in getattr(self, "_linked_children", []):
             kid_data["layer"].offset = kid_data["backup_offset"]
         self._reset_state()
+        
+    def get_transform_params(self):
+        if not self.is_transforming: return None
+        t = self._total_transform
+        m11, m12, m21, m22 = t.m11(), t.m12(), t.m21(), t.m22()
+        
+        scale_x = math.hypot(m11, m12)
+        angle = math.atan2(m12, m11)
+        det = m11 * m22 - m12 * m21
+        scale_y = det / scale_x if scale_x != 0 else math.hypot(m21, m22)
+        
+        orig_poly = QPolygonF([self._bounds.topLeft(), self._bounds.topRight(), self._bounds.bottomRight(), self._bounds.bottomLeft()])
+        poly = t.map(orig_poly)
+        cx = sum(p.x() for p in poly) / 4.0
+        cy = sum(p.y() for p in poly) / 4.0
+        
+        return {'x': cx, 'y': cy, 'w': scale_x * 100.0, 'h': scale_y * 100.0, 'angle': math.degrees(angle)}
+        
+    def set_transform_params(self, doc, params: dict):
+        if not self.is_transforming: return
+        cx, cy = params.get('x', self._bounds.center().x()), params.get('y', self._bounds.center().y())
+        w_pct, h_pct = params.get('w', 100.0) / 100.0, params.get('h', 100.0) / 100.0
+        angle = params.get('angle', 0.0)
+        
+        t = QTransform()
+        t.translate(cx, cy)
+        t.rotate(angle)
+        t.scale(w_pct, h_pct)
+        t.translate(-self._bounds.center().x(), -self._bounds.center().y())
+        self._total_transform = t
+        
+        layer = self._target_layer
+        if getattr(layer, "layer_type", "raster") == "artboard":
+            layer.artboard_rect = self._total_transform.mapRect(QRectF(self._original_rect)).toRect()
+        elif getattr(layer, "layer_type", "raster") == "frame":
+            layer.frame_data["rect"] = self._total_transform.mapRect(QRectF(self._original_rect))
+        elif self._is_floating and self._sel_origin:
+            doc.selection = self._total_transform.map(self._sel_origin)
+            
+        dx, dy = self._total_transform.dx(), self._total_transform.dy()
+        for kid_data in getattr(self, "_linked_children", []):
+            kid_data["layer"].offset = kid_data["backup_offset"] + QPoint(int(dx), int(dy))
 
     def _reset_state(self):
         self.is_transforming = False
@@ -490,6 +618,7 @@ class MoveTool(BaseTool):
         self._bounds = QRectF()
         self._mode = None
         self._start_poly = []
+        self._smart_guides = []
 
     def needs_history_push(self): return False
 

@@ -69,9 +69,10 @@ class ColorRangeDialog(QDialog):
         
         tr_c, tg, tb = self.target_color.red(), self.target_color.green(), self.target_color.blue()
         
-        ptr = img.bits()
-        ptr.setsize(img.sizeInBytes())
-        arr = np.ndarray((h, img.bytesPerLine() // 4, 4), dtype=np.uint8, buffer=ptr)[:, :w, :]
+        import ctypes
+        ptr = img.constBits()
+        buf = (ctypes.c_uint8 * img.sizeInBytes()).from_address(int(ptr))
+        arr = np.ndarray((h, img.bytesPerLine() // 4, 4), dtype=np.uint8, buffer=buf)[:, :w, :]
 
         dist_sq = (arr[..., 2].astype(np.int32) - tr_c)**2 + \
                   (arr[..., 1].astype(np.int32) - tg)**2 + \
@@ -81,10 +82,12 @@ class ColorRangeDialog(QDialog):
         self._final_mask = (dist_sq <= threshold_sq) & (arr[..., 3] > 0)
         
         # Отрисовываем маску в окно предпросмотра (это мгновенно)
-        preview_arr = np.zeros((h, w), dtype=np.uint8)
-        preview_arr[self._final_mask] = 255
+        preview_img = QImage(w, h, QImage.Format.Format_Grayscale8)
+        preview_img.fill(0)
+        p_ptr = preview_img.bits()
+        p_buf = (ctypes.c_uint8 * preview_img.sizeInBytes()).from_address(int(p_ptr))
+        np.ndarray((h, w), dtype=np.uint8, buffer=p_buf)[self._final_mask] = 255
         
-        preview_img = QImage(preview_arr.data, w, h, w, QImage.Format.Format_Grayscale8)
         pixmap = QPixmap.fromImage(preview_img).scaled(
             self.preview_lbl.size(), 
             Qt.AspectRatioMode.KeepAspectRatio, 
@@ -96,10 +99,12 @@ class ColorRangeDialog(QDialog):
         # Тяжелая конвертация в QPainterPath происходит ТОЛЬКО при нажатии OK
         if self._final_mask is not None:
             h, w = self._final_mask.shape
-            tmp = np.zeros((h, w, 4), dtype=np.uint8)
-            tmp[self._final_mask, 3] = 255
+            mask_img = QImage(w, h, QImage.Format.Format_RGBA8888)
+            mask_img.fill(0)
+            m_ptr = mask_img.bits()
+            m_buf = (ctypes.c_uint8 * mask_img.sizeInBytes()).from_address(int(m_ptr))
+            np.ndarray((h, w, 4), dtype=np.uint8, buffer=m_buf)[self._final_mask, 3] = 255
             
-            mask_img = QImage(tmp.data, w, h, w * 4, QImage.Format.Format_RGBA8888)
             path = QPainterPath()
             path.addRegion(QRegion(QBitmap.fromImage(mask_img.createAlphaMask())))
             

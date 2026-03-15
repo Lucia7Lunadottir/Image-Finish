@@ -24,7 +24,7 @@ class MagicEraserTool(BaseTool):
 
         img = layer.image
         w, h = img.width(), img.height()
-        sx, sy = pos.x(), pos.y()
+        sx, sy = pos.x() - layer.offset.x(), pos.y() - layer.offset.y()
 
         if not (0 <= sx < w and 0 <= sy < h):
             return
@@ -42,11 +42,10 @@ class MagicEraserTool(BaseTool):
         contiguous = bool(opts.get("fill_contiguous", True))
 
         # --- NUMPY ОПТИМИЗАЦИЯ ---
-        ptr = img.bits()
-        ptr.setsize(img.sizeInBytes())
+        import ctypes
         bpl = img.bytesPerLine()
-
-        arr_full = np.ndarray((h, bpl // 4, 4), dtype=np.uint8, buffer=ptr)
+        arr_full = np.empty((h, bpl // 4, 4), dtype=np.uint8)
+        ctypes.memmove(arr_full.ctypes.data, int(img.constBits()), img.sizeInBytes())
         arr = arr_full[:, :w, :]
 
         # Векторно считаем маску совпадения цвета
@@ -81,6 +80,7 @@ class MagicEraserTool(BaseTool):
 
         # Мгновенно очищаем все найденные пиксели махом
         arr[visited] = 0
+        ctypes.memmove(int(img.bits()), arr_full.ctypes.data, img.sizeInBytes())
 
     def on_move(self, pos, doc, fg, bg, opts): pass
     def on_release(self, pos, doc, fg, bg, opts): pass
@@ -94,6 +94,7 @@ class BackgroundEraserTool(BaseTool):
     name = "BackgroundEraser"
     icon = "✂️"
     shortcut = "E"
+    modifies_canvas_on_move = True
 
     def __init__(self):
         super().__init__()
@@ -113,7 +114,7 @@ class BackgroundEraserTool(BaseTool):
             return
 
         img = layer.image
-        cx, cy = pos.x(), pos.y()
+        cx, cy = pos.x() - layer.offset.x(), pos.y() - layer.offset.y()
 
         if 0 <= cx < img.width() and 0 <= cy < img.height():
             px = img.pixel(cx, cy)
@@ -161,7 +162,7 @@ class BackgroundEraserTool(BaseTool):
         layer = doc.get_active_layer()
         img = layer.image
         w, h = img.width(), img.height()
-        cx, cy = pos.x(), pos.y()
+        cx, cy = pos.x() - layer.offset.x(), pos.y() - layer.offset.y()
 
         radius = int(opts.get("brush_size", 20) / 2)
         tolerance_pct = opts.get("fill_tolerance", 32)
@@ -178,34 +179,28 @@ class BackgroundEraserTool(BaseTool):
         sb = sc & 0xFF
 
         # --- NUMPY МАГИЯ НАЧИНАЕТСЯ ЗДЕСЬ ---
-        ptr = img.bits()
-        ptr.setsize(img.sizeInBytes())
+        import ctypes
         bpl = img.bytesPerLine()
-
-        arr_full = np.ndarray((h, bpl // 4, 4), dtype=np.uint8, buffer=ptr)
+        arr_full = np.empty((h, bpl // 4, 4), dtype=np.uint8)
+        ctypes.memmove(arr_full.ctypes.data, int(img.constBits()), img.sizeInBytes())
         arr = arr_full[:, :w, :]
         
-        for t_cx, t_cy in list(dict.fromkeys(centers)):
-            min_x, max_x = max(0, t_cx - radius), min(w, t_cx + radius + 1)
-            min_y, max_y = max(0, t_cy - radius), min(h, t_cy + radius + 1)
-            
-            if min_x >= max_x or min_y >= max_y:
-                continue
-                
-            roi = arr[min_y:max_y, min_x:max_x]
-            Y, X = np.ogrid[min_y - t_cy : max_y - t_cy, min_x - t_cx : max_x - t_cx]
-            circle_mask = (X**2 + Y**2) <= radius**2
-            
-            roi_B = roi[..., 0].astype(np.int32)
-            roi_G = roi[..., 1].astype(np.int32)
-            roi_R = roi[..., 2].astype(np.int32)
-            roi_A = roi[..., 3]
-            
-            color_dist_sq = (roi_R - sr)**2 + (roi_G - sg)**2 + (roi_B - sb)**2
-            tolerance_sq = (tolerance_pct / 100.0)**2 * (255**2 * 3)
-            
-            final_mask = circle_mask & (roi_A > 0) & (color_dist_sq <= tolerance_sq)
-            roi[final_mask] = 0
+        roi = arr[min_y:max_y, min_x:max_x]
+        Y, X = np.ogrid[min_y - cy : max_y - cy, min_x - cx : max_x - cx]
+        circle_mask = (X**2 + Y**2) <= radius**2
+        
+        roi_B = roi[..., 0].astype(np.int32)
+        roi_G = roi[..., 1].astype(np.int32)
+        roi_R = roi[..., 2].astype(np.int32)
+        roi_A = roi[..., 3]
+        
+        color_dist_sq = (roi_R - sr)**2 + (roi_G - sg)**2 + (roi_B - sb)**2
+        tolerance_sq = (tolerance_pct / 100.0)**2 * (255**2 * 3)
+        
+        final_mask = circle_mask & (roi_A > 0) & (color_dist_sq <= tolerance_sq)
+        roi[final_mask] = 0
+        
+        ctypes.memmove(int(img.bits()), arr_full.ctypes.data, img.sizeInBytes())
 
     def needs_history_push(self) -> bool: return True
     def cursor(self): return Qt.CursorShape.CrossCursor

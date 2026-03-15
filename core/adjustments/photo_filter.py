@@ -2,7 +2,7 @@ from PyQt6.QtWidgets import QHBoxLayout, QLabel, QCheckBox
 from PyQt6.QtGui import QImage, QColor
 
 from core.locale import tr
-from ui.adjustments_dialog import _to_argb32, _bits_ba, _from_ba, _AdjustDialog, _SliderRow
+from ui.adjustments_dialog import _to_argb32, _in_place_arr, _AdjustDialog, _SliderRow
 from core.adjustments._widgets import _ColorButton
 
 
@@ -13,7 +13,8 @@ def apply_photo_filter(src: QImage, r: int, g: int, b: int,
     img = _to_argb32(src)
     try:
         import numpy as np
-        ba, arr = _bits_ba(img)
+        img = img.copy()
+        arr = _in_place_arr(img)
         R = arr[:, :, 2].astype(np.float32)
         G = arr[:, :, 1].astype(np.float32)
         B = arr[:, :, 0].astype(np.float32)
@@ -34,7 +35,7 @@ def apply_photo_filter(src: QImage, r: int, g: int, b: int,
         arr[:, :, 2] = np.clip(R2, 0, 255).astype(np.uint8)
         arr[:, :, 1] = np.clip(G2, 0, 255).astype(np.uint8)
         arr[:, :, 0] = np.clip(B2, 0, 255).astype(np.uint8)
-        return _from_ba(ba, img)
+        return img.convertToFormat(QImage.Format.Format_ARGB32_Premultiplied)
     except ImportError:
         result = img.copy()
         d = density / 100.0

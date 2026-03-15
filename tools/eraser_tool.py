@@ -35,11 +35,11 @@ class EraserTool(BaseTool):
         painter.setCompositionMode(QPainter.CompositionMode.CompositionMode_Clear)
 
         if doc.selection and not doc.selection.isEmpty():
-            painter.setClipPath(doc.selection)
+            painter.setClipPath(doc.selection.translated(-layer.offset.x(), -layer.offset.y()))
 
         pen = QPen(Qt.GlobalColor.transparent, size,
                    Qt.PenStyle.SolidLine, Qt.PenCapStyle.RoundCap,
                    Qt.PenJoinStyle.RoundJoin)
         painter.setPen(pen)
-        painter.drawLine(p1, p2)
+        painter.drawLine(p1 - layer.offset, p2 - layer.offset)
         painter.end()

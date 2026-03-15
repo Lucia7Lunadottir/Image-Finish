@@ -1,7 +1,7 @@
 from PyQt6.QtGui import QImage
 
 from core.locale import tr
-from ui.adjustments_dialog import _to_argb32, _bits_ba, _from_ba, _AdjustDialog, _SliderRow
+from ui.adjustments_dialog import _to_argb32, _in_place_arr, _AdjustDialog, _SliderRow
 
 
 def apply_posterize(src: QImage, levels: int) -> QImage:
@@ -12,9 +12,10 @@ def apply_posterize(src: QImage, levels: int) -> QImage:
         step = 255.0 / (levels - 1)
         idx  = np.round(np.arange(256, dtype=np.float32) / step).astype(int)
         lut  = np.clip(np.round(idx * step), 0, 255).astype(np.uint8)
-        ba, arr = _bits_ba(img)
+        img = img.copy()
+        arr = _in_place_arr(img)
         arr[:, :, :3] = lut[arr[:, :, :3]]
-        return _from_ba(ba, img)
+        return img.convertToFormat(QImage.Format.Format_ARGB32_Premultiplied)
     except ImportError:
         step = 255.0 / (levels - 1)
         lut  = [int(round(round(i / step) * step)) for i in range(256)]

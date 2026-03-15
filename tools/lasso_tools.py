@@ -100,43 +100,64 @@ class MagneticLassoTool(PolygonalLassoTool):
     icon = "🧲"
     shortcut = "L"
 
-    # Базовая версия (Poor Man's Magnetic Lasso).
-    # Ищет самый темный/контрастный пиксель в радиусе 5px от курсора.
+    def __init__(self):
+        super().__init__()
+        self._last_width = 10
+
     def on_move(self, pos: QPoint, doc, fg, bg, opts):
-        if not self.points:
-            return
+        width = opts.get("mag_width", 10)
+        self._last_width = width
+        contrast = opts.get("mag_contrast", 10)
+        freq = opts.get("mag_freq", 57)
 
         layer = doc.get_active_layer()
         if not layer or layer.image.isNull():
             self.current_pos = QPointF(pos)
             return
 
-        # Простой поиск пикселя (Edge snapping)
         snap_pos = pos
-        best_diff = -1
-        r = 5
 
         img = layer.image
         w, h = img.width(), img.height()
+        r = width
+        min_x, max_x = max(0, pos.x() - r), min(w, pos.x() + r + 1)
+        min_y, max_y = max(0, pos.y() - r), min(h, pos.y() + r + 1)
 
-        if 0 <= pos.x() < w and 0 <= pos.y() < h:
-            base_col = QColor(img.pixel(pos.x(), pos.y()))
-            base_v = base_col.value()
+        if min_x < max_x and min_y < max_y:
+            import ctypes
+            import numpy as np
+            ptr = img.constBits()
+            buf = (ctypes.c_uint8 * img.sizeInBytes()).from_address(int(ptr))
+            arr = np.ndarray((h, img.bytesPerLine() // 4, 4), dtype=np.uint8, buffer=buf)
+            roi = arr[min_y:max_y, min_x:max_x]
 
-            for dx in range(-r, r+1):
-                for dy in range(-r, r+1):
-                    nx, ny = pos.x() + dx, pos.y() + dy
-                    if 0 <= nx < w and 0 <= ny < h:
-                        col = QColor(img.pixel(nx, ny))
-                        diff = abs(col.value() - base_v)
-                        if diff > best_diff:
-                            best_diff = diff
-                            snap_pos = QPoint(nx, ny)
+            gray = 0.299 * roi[..., 2] + 0.587 * roi[..., 1] + 0.114 * roi[..., 0]
+            alpha_mask = (roi[..., 3] > 0).astype(np.float32)
+
+            if gray.shape[0] >= 3 and gray.shape[1] >= 3:
+                dy, dx = np.gradient(gray)
+                grad_mag = np.hypot(dx, dy) * alpha_mask
+
+                max_idx = np.unravel_index(np.argmax(grad_mag), grad_mag.shape)
+                max_val = grad_mag[max_idx]
+
+                threshold = (contrast / 100.0) * 128.0
+                if max_val >= threshold and roi[max_idx[0], max_idx[1], 3] > 0:
+                    snap_pos = QPoint(min_x + max_idx[1], min_y + max_idx[0])
 
         self.current_pos = QPointF(snap_pos)
+        if not self.points: return
 
-        # Автоматически ставим точки при движении (как в настоящем магнитном)
-        if len(self.points) > 0:
-            last = self.points[-1]
-            if math.hypot(snap_pos.x() - last.x(), snap_pos.y() - last.y()) > 15:
-                self.points.append(QPointF(snap_pos))
+        last = self.points[-1]
+        dist = math.hypot(snap_pos.x() - last.x(), snap_pos.y() - last.y())
+        drop_dist = 100 - (freq / 100.0) * 95
+        if dist > drop_dist:
+            self.points.append(QPointF(snap_pos))
+
+    def draw_overlays(self, painter, pw, doc):
+        if self.current_pos:
+            from PyQt6.QtGui import QPen
+            r = self._last_width
+            painter.setPen(QPen(QColor(0, 0, 0, 150), pw))
+            painter.setBrush(Qt.BrushStyle.NoBrush)
+            painter.drawEllipse(self.current_pos, r, r)

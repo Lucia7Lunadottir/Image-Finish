@@ -1,7 +1,7 @@
 from PyQt6.QtGui import QImage
 
 from core.locale import tr
-from ui.adjustments_dialog import _to_argb32, _bits_ba, _from_ba, _AdjustDialog, _SliderRow
+from ui.adjustments_dialog import _to_argb32, _in_place_arr, _AdjustDialog, _SliderRow
 
 
 def apply_threshold(src: QImage, threshold: int) -> QImage:
@@ -9,7 +9,8 @@ def apply_threshold(src: QImage, threshold: int) -> QImage:
     img = _to_argb32(src)
     try:
         import numpy as np
-        ba, arr = _bits_ba(img)
+        img = img.copy()
+        arr = _in_place_arr(img)
         R = arr[:, :, 2].astype(np.uint16)
         G = arr[:, :, 1].astype(np.uint16)
         B = arr[:, :, 0].astype(np.uint16)
@@ -18,7 +19,7 @@ def apply_threshold(src: QImage, threshold: int) -> QImage:
         arr[:, :, 0] = white
         arr[:, :, 1] = white
         arr[:, :, 2] = white
-        return _from_ba(ba, img)
+        return img.convertToFormat(QImage.Format.Format_ARGB32_Premultiplied)
     except ImportError:
         result = img.copy()
         for y in range(result.height()):

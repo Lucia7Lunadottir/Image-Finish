@@ -18,24 +18,21 @@ def _to_argb32(img: QImage) -> QImage:
     return img.convertToFormat(QImage.Format.Format_ARGB32)
 
 
-def _bits_ba(img: QImage):
-    """Return (bytearray, numpy_array_HW4) sharing the same memory."""
+def _in_place_arr(img: QImage):
+    """Returns a writable numpy array mapped to the QImage's memory safely."""
     import numpy as np
+    import ctypes
     ptr = img.bits()
-    ptr.setsize(img.sizeInBytes())
-    ba  = bytearray(ptr)                    # one writable copy of pixel data
-    arr = np.frombuffer(ba, dtype=np.uint8).reshape(
-        (img.height(), img.width(), 4))
-    return ba, arr
+    buf = (ctypes.c_uint8 * img.sizeInBytes()).from_address(int(ptr))
+    return np.ndarray((img.height(), img.bytesPerLine() // 4, 4), dtype=np.uint8, buffer=buf)
 
-
-def _from_ba(ba: bytearray, ref: QImage) -> QImage:
-    """Wrap a modified bytearray as a premultiplied QImage.
-    convertToFormat() always allocates a new buffer, so ba can be freed after."""
-    tmp = QImage(ba, ref.width(), ref.height(),
-                 ref.bytesPerLine(), QImage.Format.Format_ARGB32)
-    return tmp.convertToFormat(QImage.Format.Format_ARGB32_Premultiplied)
-
+def _const_arr(img: QImage):
+    """Returns a read-only numpy array mapped to the QImage's memory safely."""
+    import numpy as np
+    import ctypes
+    ptr = img.constBits()
+    buf = (ctypes.c_uint8 * img.sizeInBytes()).from_address(int(ptr))
+    return np.ndarray((img.height(), img.bytesPerLine() // 4, 4), dtype=np.uint8, buffer=buf)
 
 # Memory layout of Format_ARGB32 on little-endian x86:
 #   4-channel axis indices:  0=B  1=G  2=R  3=A
@@ -50,11 +47,12 @@ def apply_brightness_contrast(src: QImage, brightness: int, contrast: int) -> QI
 
     try:
         import numpy as np
-        ba, arr = _bits_ba(img)
+        img = img.copy() # force detach
+        arr = _in_place_arr(img)
         rgb = arr[:, :, :3].astype(np.float32)
         rgb = np.clip((rgb - 128.0) * cf + 128.0 + bo, 0, 255).astype(np.uint8)
         arr[:, :, :3] = rgb
-        return _from_ba(ba, img)
+        return img.convertToFormat(QImage.Format.Format_ARGB32_Premultiplied)
     except ImportError:
         for y in range(img.height()):
             for x in range(img.width()):
@@ -73,7 +71,8 @@ def apply_hue_saturation(src: QImage, hue: int, saturation: int, lightness: int)
 
     try:
         import numpy as np
-        ba, arr = _bits_ba(img)
+        img = img.copy()
+        arr = _in_place_arr(img)
 
         # BGRA layout: R=2, G=1, B=0
         B0 = arr[:, :, 0].astype(np.float32) / 255.0
@@ -119,7 +118,7 @@ def apply_hue_saturation(src: QImage, hue: int, saturation: int, lightness: int)
         arr[:, :, 2] = np.clip((R2 + mv) * 255, 0, 255).astype(np.uint8)
         arr[:, :, 1] = np.clip((G2 + mv) * 255, 0, 255).astype(np.uint8)
         arr[:, :, 0] = np.clip((B2 + mv) * 255, 0, 255).astype(np.uint8)
-        return _from_ba(ba, img)
+        return img.convertToFormat(QImage.Format.Format_ARGB32_Premultiplied)
 
     except ImportError:
         import colorsys
@@ -143,9 +142,10 @@ def apply_invert(src: QImage) -> QImage:
     img = _to_argb32(src)
     try:
         import numpy as np
-        ba, arr = _bits_ba(img)
+        img = img.copy()
+        arr = _in_place_arr(img)
         arr[:, :, :3] = 255 - arr[:, :, :3]
-        return _from_ba(ba, img)
+        return img.convertToFormat(QImage.Format.Format_ARGB32_Premultiplied)
     except ImportError:
         for y in range(img.height()):
             for x in range(img.width()):

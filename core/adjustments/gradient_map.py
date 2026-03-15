@@ -2,7 +2,7 @@ from PyQt6.QtWidgets import QHBoxLayout, QLabel, QPushButton
 from PyQt6.QtGui import QImage, QColor
 
 from core.locale import tr
-from ui.adjustments_dialog import _to_argb32, _bits_ba, _from_ba, _AdjustDialog
+from ui.adjustments_dialog import _to_argb32, _in_place_arr, _AdjustDialog
 from core.adjustments._widgets import _ColorButton, _GradientPreview
 
 
@@ -13,7 +13,8 @@ def apply_gradient_map(src: QImage,
     img = _to_argb32(src)
     try:
         import numpy as np
-        ba, arr = _bits_ba(img)
+        img = img.copy()
+        arr = _in_place_arr(img)
         R = arr[:, :, 2].astype(np.uint32)
         G = arr[:, :, 1].astype(np.uint32)
         B = arr[:, :, 0].astype(np.uint32)
@@ -23,7 +24,7 @@ def apply_gradient_map(src: QImage,
         arr[:, :, 2] = np.clip(sr + (hr - sr) * t, 0, 255).astype(np.uint8)
         arr[:, :, 1] = np.clip(sg + (hg - sg) * t, 0, 255).astype(np.uint8)
         arr[:, :, 0] = np.clip(sb + (hb - sb) * t, 0, 255).astype(np.uint8)
-        return _from_ba(ba, img)
+        return img.convertToFormat(QImage.Format.Format_ARGB32_Premultiplied)
     except ImportError:
         sr, sg, sb = shadow
         hr, hg, hb = highlight

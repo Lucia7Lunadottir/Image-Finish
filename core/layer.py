@@ -1,5 +1,5 @@
 from PyQt6.QtGui import QImage, QColor, QPainterPath
-from PyQt6.QtCore import Qt, QPoint, QRect
+from PyQt6.QtCore import Qt, QPoint, QRect, QRectF
 import uuid
 
 
@@ -31,7 +31,7 @@ class Layer:
         self.blend_mode: str = "Normal"
         self.offset: QPoint = QPoint(0, 0)
 
-        # "raster" | "text" | "vector" | "adjustment" | "fill" | "smart_object" | "artboard" | "group"
+        # "raster" | "text" | "vector" | "adjustment" | "fill" | "smart_object" | "artboard" | "group" | "frame"
         self.layer_type: str = "raster"
 
         self.image = QImage(width, height, QImage.Format.Format_ARGB32_Premultiplied)
@@ -46,6 +46,7 @@ class Layer:
         self.fill_data: dict | None = None        # fill layer params
         self.smart_data: dict | None = None       # smart object (stores original QImage)
         self.artboard_rect: QRect | None = None   # For Artboards
+        self.frame_data: dict | None = None       # {"shape": "rect"|"ellipse", "rect": QRectF}
 
     # ------------------------------------------------------------------
     def copy(self) -> "Layer":
@@ -83,6 +84,11 @@ class Layer:
             clone.artboard_rect = QRect(self.artboard_rect)
         else:
             clone.artboard_rect = None
+        fd = getattr(self, "frame_data", None)
+        if fd:
+            clone.frame_data = {"shape": fd.get("shape", "rect"), "rect": QRectF(fd.get("rect", QRectF()))}
+        else:
+            clone.frame_data = None
         td = getattr(self, "text_data", None)
         clone.text_data = dict(td) if td else None
         sd = getattr(self, "shape_data", None)

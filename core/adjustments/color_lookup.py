@@ -4,7 +4,7 @@ from PyQt6.QtWidgets import QHBoxLayout, QLabel, QPushButton, QFileDialog
 from PyQt6.QtGui import QImage
 
 from core.locale import tr
-from ui.adjustments_dialog import _to_argb32, _bits_ba, _from_ba, _AdjustDialog, _SliderRow
+from ui.adjustments_dialog import _to_argb32, _AdjustDialog, _SliderRow
 
 
 # ── .cube parser ──────────────────────────────────────────────────────────────
@@ -90,7 +90,10 @@ def apply_color_lookup(src: QImage, lut: dict, intensity: int) -> QImage:
 
         lut_arr = np.array(data, dtype=np.float32)  # (N^3, 3)
 
-        ba, arr = _bits_ba(img)
+        img = img.copy()
+        ptr = img.bits()
+        ptr.setsize(img.sizeInBytes())
+        arr = np.frombuffer(ptr, dtype=np.uint8).reshape((img.height(), img.width(), 4))
         B_in = arr[:, :, 0].astype(np.float32) / 255.0
         G_in = arr[:, :, 1].astype(np.float32) / 255.0
         R_in = arr[:, :, 2].astype(np.float32) / 255.0
@@ -145,7 +148,9 @@ def apply_color_lookup(src: QImage, lut: dict, intensity: int) -> QImage:
                                0, 255).astype(np.uint8)
         arr[:, :, 0] = np.clip(B_in * 255 * (1 - d) + out[:, :, 2] * 255 * d,
                                0, 255).astype(np.uint8)
-        return _from_ba(ba, img)
+        del arr
+        del ptr
+        return img.convertToFormat(QImage.Format.Format_ARGB32_Premultiplied)
 
     # ── pure-Python fallback (nearest-neighbour) ──────────────────────────────
     except ImportError:

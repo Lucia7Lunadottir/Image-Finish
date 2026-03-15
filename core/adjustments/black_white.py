@@ -1,7 +1,7 @@
 from PyQt6.QtGui import QImage
 
 from core.locale import tr
-from ui.adjustments_dialog import _to_argb32, _bits_ba, _from_ba, _AdjustDialog, _SliderRow
+from ui.adjustments_dialog import _to_argb32, _in_place_arr, _AdjustDialog, _SliderRow
 
 
 def apply_black_white(src: QImage, reds: int, yellows: int, greens: int,
@@ -11,7 +11,8 @@ def apply_black_white(src: QImage, reds: int, yellows: int, greens: int,
     img = _to_argb32(src)
     try:
         import numpy as np
-        ba, arr = _bits_ba(img)
+        img = img.copy()
+        arr = _in_place_arr(img)
         B = arr[:, :, 0].astype(np.float32) / 255.0
         G = arr[:, :, 1].astype(np.float32) / 255.0
         R = arr[:, :, 2].astype(np.float32) / 255.0
@@ -49,7 +50,7 @@ def apply_black_white(src: QImage, reds: int, yellows: int, greens: int,
         arr[:, :, 0] = gray
         arr[:, :, 1] = gray
         arr[:, :, 2] = gray
-        return _from_ba(ba, img)
+        return img.convertToFormat(QImage.Format.Format_ARGB32_Premultiplied)
     except ImportError:
         ws = [reds, yellows, greens, cyans, blues, magentas]
         result = img.copy()

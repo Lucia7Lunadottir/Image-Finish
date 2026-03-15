@@ -223,6 +223,12 @@ class BrushOptions(BaseOptions):
         else:
             self.option_changed.emit("brush_mask", data)
 
+    def add_custom_brush(self, path, name):
+        new_idx = self._mask_combo.count() - 1
+        self._mask_combo.insertItem(new_idx, self._get_icon(path), name, path)
+        self._mask_combo.setCurrentIndex(new_idx)
+        self.option_changed.emit("brush_mask", path)
+
     def update_from_opts(self, opts: dict):
         # Блокируем сигналы, чтобы не вызывать option_changed при обновлении
         controls = [self._size_slider, self._size_spin, self._size_dyn_cb,
