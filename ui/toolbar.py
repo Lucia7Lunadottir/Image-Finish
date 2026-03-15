@@ -24,6 +24,8 @@ class ToolBar(QWidget):
 
     _TOOL_DEFS: dict[str, _ToolDef] = {
         "Move":          _ToolDef("Move",          "✋",  "V", "tool.move"),
+        "Artboard":      _ToolDef("Artboard",      "🔲", "V", "tool.artboard"),
+        "Warp":          _ToolDef("Warp",          "🕸️", "V", "tool.warp"),
         "Brush":         _ToolDef("Brush",         "🖌️", "B", "tool.brush"),
         "Pencil":        _ToolDef("Pencil",        "✏️", "B", "tool.pencil"),
         "ColorReplacement":_ToolDef("ColorReplacement", "🖌️🎨", "B", "tool.color_replacement"),
@@ -63,7 +65,7 @@ class ToolBar(QWidget):
 
     # Order/structure of the toolbar. Groups behave like Photoshop dropdown tools.
     _LAYOUT = [
-        "Move",
+        ("MoveGroup", ["Move", "Artboard", "Warp"]),
         ("BrushGroup", ["Brush", "Pencil", "ColorReplacement", "MixerBrush", "CloneStamp", "PatternStamp"]),
         ("EraserGroup", ["Eraser", "BackgroundEraser", "MagicEraser"]),
         "Fill",

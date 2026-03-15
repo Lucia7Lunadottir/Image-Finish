@@ -11,7 +11,7 @@ class FillTool(BaseTool):
 
     def on_press(self, pos, doc, fg, bg, opts):
         layer = doc.get_active_layer()
-        if not layer or layer.locked:
+        if not layer or layer.locked or getattr(layer, "lock_pixels", False):
             return
         tolerance = int(opts.get("fill_tolerance", 32))
         contiguous = bool(opts.get("fill_contiguous", True))

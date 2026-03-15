@@ -5,6 +5,13 @@ from core.locale import tr
 
 class EditActionsMixin:
     def _undo(self):
+        # Если активна рамка трансформации, Ctrl+Z работает как Escape (Отмена трансформации)
+        tool = self._canvas.active_tool
+        if hasattr(tool, "is_transforming") and getattr(tool, "is_transforming", False):
+            tool.cancel_transform(self._document)
+            self._canvas_refresh()
+            return
+
         from core.history import HistoryState
         state = self._history.undo()
         if not state:
@@ -61,8 +68,36 @@ class EditActionsMixin:
         layer = self._document.get_active_layer()
         if not layer:
             return
+            
+        tool = self._canvas.active_tool
+        if self._active_tool_name == "Move" and hasattr(tool, "is_transforming") and tool.is_transforming:
+            is_float = getattr(tool, "_is_floating", False)
+            tool.cancel_transform(self._document)
+            self._push_history(tr("history.clear_layer"))
+            if is_float:
+                sel = self._document.selection
+                if sel and not sel.isEmpty():
+                    p = QPainter(layer.image)
+                    p.setCompositionMode(QPainter.CompositionMode.CompositionMode_Clear)
+                    p.setClipPath(sel)
+                    p.fillRect(sel.boundingRect().toRect(), QColor(0, 0, 0, 0))
+                    p.end()
+                self._document.selection = None
+            else:
+                layer.image.fill(Qt.GlobalColor.transparent)
+            self._canvas_refresh()
+            return
+            
         self._push_history(tr("history.clear_layer"))
-        layer.image.fill(Qt.GlobalColor.transparent)
+        sel = self._document.selection
+        if sel and not sel.isEmpty():
+            p = QPainter(layer.image)
+            p.setCompositionMode(QPainter.CompositionMode.CompositionMode_Clear)
+            p.setClipPath(sel)
+            p.fillRect(sel.boundingRect().toRect(), QColor(0, 0, 0, 0))
+            p.end()
+        else:
+            layer.image.fill(Qt.GlobalColor.transparent)
         self._canvas_refresh()
 
     def _deselect(self):
@@ -126,6 +161,8 @@ class EditActionsMixin:
             self._canvas_refresh()
 
     def _cut(self):
+        if hasattr(self, "_commit_move_transform"):
+            self._commit_move_transform()
         self._copy()
         layer = self._document.get_active_layer()
         if not layer:
@@ -141,6 +178,8 @@ class EditActionsMixin:
             self._canvas_refresh()
 
     def _copy(self):
+        if hasattr(self, "_commit_move_transform"):
+            self._commit_move_transform()
         layer = self._document.get_active_layer()
         if not layer:
             return

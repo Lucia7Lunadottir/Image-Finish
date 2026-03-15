@@ -15,6 +15,7 @@ from .tool_options.empty_options import EmptyOptions
 from .tool_options.bg_eraser_options import BackgroundEraserOptions
 from .tool_options.pattern_stamp_options import PatternStampOptions
 from .tool_options.measure_options import ColorSamplerOptions, RulerOptions
+from .tool_options.move_options import MoveOptions
 
 class ToolOptionsBar(QWidget):
     option_changed = pyqtSignal(str, object)
@@ -71,7 +72,18 @@ class ToolOptionsBar(QWidget):
         self._pages["TextV"] = self._pages["Text"]
         self._pages["TextHMask"] = self._pages["Text"]
         self._pages["TextVMask"] = self._pages["Text"]
-        self._pages["Move"] = EmptyOptions("tool.move")
+        self._pages["Move"] = MoveOptions("opts.move_hint")
+        
+        move_page = self._pages["Move"]
+        move_layout = move_page.layout() if callable(move_page.layout) else move_page.layout
+        if move_layout is not None:
+            from PyQt6.QtWidgets import QCheckBox
+            from core.locale import tr
+            self._move_auto_cb = QCheckBox(tr("opts.move.auto_select"))
+            self._move_auto_cb.stateChanged.connect(lambda v: self.option_changed.emit("move_auto_select", bool(v)))
+            move_layout.insertWidget(0, self._move_auto_cb)
+        self._pages["Warp"] = MoveOptions("opts.warp_hint")
+        self._pages["Artboard"] = EmptyOptions("tool.artboard")
         self._pages["Eyedropper"] = EmptyOptions("tool.eyedropper")
         self._pages["ColorSampler"] = ColorSamplerOptions()
         self._pages["Ruler"] = RulerOptions()
@@ -114,3 +126,6 @@ class ToolOptionsBar(QWidget):
         for page in set(self._pages.values()):
             if hasattr(page, "retranslate"):
                 page.retranslate()
+        if hasattr(self, "_move_auto_cb"):
+            from core.locale import tr
+            self._move_auto_cb.setText(tr("opts.move.auto_select"))

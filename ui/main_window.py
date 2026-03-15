@@ -1,6 +1,6 @@
 from PyQt6.QtWidgets import (QMainWindow, QWidget, QHBoxLayout, QVBoxLayout,
-                             QMenu, QStatusBar, QFileDialog, QMessageBox)
-from PyQt6.QtCore import Qt, QRectF
+                             QMenu, QStatusBar, QFileDialog, QMessageBox, QSplitter)
+from PyQt6.QtCore import Qt, QRectF, QRect, QPoint
 from PyQt6.QtGui import QAction, QKeySequence, QColor, QPainterPath
 
 from ui.canvas_widget    import CanvasWidget
@@ -38,6 +38,8 @@ def _build_tool_registry(text_parent):
     from tools.measure_tools import ColorSamplerTool, RulerTool
     from tools.advanced_erasers import MagicEraserTool, BackgroundEraserTool
     from tools.magic_wand_tool import MagicWandTool, QuickSelectionTool, ObjectSelectionTool
+    from tools.artboard_tool import ArtboardTool
+    from tools.warp_tool import WarpTool
 
     text = TextTool();  text._parent_widget  = text_parent
     textv = VerticalTypeTool(); textv._parent_widget = text_parent
@@ -60,6 +62,8 @@ def _build_tool_registry(text_parent):
         "Select":     SelectTool(),
         "EllipseSelect": EllipticalSelectTool(),
         "Move":       MoveTool(),
+        "Warp":       WarpTool(),
+        "Artboard":   ArtboardTool(),
         "Eyedropper": EyedropperTool(),
         "ColorSampler": ColorSamplerTool(),
         "Ruler":      RulerTool(),
@@ -145,7 +149,7 @@ class MainWindow(QMainWindow,
 
         right = QWidget()
         right.setObjectName("panel")
-        right.setFixedWidth(220)
+        right.setMinimumWidth(220)
         right_v = QVBoxLayout(right)
         right_v.setContentsMargins(0, 0, 0, 0)
         right_v.setSpacing(0)
@@ -155,8 +159,14 @@ class MainWindow(QMainWindow,
         right_v.addWidget(self._color_panel)
         right_v.addWidget(self._layers_panel, 1)
 
-        body_h.addWidget(self._canvas, 1)
-        body_h.addWidget(right)
+        splitter = QSplitter(Qt.Orientation.Horizontal)
+        splitter.addWidget(self._canvas)
+        splitter.addWidget(right)
+        splitter.setSizes([self.width() - 260, 260])
+        splitter.setStretchFactor(0, 1) # Холст будет растягиваться
+        splitter.setStretchFactor(1, 0) # Панель — нет
+
+        body_h.addWidget(splitter, 1)
         root_v.addWidget(body, 1)
 
     # ================================================================= Menu Bar
@@ -176,8 +186,8 @@ class MainWindow(QMainWindow,
 
         # Edit
         edit_m = self._menu(mb, "menu.edit")
-        self._undo_act = self._act(edit_m, "menu.undo", self._undo, QKeySequence.StandardKey.Undo)
-        self._redo_act = self._act(edit_m, "menu.redo", self._redo, QKeySequence.StandardKey.Redo)
+        self._undo_act = self._act(edit_m, "menu.undo", self._undo, QKeySequence("Ctrl+Z"))
+        self._redo_act = self._act(edit_m, "menu.redo", self._redo, QKeySequence("Ctrl+Shift+Z"))
         edit_m.addSeparator()
         self._act(edit_m, "menu.cut",             self._cut,   QKeySequence.StandardKey.Cut)
         self._act(edit_m, "menu.copy",            self._copy,  QKeySequence.StandardKey.Copy)
@@ -362,16 +372,22 @@ class MainWindow(QMainWindow,
         self._opts_bar.option_changed.connect(self._on_opt_changed)
         self._opts_bar.apply_styles_requested.connect(self._apply_text_styles)
         self._opts_bar.apply_crop_requested.connect(self._on_apply_crop_requested)
-        self._layers_panel.layer_selected.connect(self._on_layer_selected)
+        self._layers_panel.layer_selected.connect(self._on_layer_selected_wrap)
         self._layers_panel.layer_added.connect(self._add_layer)
         self._layers_panel.layer_duplicated.connect(self._duplicate_layer)
         self._layers_panel.layer_deleted.connect(self._delete_layer)
+        self._layers_panel.layer_renamed.connect(self._rename_layer)
+        self._layers_panel.layer_expanded_toggled.connect(self._on_layer_expanded_toggled)
+        self._layers_panel.layer_moved.connect(self._move_layer_exact)
         self._layers_panel.layer_moved_up.connect(self._layer_up)
         self._layers_panel.layer_moved_down.connect(self._layer_down)
         self._layers_panel.layer_visibility.connect(self._on_layer_visibility)
         self._layers_panel.layer_opacity.connect(self._on_layer_opacity)
-        if hasattr(self._layers_panel, "layer_alpha_locked"):
-            self._layers_panel.layer_alpha_locked.connect(self._on_layer_alpha_locked)
+        if hasattr(self._layers_panel, "layer_lock_changed"):
+            self._layers_panel.layer_lock_changed.connect(self._on_layer_lock_changed)
+        if hasattr(self._layers_panel, "layer_grouped"):
+            self._layers_panel.layer_grouped.connect(self._group_layer)
+            self._layers_panel.layer_linked.connect(self._link_layer)
         if hasattr(self._layers_panel, "layer_blend_mode"):
             self._layers_panel.layer_blend_mode.connect(self._on_layer_blend_mode)
         if hasattr(self._layers_panel, "layer_target_changed"):
@@ -396,7 +412,66 @@ class MainWindow(QMainWindow,
         self._layers_panel.layer_rasterize.connect(self._rasterize_layer)
 
     # ================================================================= Tools
+    def _commit_move_transform(self):
+        for t_name in ["Move", "Warp"]:
+            tool = self._tools.get(t_name)
+            if tool and getattr(tool, "is_transforming", False):
+                from core.history import HistoryState
+                
+                # Временно восстанавливаем исходное состояние слоя и выделения для чистого слепка
+                layer = self._document.get_active_layer()
+                tmp_img, tmp_off, tmp_sel = None, None, None
+                tmp_rect = None
+                tmp_kids = []
+                if layer and hasattr(tool, "_layer_backup") and tool._layer_backup is not None:
+                    for kid_data in getattr(tool, "_linked_children", []):
+                        kid = kid_data["layer"]
+                        tmp_kids.append((kid, QPoint(kid.offset)))
+                        kid.offset = kid_data["backup_offset"]
+                        
+                    tmp_img = layer.image
+                    tmp_off = layer.offset
+                    tmp_sel = self._document.selection
+                    if getattr(layer, "layer_type", "") == "artboard":
+                        tmp_rect = QRect(layer.artboard_rect) if layer.artboard_rect else None
+                        if t_name == "Move":
+                            layer.artboard_rect = QRect(tool._original_rect) if tool._original_rect else None
+                    layer.image = tool._layer_backup
+                    layer.offset = tool._offset_backup
+                    if getattr(tool, "_sel_origin", None):
+                        self._document.selection = tool._sel_origin
+
+                pre_state = HistoryState(
+                    description=tr("tool.warp") if t_name == "Warp" else tr("tool.move"),
+                    layers_snapshot=self._document.snapshot_layers(),
+                    active_layer_index=self._document.active_layer_index,
+                    doc_width=self._document.width,
+                    doc_height=self._document.height,
+                    selection_snapshot=QPainterPath(self._document.selection) if self._document.selection else None,
+                )
+                
+                # Возвращаем "вырезанную" версию обратно для финального склеивания
+                if layer and tmp_img is not None:
+                    layer.image = tmp_img
+                    layer.offset = tmp_off
+                    self._document.selection = tmp_sel
+                    if getattr(layer, "layer_type", "") == "artboard" and tmp_rect is not None:
+                        layer.artboard_rect = tmp_rect
+                        
+                for kid, old_off in tmp_kids:
+                    kid.offset = old_off
+
+                old_w, old_h = self._document.width, self._document.height
+                tool.apply_transform(self._document)
+                self._history.push(pre_state)
+                if self._document.width != old_w or self._document.height != old_h:
+                    self._canvas.reset_zoom()
+                self._canvas_refresh()
+
     def _activate_tool(self, name: str):
+        if self._active_tool_name in ("Move", "Warp") and name != self._active_tool_name:
+            self._commit_move_transform()
+                
         print(f"Activating tool: {name}")
         self._active_tool_name = name
         tool = self._tools.get(name)
@@ -413,6 +488,40 @@ class MainWindow(QMainWindow,
         self._opts_bar.switch_to(name)
         self._toolbar.set_active(name)
 
+    def _on_layer_selected_wrap(self, index: int):
+        self._commit_move_transform()
+        if hasattr(self, "_on_layer_selected"):
+            self._on_layer_selected(index)
+
+    def _rename_layer(self, index: int, new_name: str):
+        if 0 <= index < len(self._document.layers):
+            layer = self._document.layers[index]
+            if layer.name != new_name:
+                layer.name = new_name
+
+    def _on_layer_expanded_toggled(self, index: int, expanded: bool):
+        if 0 <= index < len(self._document.layers):
+            self._document.layers[index].expanded = expanded
+            self._refresh_layers()
+
+    def _move_layer_exact(self, from_index: int, to_index: int):
+        if 0 <= from_index < len(self._document.layers) and 0 <= to_index < len(self._document.layers):
+            layer = self._document.layers[from_index]
+            self._document.move_layer(from_index, to_index)
+            
+            if to_index < len(self._document.layers) - 1:
+                layer_above_in_ui = self._document.layers[to_index + 1]
+                if getattr(layer_above_in_ui, "layer_type", "raster") in ("group", "artboard"):
+                    layer.parent_id = getattr(layer_above_in_ui, "layer_id", None)
+                else:
+                    layer.parent_id = getattr(layer_above_in_ui, "parent_id", None)
+            else:
+                layer.parent_id = None
+                
+            self._push_history(tr("history.layer_moved"))
+            self._refresh_layers()
+            self._canvas_refresh()
+
     # ================================================================= Events
     def _on_pixels_changed(self):
         self._update_status()
@@ -423,7 +532,25 @@ class MainWindow(QMainWindow,
         if state:
             self._history.push(state)
             self._canvas._pre_stroke_state = None
+            if state.doc_width != self._document.width or state.doc_height != self._document.height:
+                self._canvas.reset_zoom()
         self._update_title()
+
+    def _undo(self):
+        tool = self._canvas.active_tool
+        if hasattr(tool, "is_transforming") and tool.is_transforming:
+            tool.cancel_transform(self._document)
+            self._canvas_refresh()
+            return
+        super()._undo()
+
+    def _redo(self):
+        tool = self._canvas.active_tool
+        if hasattr(tool, "is_transforming") and tool.is_transforming:
+            tool.cancel_transform(self._document)
+            self._canvas_refresh()
+            return
+        super()._redo()
 
     def _push_history(self, description: str):
         self._history.push(HistoryState(
@@ -469,6 +596,15 @@ class MainWindow(QMainWindow,
             if tool: tool.clear()
             self._canvas_refresh()
             return
+        if key == "move_apply":
+            self._commit_move_transform()
+            return
+        if key == "move_cancel":
+            tool = self._canvas.active_tool
+            if hasattr(tool, "is_transforming") and tool.is_transforming:
+                tool.cancel_transform(self._document)
+                self._canvas_refresh()
+            return
         self._canvas.tool_opts[key] = value
 
     def _on_layer_blend_mode(self, mode: str):
@@ -478,13 +614,37 @@ class MainWindow(QMainWindow,
             self._push_history(tr("history.layer_blend"))
             self._canvas_refresh()
 
-    def _on_layer_alpha_locked(self, index: int, locked: bool):
-        if 0 <= index < len(self._document.layers):
-            layer = self._document.layers[index]
-            if getattr(layer, "lock_alpha", False) != locked:
-                layer.lock_alpha = locked
-                self._push_history(tr("history.lock_alpha"))
-                self._refresh_layers()
+    def _on_layer_lock_changed(self, lock_type: str, locked: bool):
+        layer = self._document.get_active_layer()
+        if layer:
+            if lock_type == "alpha": layer.lock_alpha = locked
+            elif lock_type == "pixels": layer.lock_pixels = locked
+            elif lock_type == "position": layer.lock_position = locked
+            elif lock_type == "artboard": layer.lock_artboard = locked
+            elif lock_type == "all": layer.locked = locked
+            self._push_history(tr("history.lock_changed"))
+            self._refresh_layers()
+
+    def _group_layer(self):
+        idx = self._document.active_layer_index
+        group = self._document.add_layer(tr("layer.name.group"), idx + 1)
+        group.layer_type = "group"
+        layer = self._document.layers[idx]
+        layer.parent_id = group.layer_id
+        self._push_history(tr("history.new_group"))
+        self._refresh_layers()
+        
+    def _link_layer(self):
+        idx = self._document.active_layer_index
+        if idx > 0:
+            l1 = self._document.layers[idx]
+            l2 = self._document.layers[idx - 1]
+            import uuid
+            new_link = l2.link_id if l2.link_id else str(uuid.uuid4())
+            if l1.link_id == new_link: l1.link_id = None
+            else: l1.link_id = new_link
+            self._push_history(tr("history.link_layers"))
+            self._refresh_layers()
 
     def _on_layer_target_changed(self, index: int, target: str):
         if 0 <= index < len(self._document.layers):
@@ -748,6 +908,14 @@ class MainWindow(QMainWindow,
                 self._apply_crop()
             elif self._active_tool_name == "Perspective Crop":
                 self._apply_perspective_crop()
+            elif self._active_tool_name in ("Move", "Warp"):
+                self._commit_move_transform()
+        elif e.key() == Qt.Key.Key_Escape:
+            if self._active_tool_name in ("Move", "Warp"):
+                tool = self._canvas.active_tool
+                if hasattr(tool, "is_transforming") and tool.is_transforming:
+                    tool.cancel_transform(self._document)
+                    self._canvas_refresh()
         super().keyPressEvent(e)
 
     def _apply_text_styles(self):

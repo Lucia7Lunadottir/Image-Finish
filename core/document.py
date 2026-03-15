@@ -111,7 +111,21 @@ class Document:
                   fill_color: QColor = None) -> Layer:
         if name is None:
             name = f"Layer {len(self.layers) + 1}"
+            
+        parent_id = None
+        if self.layers and 0 <= self.active_layer_index < len(self.layers):
+            active = self.layers[self.active_layer_index]
+            if getattr(active, "layer_type", "raster") in ("artboard", "group"):
+                parent_id = getattr(active, "layer_id", None)
+                if index is not None and index == self.active_layer_index + 1:
+                    # Вставляем ВНУТРЬ группы (то есть на место группы, сдвигая саму группу выше)
+                    insert_idx = self.active_layer_index
+            else:
+                parent_id = getattr(active, "parent_id", None)
+
         layer = Layer(name, self.width, self.height, fill_color)
+        layer.parent_id = parent_id
+        
         if index is None:
             self.layers.append(layer)
             self.active_layer_index = len(self.layers) - 1
@@ -123,6 +137,8 @@ class Document:
     def duplicate_layer(self, index: int) -> Layer:
         src = self.layers[index]
         clone = src.copy()
+        import uuid
+        clone.layer_id = str(uuid.uuid4())
         clone.name = f"{src.name} copy"
         self.layers.insert(index + 1, clone)
         self.active_layer_index = index + 1
@@ -156,17 +172,39 @@ class Document:
         result.fill(Qt.GlobalColor.transparent)
 
         painter = QPainter(result)
-        current_clip_alpha = None
         
-        for layer in self.layers:  # bottom → top
+        children_map = {}
+        for layer in self.layers:
+            pid = getattr(layer, "parent_id", None)
+            children_map.setdefault(pid, []).append(layer)
+            
+        state = {'clip_alpha': None}
+        
+        def render_layer(layer, layer_artboard_rect):
+            nonlocal painter
             if not layer.visible:
-                continue
+                return
                 
             ltype = getattr(layer, "layer_type", "raster")
             is_clipping = getattr(layer, "clipping", False)
             
-            if is_clipping and current_clip_alpha is None:
-                continue
+            if ltype == "artboard":
+                ar = getattr(layer, "artboard_rect", None)
+                if ar:
+                    painter.fillRect(ar, QColor(255, 255, 255))
+                state['clip_alpha'] = None
+                for child in children_map.get(getattr(layer, "layer_id", None), []):
+                    render_layer(child, ar)
+                return
+                
+            if ltype == "group":
+                state['clip_alpha'] = None
+                for child in children_map.get(getattr(layer, "layer_id", None), []):
+                    render_layer(child, layer_artboard_rect)
+                return
+            
+            if is_clipping and state['clip_alpha'] is None:
+                return
 
             if ltype == "adjustment":
                 painter.end()
@@ -205,8 +243,18 @@ class Document:
                     vmask_f = v_arr[:backup.height(), :backup.width()].astype(np.float32) / 255.0
                     frac *= vmask_f
                     
-                if is_clipping and current_clip_alpha is not None:
-                    frac *= current_clip_alpha
+                if layer_artboard_rect:
+                    ax, ay, aw, ah = layer_artboard_rect.getRect()
+                    ax = max(0, min(self.width, ax))
+                    ay = max(0, min(self.height, ay))
+                    aw = max(0, min(self.width - ax, aw))
+                    ah = max(0, min(self.height - ay, ah))
+                    mask_art = np.zeros((self.height, self.width), dtype=np.float32)
+                    mask_art[ay:ay+ah, ax:ax+aw] = 1.0
+                    frac *= mask_art
+
+                if is_clipping and state['clip_alpha'] is not None:
+                    frac *= state['clip_alpha']
                 
                 frac_4 = frac[..., np.newaxis]
                 
@@ -219,7 +267,7 @@ class Document:
                 ).astype(np.uint8)
                 
                 if not is_clipping:
-                    current_clip_alpha = None
+                    state['clip_alpha'] = None
                 
                 painter = QPainter(result)
 
@@ -265,7 +313,7 @@ class Document:
                         if dx1 < dx2 and dy1 < dy2:
                             sx1, sy1 = dx1 - ox, dy1 - oy
                             sx2, sy2 = sx1 + (dx2 - dx1), sy1 + (dy2 - dy1)
-                            clip_mask[sy1:sy2, sx1:sx2] = current_clip_alpha[dy1:dy2, dx1:dx2]
+                            clip_mask[sy1:sy2, sx1:sx2] = state['clip_alpha'][dy1:dy2, dx1:dx2]
                             
                         arr[..., 0] = (arr[..., 0] * clip_mask).astype(np.uint8)
                         arr[..., 1] = (arr[..., 1] * clip_mask).astype(np.uint8)
@@ -288,15 +336,21 @@ class Document:
                     
                     ptr = base_alpha_img.bits(); ptr.setsize(base_alpha_img.sizeInBytes())
                     arr_alpha = np.ndarray((self.height, base_alpha_img.bytesPerLine() // 4, 4), dtype=np.uint8, buffer=ptr)
-                    current_clip_alpha = arr_alpha[:, :self.width, 3].astype(np.float32) / 255.0
+                    state['clip_alpha'] = arr_alpha[:, :self.width, 3].astype(np.float32) / 255.0
 
                 painter.save()
+                if layer_artboard_rect:
+                    painter.setClipRect(layer_artboard_rect)
+
                 if getattr(layer, "vector_mask", None) is not None and getattr(layer, "vector_mask_enabled", True):
-                    painter.setClipPath(layer.vector_mask)
+                    painter.setClipPath(layer.vector_mask, Qt.ClipOperation.IntersectClip)
                 painter.setCompositionMode(_get_composition_mode(getattr(layer, "blend_mode", "SourceOver")))
                 painter.setOpacity(layer.opacity)
                 painter.drawImage(layer.offset, img_to_draw)
                 painter.restore()
+
+        for layer in children_map.get(None, []):
+            render_layer(layer, None)
 
         if painter.isActive():
             painter.end()
@@ -457,25 +511,46 @@ class Document:
         if w <= 0 or h <= 0:
             return QRect()
 
-        min_x, min_y = w, h
-        max_x, max_y = -1, -1
+        try:
+            import numpy as np
+            ptr = img.bits()
+            ptr.setsize(img.sizeInBytes())
+            arr = np.ndarray((h, img.bytesPerLine() // 4, 4), dtype=np.uint8, buffer=ptr)[:, :w, :]
+            alpha = arr[..., 3]
+            rows = np.any(alpha, axis=1)
+            if not np.any(rows): return QRect()
+            cols = np.any(alpha, axis=0)
+            rmin, rmax = np.where(rows)[0][[0, -1]]
+            cmin, cmax = np.where(cols)[0][[0, -1]]
+            return QRect(int(cmin), int(rmin), int(cmax - cmin + 1), int(rmax - rmin + 1))
+        except Exception:
+            return QRect(0, 0, w, h)
 
-        for y in range(h):
-            row_has = False
-            for x in range(w):
-                if qAlpha(img.pixel(x, y)) != 0:
-                    row_has = True
-                    if x < min_x: min_x = x
-                    if y < min_y: min_y = y
-                    if x > max_x: max_x = x
-                    if y > max_y: max_y = y
-            if row_has:
-                # Small optimization: nothing else for this row
-                pass
+    def fit_to_artboards(self) -> bool:
+        """Оборачивает границы документа строго вокруг всех Артбордов и сдвигает слои при выходе в минус."""
+        bounds = None
+        has_artboards = False
+        for layer in self.layers:
+            if getattr(layer, "layer_type", "") == "artboard" and getattr(layer, "artboard_rect", None):
+                has_artboards = True
+                bounds = layer.artboard_rect if bounds is None else bounds.united(layer.artboard_rect)
 
-        if max_x < 0:
-            return QRect()
-        return QRect(min_x, min_y, (max_x - min_x + 1), (max_y - min_y + 1))
+        if not has_artboards or bounds is None:
+            return False
+
+        shift = bounds.topLeft()
+        if shift == QPoint(0, 0) and self.width == bounds.width() and self.height == bounds.height():
+            return False
+
+        for layer in self.layers:
+            layer.offset = layer.offset - shift
+            if getattr(layer, "layer_type", "") == "artboard" and getattr(layer, "artboard_rect", None):
+                layer.artboard_rect.translate(-shift)
+
+        self.width = bounds.width()
+        self.height = bounds.height()
+        self.selection = None
+        return True
 
     def trim_transparent(self) -> bool:
         """Trim document to non-transparent pixels of the composite."""
