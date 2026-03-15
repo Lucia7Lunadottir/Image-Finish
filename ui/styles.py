@@ -56,24 +56,28 @@ QWidget#toolbar {
     background-color: #181825;
     border-right: 1px solid #313244;
 }
-QPushButton#toolBtn {
+QPushButton#toolBtn, QToolButton#toolBtn {
     background-color: transparent;
     border: 1px solid transparent;
     border-radius: 6px;
     color: #cdd6f4;
     font-size: 18px;
-    padding: 6px;
-    min-width: 36px;
-    min-height: 36px;
+    padding: 4px;
 }
-QPushButton#toolBtn:hover {
+QPushButton#toolBtn:hover, QToolButton#toolBtn:hover {
     background-color: #313244;
     border-color: #585b70;
 }
-QPushButton#toolBtn[active="true"] {
+QPushButton#toolBtn[active="true"], QToolButton#toolBtn[active="true"] {
     background-color: #7c3aed;
     border-color: #a855f7;
     color: white;
+}
+QToolButton#toolBtn::menu-indicator {
+    subcontrol-origin: padding;
+    subcontrol-position: bottom right;
+    bottom: 2px;
+    right: 2px;
 }
 
 /* ──────────────────── Tool Options Bar ─────────────────── */
@@ -153,6 +157,29 @@ QLabel#panelTitle {
     letter-spacing: 1px;
     padding: 8px 10px 4px 10px;
 }
+QTabWidget::pane {
+    border: none;
+    border-top: 1px solid #313244;
+}
+QTabBar::tab {
+    background-color: #181825;
+    color: #7f849c;
+    padding: 6px 12px;
+    border: none;
+    font-weight: bold;
+    font-size: 11px;
+    text-transform: uppercase;
+    letter-spacing: 1px;
+}
+QTabBar::tab:selected {
+    color: #cdd6f4;
+    background-color: #1e1e2e;
+    border-bottom: 2px solid #7c3aed;
+}
+QTabBar::tab:hover:!selected {
+    background-color: #24273a;
+    color: #a6adc8;
+}
 
 /* ──────────────────────── Layer List ───────────────────── */
 QListWidget {
@@ -180,7 +207,7 @@ QPushButton#smallBtn {
     border: 1px solid #45475a;
     border-radius: 4px;
     color: #cdd6f4;
-    padding: 3px 10px;
+    padding: 3px 6px;
     font-size: 12px;
 }
 QPushButton#smallBtn:hover {
@@ -194,7 +221,7 @@ QPushButton#dangerBtn {
     border: 1px solid #a03030;
     border-radius: 4px;
     color: #f38ba8;
-    padding: 3px 10px;
+    padding: 3px 6px;
     font-size: 12px;
 }
 QPushButton#dangerBtn:hover {

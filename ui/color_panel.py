@@ -69,7 +69,7 @@ class ColorPanel(QWidget):
 
         self._swap_btn = QPushButton("⇄")
         self._swap_btn.setObjectName("smallBtn")
-        self._swap_btn.setFixedSize(22, 22)
+        self._swap_btn.setFixedSize(26, 22)
         self._swap_btn.setToolTip(tr("color.swap_tooltip"))
         self._swap_btn.clicked.connect(self._swap)
         self._swap_btn.setParent(swatch_container)
@@ -77,11 +77,11 @@ class ColorPanel(QWidget):
 
         self._reset_btn = QPushButton("↺")
         self._reset_btn.setObjectName("smallBtn")
-        self._reset_btn.setFixedSize(22, 22)
+        self._reset_btn.setFixedSize(26, 22)
         self._reset_btn.setToolTip(tr("color.reset_tooltip"))
         self._reset_btn.clicked.connect(self._reset)
         self._reset_btn.setParent(swatch_container)
-        self._reset_btn.move(78, 38)
+        self._reset_btn.move(84, 38)
 
         layout.addWidget(swatch_container)
 

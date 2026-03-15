@@ -13,7 +13,7 @@ class FileActionsMixin:
             self._canvas.set_document(self._document)
             self._refresh_layers()
             self._push_history(tr("history.new_document"))
-            self._update_title()
+            self._update_mode_menu()
             self._filepath = None
 
     def _open_file(self):
@@ -48,7 +48,7 @@ class FileActionsMixin:
         self._canvas.set_document(self._document)
         self._filepath = path
         self._refresh_layers()
-        self.setWindowTitle(tr("title.with_file", name=path.split("/")[-1]))
+        self._update_mode_menu()
 
     def _save(self):
         if hasattr(self, "_filepath") and self._filepath:

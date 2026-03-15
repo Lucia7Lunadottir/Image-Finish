@@ -25,6 +25,9 @@ class EditActionsMixin:
             doc_height=self._document.height,
             selection_snapshot=QPainterPath(self._document.selection) if self._document.selection else None,
             work_path_snapshot=clone_work_path(getattr(self._document, "work_path", None)),
+            alpha_channels_snapshot=list(getattr(self._document, "alpha_channels", [])),
+            color_mode_snapshot=getattr(self._document, "color_mode", "RGB"),
+            bit_depth_snapshot=getattr(self._document, "bit_depth", 8)
         ))
         self._document.restore_layers(state.layers_snapshot)
         self._document.active_layer_index = state.active_layer_index
@@ -36,8 +39,15 @@ class EditActionsMixin:
                             self._document.height != state.doc_height)
             self._document.width  = state.doc_width
             self._document.height = state.doc_height
+        if getattr(state, "alpha_channels_snapshot", None) is not None:
+            self._document.alpha_channels = list(state.alpha_channels_snapshot)
             if dims_changed:
                 self._canvas.reset_zoom()
+        if getattr(state, "color_mode_snapshot", None) is not None:
+            self._document.color_mode = state.color_mode_snapshot
+        if getattr(state, "bit_depth_snapshot", None) is not None:
+            self._document.bit_depth = state.bit_depth_snapshot
+        if hasattr(self, "_update_mode_menu"): self._update_mode_menu()
         self._refresh_layers()
         self._canvas_refresh()
         self._status.showMessage(tr("status.undo", desc=state.description))
@@ -55,6 +65,9 @@ class EditActionsMixin:
             doc_height=self._document.height,
             selection_snapshot=QPainterPath(self._document.selection) if self._document.selection else None,
             work_path_snapshot=clone_work_path(getattr(self._document, "work_path", None)),
+            alpha_channels_snapshot=list(getattr(self._document, "alpha_channels", [])),
+            color_mode_snapshot=getattr(self._document, "color_mode", "RGB"),
+            bit_depth_snapshot=getattr(self._document, "bit_depth", 8)
         ))
         self._document.restore_layers(state.layers_snapshot)
         self._document.active_layer_index = state.active_layer_index
@@ -66,8 +79,15 @@ class EditActionsMixin:
                             self._document.height != state.doc_height)
             self._document.width  = state.doc_width
             self._document.height = state.doc_height
+        if getattr(state, "alpha_channels_snapshot", None) is not None:
+            self._document.alpha_channels = list(state.alpha_channels_snapshot)
             if dims_changed:
                 self._canvas.reset_zoom()
+        if getattr(state, "color_mode_snapshot", None) is not None:
+            self._document.color_mode = state.color_mode_snapshot
+        if getattr(state, "bit_depth_snapshot", None) is not None:
+            self._document.bit_depth = state.bit_depth_snapshot
+        if hasattr(self, "_update_mode_menu"): self._update_mode_menu()
         self._refresh_layers()
         self._canvas_refresh()
 
@@ -159,6 +179,9 @@ class EditActionsMixin:
             doc_width=self._document.width,
             doc_height=self._document.height,
             selection_snapshot=QPainterPath(self._document.selection) if self._document.selection else None,
+            alpha_channels_snapshot=list(getattr(self._document, "alpha_channels", [])),
+            color_mode_snapshot=getattr(self._document, "color_mode", "RGB"),
+            bit_depth_snapshot=getattr(self._document, "bit_depth", 8)
         )
         
         from ui.color_range_dialog import ColorRangeDialog
@@ -197,6 +220,9 @@ class EditActionsMixin:
             doc_height=self._document.height,
             selection_snapshot=QPainterPath(self._document.selection) if self._document.selection else None,
             work_path_snapshot=clone_work_path(getattr(self._document, "work_path", None)),
+            alpha_channels_snapshot=list(getattr(self._document, "alpha_channels", [])),
+            color_mode_snapshot=getattr(self._document, "color_mode", "RGB"),
+            bit_depth_snapshot=getattr(self._document, "bit_depth", 8)
         )
         self._document.selection = path
         self._history.push(pre_state)

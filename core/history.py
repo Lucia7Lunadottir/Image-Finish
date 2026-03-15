@@ -25,6 +25,9 @@ class HistoryState:
     doc_height: int = 0
     selection_snapshot: QPainterPath | None = None
     work_path_snapshot: dict | None = None
+    alpha_channels_snapshot: list[dict] | None = None
+    color_mode_snapshot: str = "RGB"
+    bit_depth_snapshot: int = 8
 
 
 class HistoryManager:

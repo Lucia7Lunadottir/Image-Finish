@@ -26,6 +26,7 @@ class CanvasWidget(QWidget):
 
         self.document    = None
         self.active_tool = None
+        self.view_channel = "RGB"
 
         self.fg_color = QColor(0, 0, 0)
         self.bg_color = QColor(255, 255, 255)
@@ -82,6 +83,8 @@ class CanvasWidget(QWidget):
 
         self._composite_cache: QImage | None = None
         self._cache_dirty: bool = True
+        self._display_cache: QImage | None = None
+        self._last_view_channel: str = "RGB"
 
         self.show_rulers: bool = False
         self._dragging_guide = None
@@ -109,12 +112,14 @@ class CanvasWidget(QWidget):
     def set_document(self, doc):
         self.document = doc
         self._cache_dirty = True
+        self._display_cache = None
         self._pre_stroke_state = None
         self._fit_to_window()
         self.update()
 
     def invalidate_cache(self):
         self._cache_dirty = True
+        self._display_cache = None
         self.update()
 
     def reset_zoom(self):
@@ -312,10 +317,76 @@ class CanvasWidget(QWidget):
         if self._cache_dirty or self._composite_cache is None:
             self._composite_cache = self.document.get_composite()
             self._cache_dirty = False
+            self._display_cache = None
+            
+        current_ch = getattr(self, "view_channel", "RGB")
+        if self._display_cache is None or getattr(self, "_last_view_channel", "RGB") != current_ch:
+            self._last_view_channel = current_ch
+            if current_ch == "RGB" or self._composite_cache is None:
+                self._display_cache = self._composite_cache
+            else:
+                import ctypes
+                import numpy as np
+                comp = self._composite_cache
+                w, h = comp.width(), comp.height()
+                ptr = comp.constBits()
+                buf = (ctypes.c_uint8 * comp.sizeInBytes()).from_address(int(ptr))
+                arr = np.ndarray((h, comp.bytesPerLine() // 4, 4), dtype=np.uint8, buffer=buf)[:, :w]
+                
+                B = arr[..., 0].astype(np.float32)
+                G = arr[..., 1].astype(np.float32)
+                R = arr[..., 2].astype(np.float32)
+                
+                if current_ch.startswith("alpha_"):
+                    idx = int(current_ch.split("_")[1])
+                    if hasattr(self.document, "alpha_channels") and 0 <= idx < len(self.document.alpha_channels):
+                        alpha_path = self.document.alpha_channels[idx]["path"]
+                        mask_img = QImage(w, h, QImage.Format.Format_Grayscale8)
+                        mask_img.fill(0)
+                        p = QPainter(mask_img)
+                        p.fillPath(alpha_path, QColor(255))
+                        p.end()
+                        m_ptr = mask_img.constBits()
+                        m_buf = (ctypes.c_uint8 * mask_img.sizeInBytes()).from_address(int(m_ptr))
+                        gray_u8 = np.ndarray((h, mask_img.bytesPerLine()), dtype=np.uint8, buffer=m_buf)[:, :w].copy()
+                    else:
+                        gray_u8 = np.zeros((h, w), dtype=np.uint8)
+                else:
+                    if current_ch == "R": gray = R
+                    elif current_ch == "G": gray = G
+                    elif current_ch == "B": gray = B
+                    else:
+                        C_c = 1.0 - R / 255.0
+                        M_c = 1.0 - G / 255.0
+                        Y_c = 1.0 - B / 255.0
+                        K_c = np.minimum(C_c, np.minimum(M_c, Y_c))
+                        
+                        if current_ch == "K":
+                            gray = K_c * 255.0
+                        else:
+                            safe_K = np.where(K_c >= 0.999, 1.0, 1.0 - K_c)
+                            if current_ch == "C": gray = np.where(K_c >= 0.999, 0.0, (C_c - K_c) / safe_K) * 255.0
+                            elif current_ch == "M": gray = np.where(K_c >= 0.999, 0.0, (M_c - K_c) / safe_K) * 255.0
+                            elif current_ch == "Y": gray = np.where(K_c >= 0.999, 0.0, (Y_c - K_c) / safe_K) * 255.0
+                            
+                    gray_u8 = np.clip(gray, 0, 255).astype(np.uint8)
+                
+                disp_arr = np.empty((h, w, 4), dtype=np.uint8)
+                disp_arr[..., 0] = gray_u8
+                disp_arr[..., 1] = gray_u8
+                disp_arr[..., 2] = gray_u8
+                disp_arr[..., 3] = 255 if current_ch.startswith("alpha_") else arr[..., 3]
+                
+                new_img = QImage(w, h, QImage.Format.Format_ARGB32_Premultiplied)
+                ctypes.memmove(int(new_img.bits()), np.ascontiguousarray(disp_arr).ctypes.data, new_img.sizeInBytes())
+                self._display_cache = new_img
+
+        display_img = self._display_cache
+
         painter.save()
         painter.translate(self._pan)
         painter.scale(self.zoom, self.zoom)
-        painter.drawImage(0, 0, self._composite_cache)
+        painter.drawImage(0, 0, display_img)
         painter.restore()
 
         # Grid
@@ -861,20 +932,26 @@ class CanvasWidget(QWidget):
 
         # --- Курсор для кастомной кисти ---
         if isinstance(actual_mask, QImage) and not actual_mask.isNull():
-            # 1. Масштабируем маску кисти до размера курсора
-            scaled_img = actual_mask.scaled(w_size, w_size, Qt.AspectRatioMode.KeepAspectRatio, Qt.TransformationMode.SmoothTransformation)
-
-            # 2. Превращаем форму в контур. Если картинка без прозрачности, используем эвристику.
-            if not scaled_img.hasAlphaChannel():
-                mask_img = scaled_img.createHeuristicMask()
+            cache_key = (id(mask) if not isinstance(mask, str) else mask, w_size)
+            if getattr(self, "_custom_cursor_cache_key", None) == cache_key:
+                path = self._custom_cursor_cache_path
             else:
-                mask_img = scaled_img.createAlphaMask()
-                
-            bitmap = QBitmap.fromImage(mask_img)
-            region = QRegion(bitmap)
-            path = QPainterPath()
-            path.addRegion(region)
-            path = path.simplified()  # Сливаем мелкие части в один контур
+                # 1. Масштабируем маску кисти до размера курсора
+                scaled_img = actual_mask.scaled(w_size, w_size, Qt.AspectRatioMode.KeepAspectRatio, Qt.TransformationMode.SmoothTransformation)
+    
+                # 2. Превращаем форму в контур. Если картинка без прозрачности, используем эвристику.
+                if not scaled_img.hasAlphaChannel():
+                    mask_img = scaled_img.createHeuristicMask()
+                else:
+                    mask_img = scaled_img.createAlphaMask()
+                    
+                bitmap = QBitmap.fromImage(mask_img)
+                region = QRegion(bitmap)
+                path = QPainterPath()
+                path.addRegion(region)
+                path = path.simplified()  # Сливаем мелкие части в один контур
+                self._custom_cursor_cache_key = cache_key
+                self._custom_cursor_cache_path = path
 
             br = path.boundingRect()
             for ctx, cty in centers:
@@ -1032,6 +1109,9 @@ class CanvasWidget(QWidget):
                     doc_height=self.document.height,
                     selection_snapshot=QPainterPath(self.document.selection) if self.document.selection else None,
                     work_path_snapshot=clone_work_path(getattr(self.document, "work_path", None)),
+                    alpha_channels_snapshot=list(getattr(self.document, "alpha_channels", [])),
+                    color_mode_snapshot=getattr(self.document, "color_mode", "RGB"),
+                    bit_depth_snapshot=getattr(self.document, "bit_depth", 8)
                 )
 
             old_layer_idx = self.document.active_layer_index if self.document else -1

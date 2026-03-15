@@ -57,8 +57,9 @@ class FillTool(BaseTool):
         # --- NUMPY ОПТИМИЗАЦИЯ ---
         import ctypes
         bpl = image.bytesPerLine()
-        arr_full = np.empty((h, bpl // 4, 4), dtype=np.uint8)
-        ctypes.memmove(arr_full.ctypes.data, int(image.constBits()), image.sizeInBytes())
+        ptr = image.bits()
+        buf = (ctypes.c_uint8 * image.sizeInBytes()).from_address(int(ptr))
+        arr_full = np.ndarray((h, bpl // 4, 4), dtype=np.uint8, buffer=buf)
         arr = arr_full[:, :w, :]
 
         B = arr[..., 0].astype(np.int32)
@@ -81,8 +82,9 @@ class FillTool(BaseTool):
             p.fillPath(selection, QColor(255))
             p.end()
             
-            sel_arr = np.empty((h, sel_img.bytesPerLine()), dtype=np.uint8)
-            ctypes.memmove(sel_arr.ctypes.data, int(sel_img.constBits()), sel_img.sizeInBytes())
+            s_ptr = sel_img.constBits()
+            s_buf = (ctypes.c_uint8 * sel_img.sizeInBytes()).from_address(int(s_ptr))
+            sel_arr = np.ndarray((h, sel_img.bytesPerLine()), dtype=np.uint8, buffer=s_buf)
             sel_arr = sel_arr[:, :w]
             
             color_mask &= (sel_arr > 0)
@@ -141,5 +143,3 @@ class FillTool(BaseTool):
             arr[final_fill, 1] = fg_g
             arr[final_fill, 2] = fr
             arr[final_fill, 3] = fa
-            
-        ctypes.memmove(int(image.bits()), arr_full.ctypes.data, image.sizeInBytes())

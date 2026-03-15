@@ -108,10 +108,10 @@ class ToolBar(QWidget):
     def __init__(self, parent=None):
         super().__init__(parent)
         self.setObjectName("toolbar")
-        self.setFixedWidth(54)
+        self.setFixedWidth(62)
 
         layout = QVBoxLayout(self)
-        layout.setContentsMargins(6, 10, 6, 10)
+        layout.setContentsMargins(8, 10, 8, 10)
         layout.setSpacing(4)
         layout.setAlignment(Qt.AlignmentFlag.AlignTop)
 
@@ -134,6 +134,7 @@ class ToolBar(QWidget):
             btn.setObjectName("toolBtn")
             btn.setToolTip(self._make_tip(td.tr_key, td.shortcut))
             btn.setCheckable(False)
+            btn.setFixedSize(46, 38)
             btn.setSizePolicy(QSizePolicy.Policy.Fixed, QSizePolicy.Policy.Fixed)
             btn.clicked.connect(lambda _, n=tool_name: self._on_click(n))
             layout.addWidget(btn)
@@ -209,7 +210,8 @@ class ToolBar(QWidget):
         btn.setObjectName("toolBtn")
         btn.setText(td.icon)
         btn.setToolTip(self._make_tip(td.tr_key, td.shortcut))
-        btn.setPopupMode(QToolButton.ToolButtonPopupMode.MenuButtonPopup)
+        btn.setPopupMode(QToolButton.ToolButtonPopupMode.DelayedPopup)
+        btn.setFixedSize(46, 38)
         btn.setSizePolicy(QSizePolicy.Policy.Fixed, QSizePolicy.Policy.Fixed)
 
         btn.setContextMenuPolicy(Qt.ContextMenuPolicy.CustomContextMenu)

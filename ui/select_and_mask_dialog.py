@@ -190,7 +190,7 @@ class SelectAndMaskDialog(QDialog):
         self.btns = {}
         def add_tool(name, icon):
             b = QPushButton(icon)
-            b.setFixedSize(36, 36)
+            b.setFixedSize(46, 38)
             b.setStyleSheet("font-size: 18px; border-radius: 4px; background: #313244;")
             b.clicked.connect(lambda _, n=name: self._set_tool(n))
             tb.addWidget(b)
@@ -205,7 +205,7 @@ class SelectAndMaskDialog(QDialog):
         
         left_widget = QWidget()
         left_widget.setLayout(tb)
-        left_widget.setFixedWidth(54)
+        left_widget.setFixedWidth(62)
         left_widget.setStyleSheet("background: #181825;")
         root.addWidget(left_widget)
         

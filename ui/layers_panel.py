@@ -111,7 +111,7 @@ class LayerItem(QWidget):
         # Visibility toggle
         self._vis_btn = QPushButton("👁")
         self._vis_btn.setObjectName("smallBtn")
-        self._vis_btn.setFixedSize(24, 24)
+        self._vis_btn.setFixedSize(32, 24)
         self._vis_btn.setCheckable(True)
         self._vis_btn.setChecked(layer.visible)
         self._vis_btn.setToolTip(tr("layer.toggle_visibility"))
@@ -380,7 +380,7 @@ class LayersPanel(QWidget):
 
         for btn in (self._btn_lock_pixels, self._btn_lock_pos, self._btn_lock_artboard, self._btn_lock_alpha, self._btn_lock_all):
             btn.setCheckable(True)
-            btn.setFixedSize(28, 28)
+            btn.setFixedSize(32, 28)
             btn.setObjectName("smallBtn")
             locks_lo.addWidget(btn)
 
@@ -409,7 +409,7 @@ class LayersPanel(QWidget):
         def _make_btn(text, tip_key, signal):
             b = QPushButton(text)
             b.setObjectName("smallBtn")
-            b.setFixedSize(28, 28)
+            b.setFixedSize(32, 28)
             b.setToolTip(tr(tip_key))
             b.clicked.connect(signal.emit)
             return b
@@ -429,7 +429,7 @@ class LayersPanel(QWidget):
 
         self._del_btn = QPushButton("🗑")
         self._del_btn.setObjectName("dangerBtn")
-        self._del_btn.setFixedSize(28, 28)
+        self._del_btn.setFixedSize(32, 28)
         self._del_btn.setToolTip(tr("layer.btn.delete"))
         self._del_btn.clicked.connect(self.layer_deleted.emit)
         btn_lo.addWidget(self._del_btn)

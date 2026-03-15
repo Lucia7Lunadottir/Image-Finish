@@ -1,5 +1,5 @@
 from PyQt6.QtWidgets import (QMainWindow, QWidget, QHBoxLayout, QVBoxLayout,
-                             QMenu, QStatusBar, QFileDialog, QMessageBox, QSplitter)
+                             QMenu, QStatusBar, QFileDialog, QMessageBox, QSplitter, QTabWidget)
 from PyQt6.QtCore import Qt, QRectF, QRect, QPoint, QPointF
 from PyQt6.QtGui import QAction, QKeySequence, QColor, QPainterPath, QPainter, QBrush
 
@@ -185,8 +185,19 @@ class MainWindow(QMainWindow,
 
         self._color_panel  = ColorPanel()
         self._layers_panel = LayersPanel()
+        
+        from ui.channels_panel import ChannelsPanel
+        self._channels_panel = ChannelsPanel()
+        
+        self._tabs = QTabWidget()
+        self._tabs.setObjectName("sidebarTabs")
+        self._tabs.addTab(self._layers_panel, tr("panel.layers"))
+        self._tabs.addTab(self._channels_panel, tr("panel.channels"))
+        
+        self._layers_panel._title_lbl.hide()
+
         right_v.addWidget(self._color_panel)
-        right_v.addWidget(self._layers_panel, 1)
+        right_v.addWidget(self._tabs, 1)
 
         splitter = QSplitter(Qt.Orientation.Horizontal)
         splitter.addWidget(self._canvas)
@@ -241,6 +252,9 @@ class MainWindow(QMainWindow,
         self._act(select_m, "menu.select_sky", self._select_sky)
         self._act(select_m, "menu.select_and_mask", self._select_and_mask, QKeySequence("Alt+Ctrl+R"))
         select_m.addSeparator()
+        self._act(select_m, "menu.save_selection", self._save_selection)
+        self._act(select_m, "menu.load_selection", self._load_selection)
+        select_m.addSeparator()
         
         modify_m = self._menu(select_m, "menu.modify")
         self._act(modify_m, "menu.modify.border", lambda: self._modify_selection("border"))
@@ -284,6 +298,27 @@ class MainWindow(QMainWindow,
         img_m.addSeparator()
         self._act(img_m, "menu.flip_h",        self._flip_h)
         self._act(img_m, "menu.flip_v",        self._flip_v)
+        img_m.addSeparator()
+        mode_m = self._menu(img_m, "menu.mode")
+        self._act_mode_bitmap = self._act(mode_m, "mode.bitmap", lambda: self._change_color_mode("Bitmap"))
+        self._act_mode_gray = self._act(mode_m, "mode.grayscale", lambda: self._change_color_mode("Grayscale"))
+        self._act_mode_duo = self._act(mode_m, "mode.duotone", lambda: self._change_color_mode("Duotone"))
+        self._act_mode_idx = self._act(mode_m, "mode.indexed", lambda: self._change_color_mode("Indexed"))
+        self._act_mode_rgb = self._act(mode_m, "mode.rgb", lambda: self._change_color_mode("RGB"))
+        self._act_mode_cmyk = self._act(mode_m, "mode.cmyk", lambda: self._change_color_mode("CMYK"))
+        self._act_mode_lab = self._act(mode_m, "mode.lab", lambda: self._change_color_mode("Lab"))
+        
+        mode_m.addSeparator()
+        self._act_depth_8 = self._act(mode_m, "mode.8bit", lambda: self._change_bit_depth(8))
+        self._act_depth_16 = self._act(mode_m, "mode.16bit", lambda: self._change_bit_depth(16))
+        self._act_depth_32 = self._act(mode_m, "mode.32bit", lambda: self._change_bit_depth(32))
+        
+        for act in (self._act_mode_bitmap, self._act_mode_gray, self._act_mode_duo, self._act_mode_idx, self._act_mode_rgb, self._act_mode_cmyk, self._act_mode_lab, 
+                    self._act_depth_8, self._act_depth_16, self._act_depth_32):
+            act.setCheckable(True)
+        img_m.addSeparator()
+        self._act(img_m, "menu.apply_image",   self._apply_image)
+        self._act(img_m, "menu.calculations",  self._calculations)
         img_m.addSeparator()
         self._act(img_m, "menu.image_size",    self._image_size,    QKeySequence("Ctrl+Alt+I"))
         self._act(img_m, "menu.resize_canvas", self._resize_canvas)
@@ -425,14 +460,14 @@ class MainWindow(QMainWindow,
         cur = locale_current()
         for code, act in self._lang_acts.items():
             act.setChecked(code == cur)
-        if hasattr(self, "_filepath") and self._filepath:
-            self.setWindowTitle(tr("title.with_file", name=self._filepath.split("/")[-1]))
-        else:
-            self.setWindowTitle(tr("title.untitled"))
+        self._update_mode_menu()
         self._toolbar.retranslate()
         self._opts_bar.retranslate()
         self._layers_panel.retranslate()
         self._color_panel.retranslate()
+        self._channels_panel.retranslate()
+        self._tabs.setTabText(0, tr("panel.layers"))
+        self._tabs.setTabText(1, tr("panel.channels"))
         self._refresh_layers()
 
     def _canvas_refresh(self):
@@ -489,6 +524,10 @@ class MainWindow(QMainWindow,
         self._layers_panel.layer_edit.connect(self._on_edit_layer)
         self._layers_panel.layer_smart_object.connect(self._new_smart_object)
         self._layers_panel.layer_rasterize.connect(self._rasterize_layer)
+        self._channels_panel.channel_changed.connect(self._on_channel_changed)
+        self._channels_panel.save_requested.connect(self._save_selection)
+        self._channels_panel.load_requested.connect(self._load_selection_btn)
+        self._channels_panel.delete_requested.connect(self._delete_alpha_channel)
 
     # ================================================================= Tools
     def _commit_move_transform(self):
@@ -528,6 +567,9 @@ class MainWindow(QMainWindow,
                     doc_height=self._document.height,
                     selection_snapshot=QPainterPath(self._document.selection) if self._document.selection else None,
                     work_path_snapshot=clone_work_path(getattr(self._document, "work_path", None)),
+                    alpha_channels_snapshot=list(getattr(self._document, "alpha_channels", [])),
+                    color_mode_snapshot=getattr(self._document, "color_mode", "RGB"),
+                    bit_depth_snapshot=getattr(self._document, "bit_depth", 8)
                 )
                 
                 # Возвращаем "вырезанную" версию обратно для финального склеивания
@@ -603,6 +645,61 @@ class MainWindow(QMainWindow,
             self._refresh_layers()
             self._canvas_refresh()
 
+    def _on_channel_changed(self, ch: str):
+        self._canvas.view_channel = ch
+        self._canvas_refresh()
+
+    def _save_selection(self):
+        sel = self._document.selection
+        if not sel or sel.isEmpty():
+            return
+        from PyQt6.QtWidgets import QInputDialog
+        name, ok = QInputDialog.getText(self, tr("menu.save_selection"), tr("dlg.define_name"))
+        if ok and name:
+            self._push_history(tr("history.save_selection"))
+            if not hasattr(self._document, "alpha_channels"):
+                self._document.alpha_channels = []
+            self._document.alpha_channels.append({"name": name, "path": QPainterPath(sel)})
+            self._channels_panel.refresh(self._document)
+
+    def _load_selection(self):
+        if not hasattr(self._document, "alpha_channels") or not self._document.alpha_channels:
+            return
+        from PyQt6.QtWidgets import QInputDialog
+        names = [ch["name"] for ch in self._document.alpha_channels]
+        name, ok = QInputDialog.getItem(self, tr("menu.load_selection"), "Channel:", names, 0, False)
+        if ok and name:
+            for ch in self._document.alpha_channels:
+                if ch["name"] == name:
+                    self._document.selection = QPainterPath(ch["path"])
+                    self._push_history(tr("history.load_selection"))
+                    self._canvas_refresh()
+                    break
+
+    def _load_selection_btn(self, idx):
+        if hasattr(self._document, "alpha_channels") and 0 <= idx < len(self._document.alpha_channels):
+            self._document.selection = QPainterPath(self._document.alpha_channels[idx]["path"])
+            self._push_history(tr("history.load_selection"))
+            self._canvas_refresh()
+
+    def _delete_alpha_channel(self, idx):
+        if hasattr(self._document, "alpha_channels") and 0 <= idx < len(self._document.alpha_channels):
+            self._push_history(tr("history.delete_layer"))
+            self._document.alpha_channels.pop(idx)
+            self._channels_panel.refresh(self._document)
+            if self._canvas.view_channel == f"alpha_{idx}":
+                self._canvas.view_channel = "RGB"
+                self._canvas_refresh()
+            elif self._canvas.view_channel.startswith("alpha_"):
+                cur_idx = int(self._canvas.view_channel.split("_")[1])
+                if cur_idx > idx:
+                    self._canvas.view_channel = f"alpha_{cur_idx - 1}"
+
+    def _refresh_layers(self):
+        super()._refresh_layers()
+        if hasattr(self, "_channels_panel") and self._document:
+            self._channels_panel.refresh(self._document)
+
     # ================================================================= Events
     def _toggle_rulers(self):
         self._canvas.show_rulers = self._act_rulers.isChecked(); self._canvas.update()
@@ -672,6 +769,9 @@ class MainWindow(QMainWindow,
             doc_height=self._document.height,
             selection_snapshot=QPainterPath(self._document.selection) if self._document.selection else None,
             work_path_snapshot=clone_work_path(getattr(self._document, "work_path", None)),
+            alpha_channels_snapshot=list(getattr(self._document, "alpha_channels", [])),
+            color_mode_snapshot=getattr(self._document, "color_mode", "RGB"),
+            bit_depth_snapshot=getattr(self._document, "bit_depth", 8)
         ))
 
     def _update_status(self, msg: str = ""):
@@ -685,7 +785,31 @@ class MainWindow(QMainWindow,
         )
 
     def _update_title(self):
-        self.setWindowTitle(tr("title.canvas", w=self._document.width, h=self._document.height))
+        mode = getattr(self._document, "color_mode", "RGB")
+        depth = getattr(self._document, "bit_depth", 8)
+        mode_str = f"{mode}/{depth}"
+        if hasattr(self, "_filepath") and self._filepath:
+            name = self._filepath.split("/")[-1]
+            self.setWindowTitle(tr("title.with_file", name=name, mode=mode_str))
+        else:
+            self.setWindowTitle(tr("title.canvas", w=self._document.width, h=self._document.height, mode=mode_str))
+            
+    def _update_mode_menu(self):
+        if not hasattr(self, "_act_mode_rgb"): return
+        mode = getattr(self._document, "color_mode", "RGB")
+        depth = getattr(self._document, "bit_depth", 8)
+        self._act_mode_bitmap.setChecked(mode == "Bitmap")
+        self._act_mode_gray.setChecked(mode == "Grayscale")
+        self._act_mode_duo.setChecked(mode == "Duotone")
+        self._act_mode_idx.setChecked(mode == "Indexed")
+        self._act_mode_rgb.setChecked(mode == "RGB")
+        self._act_mode_cmyk.setChecked(mode == "CMYK")
+        self._act_mode_lab.setChecked(mode == "Lab")
+        
+        self._act_depth_8.setChecked(depth == 8)
+        self._act_depth_16.setChecked(depth == 16)
+        self._act_depth_32.setChecked(depth == 32)
+        self._update_title()
 
     def _align_layer(self, alignment: str):
         doc = self._document
@@ -747,6 +871,39 @@ class MainWindow(QMainWindow,
         self._push_history(tr("history.layer_moved"))
         for l in linked: l.offset = l.offset + QPoint(int(dx), int(dy))
         self._canvas_refresh()
+
+    def _apply_image(self):
+        layer = self._document.get_active_layer()
+        if not layer or layer.image.isNull(): return
+        
+        from core.history import HistoryState, clone_work_path
+        pre_state = HistoryState(
+            description=tr("history.apply_image"),
+            layers_snapshot=self._document.snapshot_layers(),
+            active_layer_index=self._document.active_layer_index,
+            doc_width=self._document.width,
+            doc_height=self._document.height,
+            selection_snapshot=QPainterPath(self._document.selection) if self._document.selection else None,
+            work_path_snapshot=clone_work_path(getattr(self._document, "work_path", None)),
+            alpha_channels_snapshot=list(getattr(self._document, "alpha_channels", [])),
+            color_mode_snapshot=getattr(self._document, "color_mode", "RGB"),
+            bit_depth_snapshot=getattr(self._document, "bit_depth", 8)
+        )
+        
+        from ui.calculations_dialog import ApplyImageDialog
+        dlg = ApplyImageDialog(self._document, self._canvas_refresh, self)
+        if dlg.exec():
+            self._history.push(pre_state)
+        else:
+            dlg.cancel()
+
+    def _calculations(self):
+        if not self._document or not self._document.layers: return
+        from ui.calculations_dialog import CalculationsDialog
+        dlg = CalculationsDialog(self._document, self._canvas_refresh, self)
+        if dlg.exec():
+            self._push_history(tr("history.calculations"))
+            dlg.apply_result(self)
 
     # ================================================================= Colour / Options
     def _on_fg_changed(self, c: QColor):
@@ -971,6 +1128,9 @@ class MainWindow(QMainWindow,
             doc_height=self._document.height,
             selection_snapshot=QPainterPath(self._document.selection) if self._document.selection else None,
             work_path_snapshot=clone_work_path(getattr(self._document, "work_path", None)),
+            alpha_channels_snapshot=list(getattr(self._document, "alpha_channels", [])),
+            color_mode_snapshot=getattr(self._document, "color_mode", "RGB"),
+            bit_depth_snapshot=getattr(self._document, "bit_depth", 8)
         )
         
         if getattr(self._document, "quick_mask_layer", None) is not None:

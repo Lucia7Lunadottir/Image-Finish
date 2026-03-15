@@ -115,6 +115,9 @@ class Document:
         self.snap_to_grid: bool = False
         self.snap_to_bounds: bool = True
         self.snap_to_layers: bool = True
+        self.alpha_channels: list[dict] = []
+        self.color_mode: str = "RGB"
+        self.bit_depth: int = 8
 
         # Create default background layer
         bg = bg_color if bg_color else QColor(255, 255, 255)
@@ -233,18 +236,21 @@ class Document:
                     
                     import numpy as np
                     import ctypes
-                    arr_b = np.empty((backup.height(), backup.bytesPerLine() // 4, 4), dtype=np.uint8)
-                    ctypes.memmove(arr_b.ctypes.data, int(backup.constBits()), backup.sizeInBytes())
+                    res_ptr = result.bits()
+                    res_buf = (ctypes.c_uint8 * result.sizeInBytes()).from_address(int(res_ptr))
+                    arr_res = np.ndarray((result.height(), result.bytesPerLine() // 4, 4), dtype=np.uint8, buffer=res_buf)
                     
-                    arr_a = np.empty((adjusted.height(), adjusted.bytesPerLine() // 4, 4), dtype=np.uint8)
-                    ctypes.memmove(arr_a.ctypes.data, int(adjusted.constBits()), adjusted.sizeInBytes())
+                    adj_ptr = adjusted.constBits()
+                    adj_buf = (ctypes.c_uint8 * adjusted.sizeInBytes()).from_address(int(adj_ptr))
+                    arr_adj = np.ndarray((adjusted.height(), adjusted.bytesPerLine() // 4, 4), dtype=np.uint8, buffer=adj_buf)
                     
                     frac = np.full((backup.height(), backup.width()), layer.opacity, dtype=np.float32)
                     
                     has_mask = getattr(layer, "mask", None) is not None and getattr(layer, "mask_enabled", True)
                     if has_mask:
-                        m_arr = np.empty((layer.mask.height(), layer.mask.bytesPerLine() // 4, 4), dtype=np.uint8)
-                        ctypes.memmove(m_arr.ctypes.data, int(layer.mask.constBits()), layer.mask.sizeInBytes())
+                        m_ptr = layer.mask.constBits()
+                        m_buf = (ctypes.c_uint8 * layer.mask.sizeInBytes()).from_address(int(m_ptr))
+                        m_arr = np.ndarray((layer.mask.height(), layer.mask.bytesPerLine() // 4, 4), dtype=np.uint8, buffer=m_buf)
                         mw = min(backup.width(), layer.mask.width())
                         mh = min(backup.height(), layer.mask.height())
                         mask_f = m_arr[:mh, :mw, 1].astype(np.float32) / 255.0
@@ -278,14 +284,13 @@ class Document:
                     frac_4 = frac[..., np.newaxis]
                     
                     h_end, w_end = backup.height(), backup.width()
-                    roi_a = arr_a[:h_end, :w_end, :].astype(np.float32)
-                    roi_b = arr_b[:h_end, :w_end, :].astype(np.float32)
+                    roi_a = arr_adj[:h_end, :w_end, :].astype(np.float32)
+                    roi_b = arr_res[:h_end, :w_end, :].astype(np.float32)
                     
                     roi_a -= roi_b
                     roi_a *= frac_4.astype(np.float32)
                     roi_a += roi_b
-                    arr_b[:h_end, :w_end, :] = roi_a.astype(np.uint8)
-                    ctypes.memmove(int(result.bits()), arr_b.ctypes.data, result.sizeInBytes())
+                    arr_res[:h_end, :w_end, :] = roi_a.astype(np.uint8)
                     
                     if not is_clipping:
                         state['clip_alpha'] = None
@@ -338,14 +343,15 @@ class Document:
                     if has_mask or is_clipping:
                         import numpy as np
                         import ctypes
-                        arr_full = np.empty((img_to_draw.height(), img_to_draw.bytesPerLine() // 4, 4), dtype=np.uint8)
-                        ctypes.memmove(arr_full.ctypes.data, int(img_to_draw.constBits()), img_to_draw.sizeInBytes())
+                        ptr = img_to_draw.bits()
+                        buf = (ctypes.c_uint8 * img_to_draw.sizeInBytes()).from_address(int(ptr))
+                        arr_full = np.ndarray((img_to_draw.height(), img_to_draw.bytesPerLine() // 4, 4), dtype=np.uint8, buffer=buf)
                         arr = arr_full[:, :img_to_draw.width(), :]
 
                         if has_mask:
-                            m_arr_full = np.empty((layer.mask.height(), layer.mask.bytesPerLine() // 4, 4), dtype=np.uint8)
-                            ctypes.memmove(m_arr_full.ctypes.data, int(layer.mask.constBits()), layer.mask.sizeInBytes())
-                            m_arr = m_arr_full[:, :img_to_draw.width(), :]
+                            m_ptr = layer.mask.constBits()
+                            m_buf = (ctypes.c_uint8 * layer.mask.sizeInBytes()).from_address(int(m_ptr))
+                            m_arr = np.ndarray((layer.mask.height(), layer.mask.bytesPerLine() // 4, 4), dtype=np.uint8, buffer=m_buf)[:, :img_to_draw.width(), :]
                             
                             mask_f = m_arr[..., 1].astype(np.float32) / 255.0
                             arr[..., 0] = (arr[..., 0] * mask_f).astype(np.uint8)
@@ -360,7 +366,7 @@ class Document:
                             dx2, dy2 = min(self.width, ox + w), min(self.height, oy + h)
                             
                             clip_mask = np.zeros((h, w), dtype=np.float32)
-                            if dx1 < dx2 and dy1 < dy2:
+                            if state.get('clip_alpha') is not None and dx1 < dx2 and dy1 < dy2:
                                 sx1, sy1 = dx1 - ox, dy1 - oy
                                 sx2, sy2 = sx1 + (dx2 - dx1), sy1 + (dy2 - dy1)
                                 clip_mask[sy1:sy2, sx1:sx2] = state['clip_alpha'][dy1:dy2, dx1:dx2]

@@ -1,5 +1,5 @@
 from PyQt6.QtCore import Qt, QPointF
-from PyQt6.QtGui import QPainter, QImage, QPolygonF
+from PyQt6.QtGui import QPainter, QImage, QPolygonF, QColor
 from core.locale import tr
 
 
@@ -100,6 +100,101 @@ class ImageActionsMixin:
             self._canvas_refresh()
             self._canvas.reset_zoom()
             self._refresh_layers()
+
+    def _change_color_mode(self, new_mode: str):
+        current_mode = getattr(self._document, "color_mode", "RGB")
+        if current_mode == new_mode:
+            return
+            
+        from PyQt6.QtWidgets import QMessageBox, QColorDialog
+        import numpy as np
+        import ctypes
+        
+        duo_color = None
+        if new_mode == "Duotone":
+            color = QColorDialog.getColor(QColor(128, 100, 50), self, tr("adj.choose_color"))
+            if not color.isValid():
+                self._update_mode_menu()
+                return
+            duo_color = color
+            
+        reply = QMessageBox.question(self, "ImageFinish", tr("msg.merge_layers_mode"), 
+                                     QMessageBox.StandardButton.Yes | QMessageBox.StandardButton.No | QMessageBox.StandardButton.Cancel)
+        if reply == QMessageBox.StandardButton.Cancel:
+            self._update_mode_menu()
+            return
+            
+        self._push_history(tr("history.color_mode"))
+        
+        if reply == QMessageBox.StandardButton.Yes:
+            self._document.flatten()
+            
+        self._document.color_mode = new_mode
+        
+        for layer in self._document.layers:
+            if layer.image.isNull() or getattr(layer, "layer_type", "raster") != "raster":
+                continue
+                
+            img = layer.image.copy()
+            w, h = img.width(), img.height()
+            
+            if new_mode == "Indexed":
+                img = img.convertToFormat(QImage.Format.Format_Indexed8).convertToFormat(QImage.Format.Format_ARGB32_Premultiplied)
+                layer.image = img
+                continue
+                
+            ptr = img.bits()
+            buf = (ctypes.c_uint8 * img.sizeInBytes()).from_address(int(ptr))
+            arr = np.ndarray((h, img.bytesPerLine() // 4, 4), dtype=np.uint8, buffer=buf)[:, :w]
+            
+            B = arr[..., 0].astype(np.float32)
+            G = arr[..., 1].astype(np.float32)
+            R = arr[..., 2].astype(np.float32)
+            
+            if new_mode in ("Grayscale", "Bitmap", "Duotone"):
+                gray = 0.299 * R + 0.587 * G + 0.114 * B
+                
+                if new_mode == "Bitmap":
+                    gray = np.where(gray >= 128, 255.0, 0.0)
+                    arr[..., 0] = gray.astype(np.uint8)
+                    arr[..., 1] = gray.astype(np.uint8)
+                    arr[..., 2] = gray.astype(np.uint8)
+                elif new_mode == "Grayscale":
+                    arr[..., 0] = gray.astype(np.uint8)
+                    arr[..., 1] = gray.astype(np.uint8)
+                    arr[..., 2] = gray.astype(np.uint8)
+                elif new_mode == "Duotone" and duo_color:
+                    dr, dg, db = duo_color.red(), duo_color.green(), duo_color.blue()
+                    t = gray / 255.0
+                    arr[..., 2] = np.clip(dr * (1 - t) + 255 * t, 0, 255).astype(np.uint8)
+                    arr[..., 1] = np.clip(dg * (1 - t) + 255 * t, 0, 255).astype(np.uint8)
+                    arr[..., 0] = np.clip(db * (1 - t) + 255 * t, 0, 255).astype(np.uint8)
+                    
+            elif new_mode == "CMYK":
+                C = 1.0 - R / 255.0
+                M = 1.0 - G / 255.0
+                Y_ = 1.0 - B / 255.0
+                K = np.minimum(C, np.minimum(M, Y_))
+                
+                inv_K = 1.0 - K
+                arr[..., 2] = np.clip((1.0 - C) * inv_K * 255, 0, 255).astype(np.uint8)
+                arr[..., 1] = np.clip((1.0 - M) * inv_K * 255, 0, 255).astype(np.uint8)
+                arr[..., 0] = np.clip((1.0 - Y_) * inv_K * 255, 0, 255).astype(np.uint8)
+                
+            layer.image = img
+            
+        self._update_mode_menu()
+        self._canvas_refresh()
+        self._refresh_layers()
+
+    def _change_bit_depth(self, new_depth: int):
+        current_depth = getattr(self._document, "bit_depth", 8)
+        if current_depth == new_depth:
+            return
+            
+        self._push_history(tr("history.bit_depth"))
+        self._document.bit_depth = new_depth
+        self._update_mode_menu()
 
     def _reveal_all(self):
         self._push_history(tr("history.reveal_all"))
