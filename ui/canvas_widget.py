@@ -442,6 +442,8 @@ class CanvasWidget(QWidget):
         # 3.5. Оси симметрии (показываем, если активна кисть)
         mirror_x = bool(self.tool_opts.get("brush_mirror_x", False))
         mirror_y = bool(self.tool_opts.get("brush_mirror_y", False))
+        cx_pct = float(self.tool_opts.get("brush_mirror_cx", 0.5))
+        cy_pct = float(self.tool_opts.get("brush_mirror_cy", 0.5))
         tool_name = getattr(self.active_tool, "name", "")
         if tool_name in _BRUSH_TOOLS and (mirror_x or mirror_y):
             painter.save()
@@ -452,12 +454,20 @@ class CanvasWidget(QWidget):
             pen2 = QPen(QColor(100, 200, 255, 180), pw)
             pen2.setStyle(Qt.PenStyle.DashLine)
             w, h = self.document.width, self.document.height
+            sym_x = w * cx_pct
+            sym_y = h * cy_pct
             if mirror_x:
-                painter.setPen(pen1); painter.drawLine(QPointF(w/2, 0), QPointF(w/2, h))
-                painter.setPen(pen2); painter.drawLine(QPointF(w/2, 0), QPointF(w/2, h))
+                painter.setPen(pen1); painter.drawLine(QPointF(sym_x, 0), QPointF(sym_x, h))
+                painter.setPen(pen2); painter.drawLine(QPointF(sym_x, 0), QPointF(sym_x, h))
             if mirror_y:
-                painter.setPen(pen1); painter.drawLine(QPointF(0, h/2), QPointF(w, h/2))
-                painter.setPen(pen2); painter.drawLine(QPointF(0, h/2), QPointF(w, h/2))
+                painter.setPen(pen1); painter.drawLine(QPointF(0, sym_y), QPointF(w, sym_y))
+                painter.setPen(pen2); painter.drawLine(QPointF(0, sym_y), QPointF(w, sym_y))
+                
+            # Рисуем маркер центра (позволяет схватить мышкой)
+            r_handle = max(4.0, 6.0 / self.zoom)
+            painter.setPen(QPen(QColor(0, 0, 0, 150), max(1.0, 2.0 / self.zoom)))
+            painter.setBrush(QColor(100, 200, 255, 200))
+            painter.drawEllipse(QPointF(sym_x, sym_y), r_handle, r_handle)
             painter.restore()
 
         # 4. Выделение
@@ -878,14 +888,18 @@ class CanvasWidget(QWidget):
         # Подготавливаем список всех позиций курсоров (для симметрии)
         mirror_x = bool(self.tool_opts.get("brush_mirror_x", False))
         mirror_y = bool(self.tool_opts.get("brush_mirror_y", False))
+        cx_pct = float(self.tool_opts.get("brush_mirror_cx", 0.5))
+        cy_pct = float(self.tool_opts.get("brush_mirror_cy", 0.5))
         doc_pos = self.to_doc(self._mouse_pos)
         w, h = self.document.width, self.document.height
+        sym_x = w * cx_pct
+        sym_y = h * cy_pct
         
         centers = [(int(self._mouse_pos.x()), int(self._mouse_pos.y()))]
         mirrors = []
-        if mirror_x: mirrors.append(QPoint(w - doc_pos.x(), doc_pos.y()))
-        if mirror_y: mirrors.append(QPoint(doc_pos.x(), h - doc_pos.y()))
-        if mirror_x and mirror_y: mirrors.append(QPoint(w - doc_pos.x(), h - doc_pos.y()))
+        if mirror_x: mirrors.append(QPoint(int(2 * sym_x - doc_pos.x()), doc_pos.y()))
+        if mirror_y: mirrors.append(QPoint(doc_pos.x(), int(2 * sym_y - doc_pos.y())))
+        if mirror_x and mirror_y: mirrors.append(QPoint(int(2 * sym_x - doc_pos.x()), int(2 * sym_y - doc_pos.y())))
         
         for m in mirrors:
             wp = self.to_widget(m)
@@ -1092,6 +1106,30 @@ class CanvasWidget(QWidget):
                 return
 
         if ev.button() == Qt.MouseButton.LeftButton and self.active_tool:
+            tool_name = getattr(self.active_tool, "name", "")
+            if tool_name in _BRUSH_TOOLS:
+                mirror_x = bool(self.tool_opts.get("brush_mirror_x", False))
+                mirror_y = bool(self.tool_opts.get("brush_mirror_y", False))
+                if mirror_x or mirror_y:
+                    doc_pos = self.to_doc(ev.position())
+                    ctrl_pressed = bool(ev.modifiers() & Qt.KeyboardModifier.ControlModifier)
+                    
+                    if ctrl_pressed:
+                        self._dragging_sym_center = True
+                        new_cx = max(0.0, min(1.0, doc_pos.x() / max(1, self.document.width)))
+                        new_cy = max(0.0, min(1.0, doc_pos.y() / max(1, self.document.height)))
+                        self.tool_opts["brush_mirror_cx"] = new_cx
+                        self.tool_opts["brush_mirror_cy"] = new_cy
+                        self.tool_state_changed.emit({"brush_mirror_cx": new_cx, "brush_mirror_cy": new_cy})
+                        self.update()
+                        return
+
+                    sym_x = self.document.width * float(self.tool_opts.get("brush_mirror_cx", 0.5))
+                    sym_y = self.document.height * float(self.tool_opts.get("brush_mirror_cy", 0.5))
+                    if math.hypot(doc_pos.x() - sym_x, doc_pos.y() - sym_y) <= 15 / max(0.01, self.zoom):
+                        self._dragging_sym_center = True
+                        return
+
             self._stroke_in_progress = True
 
             mods = ev.modifiers()
@@ -1142,6 +1180,16 @@ class CanvasWidget(QWidget):
             self.tool_opts["_pressure"] = 1.0
 
         self._mouse_pos = ev.position()
+
+        if getattr(self, "_dragging_sym_center", False):
+            doc_pos = self.to_doc(ev.position())
+            new_cx = max(0.0, min(1.0, doc_pos.x() / max(1, self.document.width)))
+            new_cy = max(0.0, min(1.0, doc_pos.y() / max(1, self.document.height)))
+            self.tool_opts["brush_mirror_cx"] = new_cx
+            self.tool_opts["brush_mirror_cy"] = new_cy
+            self.tool_state_changed.emit({"brush_mirror_cx": new_cx, "brush_mirror_cy": new_cy})
+            self.update()
+            return
 
         if getattr(self, "_dragging_guide", None) is not None:
             doc_pos = self.to_doc(ev.position())
@@ -1203,6 +1251,11 @@ class CanvasWidget(QWidget):
         self._emit_tool_state()
 
     def mouseReleaseEvent(self, ev):
+        if getattr(self, "_dragging_sym_center", False) and ev.button() == Qt.MouseButton.LeftButton:
+            self._dragging_sym_center = False
+            self._update_cursor()
+            return
+            
         if getattr(self, "_dragging_guide", None) is not None:
             gtype, val, _ = self._dragging_guide
             wx, wy = self.to_widget(QPoint(int(val), 0)).x(), self.to_widget(QPoint(0, int(val))).y()
@@ -1261,9 +1314,13 @@ class CanvasWidget(QWidget):
 
     def keyPressEvent(self, ev):
         k = ev.key()
+        if k == Qt.Key.Key_Control: self.tool_opts["_ctrl"] = True
+        if k == Qt.Key.Key_Shift: self.tool_opts["_shift"] = True
+        if k == Qt.Key.Key_Alt: self.tool_opts["_alt"] = True
+        
         if k == Qt.Key.Key_Space and not ev.isAutoRepeat():
             self._space = True
-            self.setCursor(Qt.CursorShape.OpenHandCursor)
+            self._update_cursor()
         elif k == Qt.Key.Key_Plus or k == Qt.Key.Key_Equal:
             self.zoom_in()
         elif k == Qt.Key.Key_Minus:
@@ -1279,13 +1336,24 @@ class CanvasWidget(QWidget):
             new_size = min(500, self.tool_opts.get("brush_size", 10) + 2)
             self.tool_opts["brush_size"] = new_size
             self.update()
+        elif k in (Qt.Key.Key_Control, Qt.Key.Key_Shift, Qt.Key.Key_Alt):
+            self._update_cursor()
+            super().keyPressEvent(ev)
         else:
             super().keyPressEvent(ev)
 
     def keyReleaseEvent(self, ev):
-        if ev.key() == Qt.Key.Key_Space and not ev.isAutoRepeat():
+        k = ev.key()
+        if k == Qt.Key.Key_Control: self.tool_opts["_ctrl"] = False
+        if k == Qt.Key.Key_Shift: self.tool_opts["_shift"] = False
+        if k == Qt.Key.Key_Alt: self.tool_opts["_alt"] = False
+        
+        if k == Qt.Key.Key_Space and not ev.isAutoRepeat():
             self._space = False
             self._update_cursor()
+        elif k in (Qt.Key.Key_Control, Qt.Key.Key_Shift, Qt.Key.Key_Alt):
+            self._update_cursor()
+            super().keyReleaseEvent(ev)
         else:
             super().keyReleaseEvent(ev)
 
@@ -1295,10 +1363,54 @@ class CanvasWidget(QWidget):
             self._fit_to_window()
 
     def _update_cursor(self):
+        # 1. Высший приоритет: Навигация (Пробел / Средняя кнопка мыши)
+        if getattr(self, "_panning", False) or getattr(self, "_space", False):
+            self._show_brush_cursor = False
+            self.setCursor(Qt.CursorShape.ClosedHandCursor if getattr(self, "_panning", False) else Qt.CursorShape.OpenHandCursor)
+            return
+            
+        # 2. Вращение холста
+        if getattr(self, "_rotating", False):
+            self._show_brush_cursor = False
+            self.setCursor(Qt.CursorShape.ClosedHandCursor)
+            return
+            
+        # 3. Перетаскивание центра симметрии мышью
+        if getattr(self, "_dragging_sym_center", False):
+            self._show_brush_cursor = False
+            self.setCursor(Qt.CursorShape.CrossCursor)
+            return
+
+        # 4. Обработка курсоров инструментов
         tool_name = getattr(self.active_tool, "name", "") if self.active_tool else ""
         if tool_name in _BRUSH_TOOLS:
-            self._show_brush_cursor = True
-            self.setCursor(Qt.CursorShape.BlankCursor)
+            mirror_x = bool(self.tool_opts.get("brush_mirror_x", False))
+            mirror_y = bool(self.tool_opts.get("brush_mirror_y", False))
+            is_hovering_sym = False
+            
+            ctrl_pressed = bool(self.tool_opts.get("_ctrl", False))
+            
+            if (mirror_x or mirror_y) and self.document:
+                # Если зажат Ctrl (режим сброса центра) — показываем крестик
+                if ctrl_pressed:
+                    self._show_brush_cursor = False
+                    self.setCursor(Qt.CursorShape.CrossCursor)
+                    return
+
+                cx_pct = float(self.tool_opts.get("brush_mirror_cx", 0.5))
+                cy_pct = float(self.tool_opts.get("brush_mirror_cy", 0.5))
+                sym_x = self.document.width * cx_pct
+                sym_y = self.document.height * cy_pct
+                doc_pos = self.to_doc(self._mouse_pos)
+                hit_radius = 15 / max(0.01, self.zoom)
+                if math.hypot(doc_pos.x() - sym_x, doc_pos.y() - sym_y) <= hit_radius:
+                    is_hovering_sym = True
+            if is_hovering_sym:
+                self._show_brush_cursor = False
+                self.setCursor(Qt.CursorShape.SizeAllCursor)
+            else:
+                self._show_brush_cursor = True
+                self.setCursor(Qt.CursorShape.BlankCursor)
         else:
             self._show_brush_cursor = False
             if self.active_tool:

@@ -142,14 +142,35 @@ class BrushOptions(BaseOptions):
         sym_layout.addWidget(self._lbl_sym)
         self._mirror_x_btn = QPushButton("X")
         self._mirror_x_btn.setCheckable(True)
-        self._mirror_x_btn.setFixedWidth(40)
+        self._mirror_x_btn.setFixedWidth(30)
         self._mirror_x_btn.toggled.connect(lambda v: self.option_changed.emit("brush_mirror_x", v))
         sym_layout.addWidget(self._mirror_x_btn)
         self._mirror_y_btn = QPushButton("Y")
         self._mirror_y_btn.setCheckable(True)
-        self._mirror_y_btn.setFixedWidth(40)
+        self._mirror_y_btn.setFixedWidth(30)
         self._mirror_y_btn.toggled.connect(lambda v: self.option_changed.emit("brush_mirror_y", v))
         sym_layout.addWidget(self._mirror_y_btn)
+        
+        self._cx_spin = QSpinBox()
+        self._cx_spin.setRange(0, 100)
+        self._cx_spin.setValue(50)
+        self._cx_spin.setSuffix("%")
+        self._cx_spin.setFixedWidth(66)
+        self._cx_spin.valueChanged.connect(lambda v: self.option_changed.emit("brush_mirror_cx", v / 100.0))
+        sym_layout.addWidget(self._cx_spin)
+        
+        self._cy_spin = QSpinBox()
+        self._cy_spin.setRange(0, 100)
+        self._cy_spin.setValue(50)
+        self._cy_spin.setSuffix("%")
+        self._cy_spin.setFixedWidth(66)
+        self._cy_spin.valueChanged.connect(lambda v: self.option_changed.emit("brush_mirror_cy", v / 100.0))
+        sym_layout.addWidget(self._cy_spin)
+        
+        self._sym_reset_btn = QPushButton("↺")
+        self._sym_reset_btn.setFixedWidth(24)
+        self._sym_reset_btn.clicked.connect(self._reset_symmetry)
+        sym_layout.addWidget(self._sym_reset_btn)
         sym_layout.addStretch()
         self.layout.addWidget(sym_widget)
 
@@ -229,12 +250,28 @@ class BrushOptions(BaseOptions):
         self._mask_combo.setCurrentIndex(new_idx)
         self.option_changed.emit("brush_mask", path)
 
+    def _reset_symmetry(self):
+        self._cx_spin.setValue(50)
+        self._cy_spin.setValue(50)
+
+    def update_params(self, params: dict | None):
+        if isinstance(params, dict):
+            if "brush_mirror_cx" in params:
+                self._cx_spin.blockSignals(True)
+                self._cx_spin.setValue(int(params["brush_mirror_cx"] * 100))
+                self._cx_spin.blockSignals(False)
+            if "brush_mirror_cy" in params:
+                self._cy_spin.blockSignals(True)
+                self._cy_spin.setValue(int(params["brush_mirror_cy"] * 100))
+                self._cy_spin.blockSignals(False)
+
     def update_from_opts(self, opts: dict):
         # Блокируем сигналы, чтобы не вызывать option_changed при обновлении
         controls = [self._size_slider, self._size_spin, self._size_dyn_cb,
                     self._opacity_slider, self._opacity_spin, self._opacity_dyn_cb,
                     self._hardness_slider, self._hardness_spin, self._angle_spin, self._angle_random_cb,
-                    self._blend_combo, self._mirror_x_btn, self._mirror_y_btn]
+                    self._blend_combo, self._mirror_x_btn, self._mirror_y_btn,
+                    self._cx_spin, self._cy_spin]
         for w in controls:
             w.blockSignals(True)
 
@@ -249,6 +286,8 @@ class BrushOptions(BaseOptions):
         self._angle_random_cb.setChecked(opts.get("brush_angle_random", False))
         self._mirror_x_btn.setChecked(bool(opts.get("brush_mirror_x", False)))
         self._mirror_y_btn.setChecked(bool(opts.get("brush_mirror_y", False)))
+        self._cx_spin.setValue(int(opts.get("brush_mirror_cx", 0.5) * 100))
+        self._cy_spin.setValue(int(opts.get("brush_mirror_cy", 0.5) * 100))
 
         blend = opts.get("brush_blend_mode", "SourceOver")
         idx_blend = self._blend_combo.findData(blend)
@@ -282,5 +321,8 @@ class BrushOptions(BaseOptions):
         self._opacity_dyn_cb.setText(tr("opts.dynamic"))
         self._angle_random_cb.setText(tr("opts.angle_random"))
         self._lbl_sym.setText(tr("opts.symmetry"))
+        self._cx_spin.setToolTip(tr("opts.sym_x"))
+        self._cy_spin.setToolTip(tr("opts.sym_y"))
+        self._sym_reset_btn.setToolTip(tr("opts.sym_reset"))
         if hasattr(super(), "retranslate"):
             super().retranslate()

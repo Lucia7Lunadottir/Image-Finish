@@ -261,7 +261,11 @@ class BrushTool(BaseTool):
         pattern_scale = float(opts.get("brush_pattern_scale", 100)) / 100.0
         mirror_x = bool(opts.get("brush_mirror_x", False))
         mirror_y = bool(opts.get("brush_mirror_y", False))
+        cx_pct = float(opts.get("brush_mirror_cx", 0.5))
+        cy_pct = float(opts.get("brush_mirror_cy", 0.5))
         doc_w, doc_h = doc.width, doc.height
+        sym_x = doc_w * cx_pct
+        sym_y = doc_h * cy_pct
         
         is_pattern_stamp = getattr(self, "name", "") == "PatternStamp"
         pattern_pixmap = None
@@ -314,8 +318,8 @@ class BrushTool(BaseTool):
             cy = p1.y() + dy * t
             
             centers = [(cx, cy)]
-            if mirror_x: centers.extend([(doc_w - c[0], c[1]) for c in centers])
-            if mirror_y: centers.extend([(c[0], doc_h - c[1]) for c in centers])
+            if mirror_x: centers.extend([(2 * sym_x - c[0], c[1]) for c in centers])
+            if mirror_y: centers.extend([(c[0], 2 * sym_y - c[1]) for c in centers])
             
             # dict.fromkeys убирает дубликаты (например, если рисуем прямо по оси), сохраняя порядок
             for target_cx, target_cy in list(dict.fromkeys(centers)):
@@ -372,11 +376,15 @@ class BrushTool(BaseTool):
             
         mirror_x = bool(opts.get("brush_mirror_x", False))
         mirror_y = bool(opts.get("brush_mirror_y", False))
+        cx_pct = float(opts.get("brush_mirror_cx", 0.5))
+        cy_pct = float(opts.get("brush_mirror_cy", 0.5))
         doc_w, doc_h = doc.width, doc.height
+        sym_x = doc_w * cx_pct
+        sym_y = doc_h * cy_pct
         
         pairs = [((p1.x(), p1.y()), (p2.x(), p2.y()))]
-        if mirror_x: pairs.extend([((doc_w - a[0], a[1]), (doc_w - b[0], b[1])) for a, b in pairs])
-        if mirror_y: pairs.extend([((a[0], doc_h - a[1]), (b[0], doc_h - b[1])) for a, b in pairs])
+        if mirror_x: pairs.extend([((2 * sym_x - a[0], a[1]), (2 * sym_x - b[0], b[1])) for a, b in pairs])
+        if mirror_y: pairs.extend([((a[0], 2 * sym_y - a[1]), (b[0], 2 * sym_y - b[1])) for a, b in pairs])
         
         pen = QPen(c, size, Qt.PenStyle.SolidLine, Qt.PenCapStyle.RoundCap, Qt.PenJoinStyle.RoundJoin)
         painter.setPen(pen)
@@ -462,7 +470,11 @@ class CloneStampTool(BrushTool):
         size_dyn = bool(opts.get("brush_size_dynamic", False))
         mirror_x = bool(opts.get("brush_mirror_x", False))
         mirror_y = bool(opts.get("brush_mirror_y", False))
+        cx_pct = float(opts.get("brush_mirror_cx", 0.5))
+        cy_pct = float(opts.get("brush_mirror_cy", 0.5))
         doc_w, doc_h = doc.width, doc.height
+        sym_x = doc_w * cx_pct
+        sym_y = doc_h * cy_pct
 
         step  = max(1, size_base // 3)
         dx, dy = p2.x() - p1.x(), p2.y() - p1.y()
@@ -487,8 +499,8 @@ class CloneStampTool(BrushTool):
             cx, cy = p1.x() + dx * t, p1.y() + dy * t
             
             centers_doc = [(cx, cy)]
-            if mirror_x: centers_doc.extend([(doc_w - c[0], c[1]) for c in centers_doc])
-            if mirror_y: centers_doc.extend([(c[0], doc_h - c[1]) for c in centers_doc])
+            if mirror_x: centers_doc.extend([(2 * sym_x - c[0], c[1]) for c in centers_doc])
+            if mirror_y: centers_doc.extend([(c[0], 2 * sym_y - c[1]) for c in centers_doc])
             
             for target_doc_cx, target_doc_cy in list(dict.fromkeys(centers_doc)):
                 target_cx = target_doc_cx - layer.offset.x()
@@ -635,7 +647,11 @@ class HistoryBrushTool(BrushTool):
         size_dyn = bool(opts.get("brush_size_dynamic", False))
         mirror_x = bool(opts.get("brush_mirror_x", False))
         mirror_y = bool(opts.get("brush_mirror_y", False))
+        cx_pct = float(opts.get("brush_mirror_cx", 0.5))
+        cy_pct = float(opts.get("brush_mirror_cy", 0.5))
         doc_w, doc_h = doc.width, doc.height
+        sym_x = doc_w * cx_pct
+        sym_y = doc_h * cy_pct
 
         step  = max(1, size_base // 3)
         dx, dy = p2.x() - p1.x(), p2.y() - p1.y()
@@ -660,8 +676,8 @@ class HistoryBrushTool(BrushTool):
             cx, cy = p1.x() + dx * t, p1.y() + dy * t
             
             centers_doc = [(cx, cy)]
-            if mirror_x: centers_doc.extend([(doc_w - c[0], c[1]) for c in centers_doc])
-            if mirror_y: centers_doc.extend([(c[0], doc_h - c[1]) for c in centers_doc])
+            if mirror_x: centers_doc.extend([(2 * sym_x - c[0], c[1]) for c in centers_doc])
+            if mirror_y: centers_doc.extend([(c[0], 2 * sym_y - c[1]) for c in centers_doc])
             
             for target_doc_cx, target_doc_cy in list(dict.fromkeys(centers_doc)):
                 target_cx = target_doc_cx - layer.offset.x()

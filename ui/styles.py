@@ -107,13 +107,12 @@ QSlider::sub-page:horizontal {
     background-color: #7c3aed;
     border-radius: 2px;
 }
-QSpinBox {
+QSpinBox, QDoubleSpinBox {
     background-color: #313244;
     border: 1px solid #45475a;
     border-radius: 4px;
     color: #cdd6f4;
-    padding: 2px 6px;
-    max-width: 64px;
+    padding: 4px 6px;
 }
 QComboBox {
     background-color: #313244;
