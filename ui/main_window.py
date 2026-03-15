@@ -524,6 +524,7 @@ class MainWindow(QMainWindow,
         self._layers_panel.layer_edit.connect(self._on_edit_layer)
         self._layers_panel.layer_smart_object.connect(self._new_smart_object)
         self._layers_panel.layer_rasterize.connect(self._rasterize_layer)
+        self._layers_panel.layer_styles_requested.connect(self._open_layer_styles)
         self._channels_panel.channel_changed.connect(self._on_channel_changed)
         self._channels_panel.save_requested.connect(self._save_selection)
         self._channels_panel.load_requested.connect(self._load_selection_btn)
@@ -615,6 +616,18 @@ class MainWindow(QMainWindow,
         self._commit_move_transform()
         if hasattr(self, "_on_layer_selected"):
             self._on_layer_selected(index)
+
+    def _open_layer_styles(self, index: int):
+        layer = self._document.layers[index]
+        if getattr(layer, "layer_type", "raster") in ("group", "artboard"):
+            return
+        from ui.layer_style_dialog import LayerStyleDialog
+        dlg = LayerStyleDialog(layer, self._canvas_refresh, self)
+        if dlg.exec():
+            self._push_history("Стили слоя")
+            self._refresh_layers()
+        else:
+            dlg.reject()
 
     def _rename_layer(self, index: int, new_name: str):
         if 0 <= index < len(self._document.layers):

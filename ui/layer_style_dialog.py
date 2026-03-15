@@ -1,0 +1,194 @@
+from PyQt6.QtWidgets import (QDialog, QVBoxLayout, QHBoxLayout, QLabel, QListWidget, QStackedWidget,
+                             QCheckBox, QPushButton, QSlider, QSpinBox, QComboBox, QWidget, QDialogButtonBox, QListWidgetItem, QFormLayout)
+from PyQt6.QtCore import Qt, QTimer
+from PyQt6.QtGui import QColor
+from core.locale import tr
+from core.adjustments._widgets import _ColorButton
+
+def _slider_spin(lo: int, hi: int, val: int):
+    sl = QSlider(Qt.Orientation.Horizontal)
+    sl.setRange(lo, hi)
+    sl.setValue(val)
+    sp = QSpinBox()
+    sp.setRange(lo, hi)
+    sp.setValue(val)
+    sp.setFixedWidth(54)
+    sl.valueChanged.connect(sp.setValue)
+    sp.valueChanged.connect(sl.setValue)
+    return sl, sp
+
+class LayerStyleDialog(QDialog):
+    def __init__(self, layer, canvas_refresh, parent=None):
+        super().__init__(parent)
+        self.setWindowTitle(tr("ls.title"))
+        self.setMinimumSize(600, 450)
+        self.layer = layer
+        self.canvas_refresh = canvas_refresh
+        
+        import copy
+        self.original_styles = copy.deepcopy(getattr(layer, "layer_styles", None)) or {}
+        self.current_styles = copy.deepcopy(self.original_styles)
+        
+        self._timer = QTimer(self)
+        self._timer.setSingleShot(True)
+        self._timer.setInterval(100)
+        self._timer.timeout.connect(self._apply_preview)
+        
+        self.effects_names = {}
+        self._build_ui()
+        self._load_data()
+        
+    def _build_ui(self):
+        root = QHBoxLayout(self)
+        root.setContentsMargins(10, 10, 10, 10)
+        
+        self.list_widget = QListWidget()
+        self.list_widget.setFixedWidth(160)
+        self.list_widget.currentRowChanged.connect(self.stack.setCurrentIndex if hasattr(self, 'stack') else lambda x: x)
+        self.list_widget.itemChanged.connect(self._trigger)
+        
+        self.stack = QStackedWidget()
+        self.list_widget.currentRowChanged.connect(self.stack.setCurrentIndex)
+        
+        self.pages = {}
+        effects = [
+            ("bevel", tr("ls.bevel")), ("stroke", tr("ls.stroke")),
+            ("inner_shadow", tr("ls.inner_shadow")), ("inner_glow", tr("ls.inner_glow")),
+            ("satin", tr("ls.satin")), ("color_overlay", tr("ls.color_overlay")),
+            ("gradient_overlay", tr("ls.gradient_overlay")), ("pattern_overlay", tr("ls.pattern_overlay")),
+            ("outer_glow", tr("ls.outer_glow")), ("drop_shadow", tr("ls.drop_shadow")),
+        ]
+        
+        for key, name in effects:
+            self.effects_names[key] = name
+            item = QListWidgetItem(name)
+            item.setFlags(item.flags() | Qt.ItemFlag.ItemIsUserCheckable)
+            item.setCheckState(Qt.CheckState.Unchecked)
+            item.setData(Qt.ItemDataRole.UserRole, key)
+            self.list_widget.addItem(item)
+            
+            page = QWidget()
+            lo = QVBoxLayout(page)
+            lo.setContentsMargins(10, 0, 0, 0)
+            title = QLabel(name)
+            title.setStyleSheet("font-weight: bold; font-size: 14px; border-bottom: 1px solid #45475a; padding-bottom: 4px;")
+            lo.addWidget(title)
+            
+            form = QFormLayout()
+            lo.addLayout(form)
+            lo.addStretch()
+            
+            self.pages[key] = {"widget": page, "form": form, "inputs": {}}
+            self.stack.addWidget(page)
+            self._build_page(key, form)
+            
+        root.addWidget(self.list_widget)
+        root.addWidget(self.stack, 1)
+        
+        btns = QDialogButtonBox(QDialogButtonBox.StandardButton.Ok | QDialogButtonBox.StandardButton.Cancel)
+        btns.setOrientation(Qt.Orientation.Vertical)
+        btns.accepted.connect(self.accept)
+        btns.rejected.connect(self.reject)
+        root.addWidget(btns)
+
+    def _build_page(self, key, form):
+        inputs = self.pages[key]["inputs"]
+        def add_slider(name, prop, lo, hi, val, suffix=""):
+            sl, sp = _slider_spin(lo, hi, val)
+            sp.setSuffix(suffix)
+            w = QWidget(); h = QHBoxLayout(w); h.setContentsMargins(0,0,0,0)
+            h.addWidget(sl); h.addWidget(sp)
+            form.addRow(name, w)
+            sl.valueChanged.connect(self._trigger)
+            inputs[prop] = sp
+        def add_color(name, prop, val):
+            btn = _ColorButton(val)
+            btn.colorChanged.connect(self._trigger)
+            form.addRow(name, btn)
+            inputs[prop] = btn
+        def add_combo(name, prop, items):
+            cb = QComboBox()
+            for k, v in items: cb.addItem(k, v)
+            cb.currentIndexChanged.connect(self._trigger)
+            form.addRow(name, cb)
+            inputs[prop] = cb
+
+        blend_modes = [("Normal", "SourceOver"), ("Multiply", "Multiply"), ("Screen", "Screen"), ("Overlay", "Overlay")]
+
+        if key in ("drop_shadow", "inner_shadow"):
+            add_combo(tr("ls.blend_mode"), "blend_mode", blend_modes)
+            add_color(tr("ls.color"), "color", QColor(0,0,0))
+            add_slider(tr("ls.opacity"), "opacity", 0, 100, 75, "%")
+            add_slider(tr("ls.angle"), "angle", -180, 180, 90, "°")
+            add_slider(tr("ls.distance"), "distance", 0, 100, 5, "px")
+            if key == "drop_shadow": add_slider(tr("ls.spread"), "spread", 0, 100, 0, "%")
+            add_slider(tr("ls.size"), "size", 0, 100, 5, "px")
+        elif key == "outer_glow":
+            add_combo(tr("ls.blend_mode"), "blend_mode", blend_modes)
+            add_color(tr("ls.color"), "color", QColor(255,255,150))
+            add_slider(tr("ls.opacity"), "opacity", 0, 100, 75, "%")
+            add_slider(tr("ls.size"), "size", 0, 100, 5, "px")
+        elif key == "stroke":
+            add_slider(tr("ls.size"), "size", 1, 100, 3, "px")
+            add_combo(tr("ls.blend_mode"), "blend_mode", blend_modes)
+            add_slider(tr("ls.opacity"), "opacity", 0, 100, 100, "%")
+            add_color(tr("ls.color"), "color", QColor(0,0,0))
+        elif key == "color_overlay":
+            add_combo(tr("ls.blend_mode"), "blend_mode", blend_modes)
+            add_color(tr("ls.color"), "color", QColor(255,0,0))
+            add_slider(tr("ls.opacity"), "opacity", 0, 100, 100, "%")
+        elif key == "gradient_overlay":
+            add_combo(tr("ls.blend_mode"), "blend_mode", blend_modes)
+            add_slider(tr("ls.opacity"), "opacity", 0, 100, 100, "%")
+            add_color("Color 1", "color1", QColor(255,255,255))
+            add_color("Color 2", "color2", QColor(0,0,0))
+        else:
+            form.addRow(QLabel("Настройки для этого стиля в разработке..."))
+
+    def _read_data(self):
+        for key, p in self.pages.items():
+            inputs = p["inputs"]
+            item = self.list_widget.findItems(self.effects_names[key], Qt.MatchFlag.MatchExactly)[0]
+            state = {"enabled": item.checkState() == Qt.CheckState.Checked}
+            for prop, widget in inputs.items():
+                if isinstance(widget, QSpinBox): state[prop] = widget.value()
+                elif hasattr(widget, "color"): state[prop] = widget.color()
+                elif isinstance(widget, QComboBox): state[prop] = widget.currentData()
+            self.current_styles[key] = state
+
+    def _load_data(self):
+        self.list_widget.blockSignals(True)
+        for key, p in self.pages.items():
+            inputs = p["inputs"]
+            state = self.current_styles.get(key, {})
+            item = self.list_widget.findItems(self.effects_names[key], Qt.MatchFlag.MatchExactly)[0]
+            item.setCheckState(Qt.CheckState.Checked if state.get("enabled") else Qt.CheckState.Unchecked)
+            for prop, widget in inputs.items():
+                if prop in state:
+                    widget.blockSignals(True)
+                    if isinstance(widget, QSpinBox): widget.setValue(state[prop])
+                    elif hasattr(widget, "set_color"): widget.set_color(state[prop])
+                    elif isinstance(widget, QComboBox):
+                        idx = widget.findData(state[prop])
+                        if idx >= 0: widget.setCurrentIndex(idx)
+                    widget.blockSignals(False)
+        self.list_widget.blockSignals(False)
+
+    def _trigger(self, *args):
+        self._read_data()
+        self._timer.start()
+
+    def _apply_preview(self):
+        self.layer.layer_styles = self.current_styles
+        self.canvas_refresh()
+
+    def accept(self):
+        self._read_data()
+        self.layer.layer_styles = self.current_styles
+        super().accept()
+
+    def reject(self):
+        self._timer.stop()
+        self.layer.layer_styles = self.original_styles
+        self.canvas_refresh()
+        super().reject()

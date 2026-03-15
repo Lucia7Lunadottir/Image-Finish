@@ -45,6 +45,7 @@ class Layer:
         self.adjustment_data: dict | None = None  # adjustment layer params
         self.fill_data: dict | None = None        # fill layer params
         self.smart_data: dict | None = None       # smart object (stores original QImage)
+        self.layer_styles: dict | None = None     # layer styles / blending options
         self.artboard_rect: QRect | None = None   # For Artboards
         self.frame_data: dict | None = None       # {"shape": "rect"|"ellipse", "rect": QRectF}
 
@@ -102,6 +103,9 @@ class Layer:
             clone.smart_data = {"original": smd["original"].copy()}
         else:
             clone.smart_data = None
+            
+        import copy
+        clone.layer_styles = copy.deepcopy(getattr(self, "layer_styles", None))
         return clone
 
     def width(self) -> int:

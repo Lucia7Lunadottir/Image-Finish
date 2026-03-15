@@ -100,6 +100,7 @@ class LayerItem(QWidget):
     mask_toggled       = pyqtSignal(int)          # row_index
     vmask_toggled      = pyqtSignal(int)          # row_index
     clipping_toggled   = pyqtSignal(int)          # row_index
+    style_requested    = pyqtSignal(int)          # row_index
 
     def __init__(self, layer, index: int, is_active: bool, depth: int = 0, parent=None):
         super().__init__(parent)
@@ -271,6 +272,17 @@ class LayerItem(QWidget):
             alpha_lock_lbl = QLabel("🏁")
             alpha_lock_lbl.setFixedWidth(18)
             lo.addWidget(alpha_lock_lbl)
+            
+        if getattr(layer, "layer_styles", None):
+            fx_lbl = QLabel("fx")
+            fx_lbl.setStyleSheet("color: #a6adc8; font-weight: bold; font-style: italic; font-size: 12px;")
+            fx_lbl.setFixedWidth(16)
+            lo.addWidget(fx_lbl)
+            
+    def mouseDoubleClickEvent(self, ev):
+        if ev.button() == Qt.MouseButton.LeftButton:
+            self.style_requested.emit(self._index)
+        super().mouseDoubleClickEvent(ev)
 
 
 class LayersPanel(QWidget):
@@ -309,6 +321,7 @@ class LayersPanel(QWidget):
     layer_edit          = pyqtSignal()
     layer_smart_object  = pyqtSignal()
     layer_rasterize     = pyqtSignal()
+    layer_styles_requested = pyqtSignal(int)
 
     def __init__(self, parent=None):
         super().__init__(parent)
@@ -477,6 +490,7 @@ class LayersPanel(QWidget):
             widget.clipping_toggled.connect(self.layer_clipping_toggled.emit)
             widget.name_changed.connect(self.layer_renamed.emit)
             widget.expanded_toggled.connect(self.layer_expanded_toggled.emit)
+            widget.style_requested.connect(self.layer_styles_requested.emit)
             item.setSizeHint(widget.sizeHint())
             self._list.setItemWidget(item, widget)
             
@@ -565,6 +579,8 @@ class LayersPanel(QWidget):
 
         menu.addSeparator()
         if layer:
+            menu.addAction(tr("ctx.blending_options"), lambda: self.layer_styles_requested.emit(self._document.active_layer_index))
+            menu.addSeparator()
             active_idx = self._document.active_layer_index
             if getattr(layer, "clipping", False):
                 menu.addAction(tr("ctx.release_clipping"), lambda *args, idx=active_idx: self.layer_clipping_toggled.emit(idx))

@@ -333,6 +333,12 @@ class Document:
                         img_to_draw.is_copy = True
                     else:
                         img_to_draw = layer.image
+                        
+                    current_offset = layer.offset
+                    if getattr(layer, "layer_styles", None):
+                        from core.layer_styles import apply_layer_styles
+                        img_to_draw, offset_delta = apply_layer_styles(img_to_draw, layer.layer_styles)
+                        current_offset = current_offset + offset_delta
 
                     has_mask = getattr(layer, "mask", None) is not None and getattr(layer, "mask_enabled", True)
                     
@@ -403,7 +409,7 @@ class Document:
                         painter.setClipPath(layer.vector_mask, Qt.ClipOperation.IntersectClip)
                     painter.setCompositionMode(_get_composition_mode(getattr(layer, "blend_mode", "SourceOver")))
                     painter.setOpacity(layer.opacity)
-                    painter.drawImage(layer.offset, img_to_draw)
+                    painter.drawImage(current_offset, img_to_draw)
                     painter.restore()
 
         render_layer_list(children_map.get(None, []), None)
