@@ -286,6 +286,10 @@
   "ls.spread": "Spread:",
   "ls.size": "Size:",
   "ls.color": "Color:",
+  "ls.highlight_color": "Highlight Color:",
+  "ls.shadow_color": "Shadow Color:",
+  "ls.scale": "Scale:",
+  "ls.pattern": "Pattern:",
 
   "layer.toggle_visibility": "Toggle visibility",
   "layer.text_tooltip":      "Text layer \u2014 click with Text tool to edit",

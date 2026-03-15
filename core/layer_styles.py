@@ -1,7 +1,8 @@
+import os
 import math
 import numpy as np
 import ctypes
-from PyQt6.QtGui import QImage, QPainter, QColor, QBrush, QLinearGradient
+from PyQt6.QtGui import QImage, QPainter, QColor, QBrush, QLinearGradient, QRadialGradient, QPixmap, QTransform
 from PyQt6.QtCore import QPoint
 from core.adjustments.hdr_toning import _gauss_blur
 
@@ -12,6 +13,14 @@ def _get_comp_mode(mode_str):
         "Multiply": QPainter.CompositionMode.CompositionMode_Multiply,
         "Screen": QPainter.CompositionMode.CompositionMode_Screen,
         "Overlay": QPainter.CompositionMode.CompositionMode_Overlay,
+        "Darken": QPainter.CompositionMode.CompositionMode_Darken,
+        "Lighten": QPainter.CompositionMode.CompositionMode_Lighten,
+        "ColorDodge": QPainter.CompositionMode.CompositionMode_ColorDodge,
+        "ColorBurn": QPainter.CompositionMode.CompositionMode_ColorBurn,
+        "HardLight": QPainter.CompositionMode.CompositionMode_HardLight,
+        "SoftLight": QPainter.CompositionMode.CompositionMode_SoftLight,
+        "Difference": QPainter.CompositionMode.CompositionMode_Difference,
+        "Exclusion": QPainter.CompositionMode.CompositionMode_Exclusion,
     }
     return mapping.get(mode_str, QPainter.CompositionMode.CompositionMode_SourceOver)
 
@@ -53,11 +62,41 @@ def apply_layer_styles(img: QImage, styles: dict) -> tuple[QImage, QPoint]:
     go = styles.get("gradient_overlay")
     if go and go.get("enabled"):
         bp.setCompositionMode(QPainter.CompositionMode.CompositionMode_SourceAtop)
-        grad = QLinearGradient(0, 0, 0, h)
-        grad.setColorAt(0, go.get("color1", QColor(255,255,255)))
-        grad.setColorAt(1, go.get("color2", QColor(0,0,0)))
+        
+        stops = go.get("stops", [(0.0, QColor(0,0,0)), (1.0, QColor(255,255,255))])
+        gtype = go.get("type", "linear")
+        angle = math.radians(go.get("angle", 90))
+        cx, cy = w / 2.0, h / 2.0
+        
+        if gtype == "radial":
+            grad = QRadialGradient(cx, cy, math.hypot(w, h) / 2.0)
+        else:
+            # Расчет идеального вектора градиента для заливки всего прямоугольника под углом
+            r = (w * abs(math.cos(angle)) + h * abs(math.sin(angle))) / 2.0
+            sx, sy = cx - r * math.cos(angle), cy + r * math.sin(angle)
+            ex, ey = cx + r * math.cos(angle), cy - r * math.sin(angle)
+            grad = QLinearGradient(sx, sy, ex, ey)
+            
+        for pos, color in stops:
+            grad.setColorAt(pos, QColor(color))
+            
         bp.setOpacity(go.get("opacity", 100) / 100.0)
         bp.fillRect(base_img.rect(), QBrush(grad))
+        
+    po = styles.get("pattern_overlay")
+    if po and po.get("enabled"):
+        bp.setCompositionMode(_get_comp_mode(po.get("blend_mode", "SourceOver")))
+        path = po.get("pattern", "")
+        if path and os.path.exists(path):
+            pixmap = QPixmap(path)
+            if not pixmap.isNull():
+                scale = po.get("scale", 100) / 100.0
+                b = QBrush(pixmap)
+                t = QTransform()
+                t.scale(scale, scale)
+                b.setTransform(t)
+                bp.setOpacity(po.get("opacity", 100) / 100.0)
+                bp.fillRect(base_img.rect(), b)
     bp.end()
 
     ptr = img.constBits()
@@ -131,6 +170,38 @@ def apply_layer_styles(img: QImage, styles: dict) -> tuple[QImage, QPoint]:
         mask = (255 - get_blurred_alpha(ins.get("size", 5), dx, dy)).astype(np.float32)
         mask = (mask * (orig_mask.astype(np.float32) / 255.0)).astype(np.uint8)
         render_effect_layer(mask, ins.get("color", QColor(0,0,0)), ins.get("opacity", 75), _get_comp_mode(ins.get("blend_mode", "Multiply")))
+
+    ig = styles.get("inner_glow")
+    if ig and ig.get("enabled"):
+        orig_mask = get_blurred_alpha(0, 0, 0)
+        shifted = get_blurred_alpha(ig.get("size", 5), 0, 0).astype(np.float32)
+        mask = (255.0 - shifted) * (orig_mask.astype(np.float32) / 255.0)
+        mask = np.clip(mask, 0, 255).astype(np.uint8)
+        render_effect_layer(mask, ig.get("color", QColor(255,255,150)), ig.get("opacity", 75), _get_comp_mode(ig.get("blend_mode", "Screen")))
+
+    sat = styles.get("satin")
+    if sat and sat.get("enabled"):
+        dist, angle = sat.get("distance", 11), math.radians(sat.get("angle", 90))
+        dx, dy = int(dist * math.cos(angle)), int(-dist * math.sin(angle))
+        orig_mask = get_blurred_alpha(0, 0, 0)
+        mask1 = get_blurred_alpha(0, dx, dy).astype(np.float32)
+        mask2 = get_blurred_alpha(0, -dx, -dy).astype(np.float32)
+        satin_mask = (255.0 - np.abs(mask1 - mask2)) * (orig_mask.astype(np.float32) / 255.0)
+        blur_size = int(sat.get("size", 14))
+        if blur_size > 0:
+            satin_mask = (_gauss_blur((satin_mask / 255.0)[..., np.newaxis].repeat(3, axis=2), blur_size)[..., 0] * 255.0)
+        render_effect_layer(np.clip(satin_mask, 0, 255).astype(np.uint8), sat.get("color", QColor(0,0,0)), sat.get("opacity", 50), _get_comp_mode(sat.get("blend_mode", "Multiply")))
+
+    bevel = styles.get("bevel")
+    if bevel and bevel.get("enabled"):
+        dist, angle = bevel.get("distance", 5), math.radians(bevel.get("angle", 90))
+        dx, dy = int(dist * math.cos(angle)), int(-dist * math.sin(angle))
+        orig_mask = get_blurred_alpha(0, 0, 0)
+        blur_size = int(bevel.get("size", 5))
+        hl_mask = np.clip(orig_mask.astype(np.float32) - get_blurred_alpha(blur_size, dx, dy).astype(np.float32), 0, 255).astype(np.uint8)
+        sh_mask = np.clip(orig_mask.astype(np.float32) - get_blurred_alpha(blur_size, -dx, -dy).astype(np.float32), 0, 255).astype(np.uint8)
+        render_effect_layer(hl_mask, bevel.get("color", QColor(255,255,255)), bevel.get("opacity", 75), _get_comp_mode("Screen"))
+        render_effect_layer(sh_mask, bevel.get("shadow_color", QColor(0,0,0)), bevel.get("opacity", 75), _get_comp_mode("Multiply"))
 
     painter.end()
     return result, QPoint(-pad, -pad)

@@ -1,7 +1,8 @@
 from PyQt6.QtWidgets import (QDialog, QVBoxLayout, QHBoxLayout, QLabel, QListWidget, QStackedWidget,
-                             QCheckBox, QPushButton, QSlider, QSpinBox, QComboBox, QWidget, QDialogButtonBox, QListWidgetItem, QFormLayout)
+                             QCheckBox, QPushButton, QSlider, QSpinBox, QComboBox, QWidget, QDialogButtonBox, QListWidgetItem, QFormLayout, QDial)
 from PyQt6.QtCore import Qt, QTimer
-from PyQt6.QtGui import QColor
+from PyQt6.QtGui import QColor, QIcon
+from ui.gradient_editor import GradientPreviewWidget, GradientEditorDialog
 from core.locale import tr
 from core.adjustments._widgets import _ColorButton
 
@@ -112,17 +113,86 @@ class LayerStyleDialog(QDialog):
             cb.currentIndexChanged.connect(self._trigger)
             form.addRow(name, cb)
             inputs[prop] = cb
+        def add_angle(name, prop, val):
+            dial = QDial()
+            dial.setRange(-180, 180)
+            dial.setWrapping(True)
+            dial.setNotchesVisible(True)
+            dial.setFixedSize(40, 40)
+            dial.setValue(val)
+            sp = QSpinBox()
+            sp.setRange(-180, 180)
+            sp.setValue(val)
+            sp.setSuffix("°")
+            sp.setFixedWidth(54)
+            dial.valueChanged.connect(sp.setValue)
+            sp.valueChanged.connect(dial.setValue)
+            w = QWidget(); h = QHBoxLayout(w); h.setContentsMargins(0,0,0,0)
+            h.addWidget(dial); h.addWidget(sp)
+            form.addRow(name, w)
+            dial.valueChanged.connect(self._trigger)
+            inputs[prop] = sp
+        def add_pattern(name, prop, val):
+            cb = QComboBox()
+            import os, glob
+            pat_dir = os.path.join(os.path.dirname(os.path.dirname(os.path.abspath(__file__))), "patterns")
+            if os.path.exists(pat_dir):
+                for f in glob.glob(os.path.join(pat_dir, '*.[pP][nN][gG]')) + glob.glob(os.path.join(pat_dir, '*.[jJ][pP][gG]')):
+                    cb.addItem(QIcon(f), os.path.splitext(os.path.basename(f))[0], f)
+            cb.currentIndexChanged.connect(self._trigger)
+            form.addRow(name, cb)
+            inputs[prop] = cb
+        def add_gradient(name, prop, val):
+            preview = GradientPreviewWidget()
+            preview.set_stops(val)
+            def _open_editor():
+                mw = self.window()
+                fg = getattr(mw._canvas, 'fg_color', QColor(0,0,0)) if hasattr(mw, '_canvas') else QColor(0,0,0)
+                bg = getattr(mw._canvas, 'bg_color', QColor(255,255,255)) if hasattr(mw, '_canvas') else QColor(255,255,255)
+                dlg = GradientEditorDialog(preview._stops, fg, bg, self)
+                if dlg.exec():
+                    preview.set_stops(dlg.result_stops())
+                    self._trigger()
+            preview.clicked.connect(_open_editor)
+            form.addRow(name, preview)
+            inputs[prop] = preview
 
-        blend_modes = [("Normal", "SourceOver"), ("Multiply", "Multiply"), ("Screen", "Screen"), ("Overlay", "Overlay")]
+        blend_modes = [
+            ("Normal", "SourceOver"), ("Multiply", "Multiply"),
+            ("Screen", "Screen"), ("Overlay", "Overlay"),
+            ("Darken", "Darken"), ("Lighten", "Lighten"),
+            ("Color Dodge", "ColorDodge"), ("Color Burn", "ColorBurn"),
+            ("Hard Light", "HardLight"), ("Soft Light", "SoftLight"),
+            ("Difference", "Difference"), ("Exclusion", "Exclusion")
+        ]
 
         if key in ("drop_shadow", "inner_shadow"):
             add_combo(tr("ls.blend_mode"), "blend_mode", blend_modes)
             add_color(tr("ls.color"), "color", QColor(0,0,0))
             add_slider(tr("ls.opacity"), "opacity", 0, 100, 75, "%")
-            add_slider(tr("ls.angle"), "angle", -180, 180, 90, "°")
+            add_angle(tr("ls.angle"), "angle", 90)
             add_slider(tr("ls.distance"), "distance", 0, 100, 5, "px")
             if key == "drop_shadow": add_slider(tr("ls.spread"), "spread", 0, 100, 0, "%")
             add_slider(tr("ls.size"), "size", 0, 100, 5, "px")
+        elif key == "bevel":
+            add_slider(tr("ls.size"), "size", 0, 100, 5, "px")
+            add_slider(tr("ls.distance"), "distance", 0, 100, 5, "px")
+            add_angle(tr("ls.angle"), "angle", 90)
+            add_slider(tr("ls.opacity"), "opacity", 0, 100, 75, "%")
+            add_color(tr("ls.highlight_color"), "color", QColor(255, 255, 255))
+            add_color(tr("ls.shadow_color"), "shadow_color", QColor(0, 0, 0))
+        elif key == "inner_glow":
+            add_combo(tr("ls.blend_mode"), "blend_mode", blend_modes)
+            add_slider(tr("ls.opacity"), "opacity", 0, 100, 75, "%")
+            add_color(tr("ls.color"), "color", QColor(255, 255, 150))
+            add_slider(tr("ls.size"), "size", 0, 100, 5, "px")
+        elif key == "satin":
+            add_combo(tr("ls.blend_mode"), "blend_mode", blend_modes)
+            add_color(tr("ls.color"), "color", QColor(0, 0, 0))
+            add_slider(tr("ls.opacity"), "opacity", 0, 100, 50, "%")
+            add_angle(tr("ls.angle"), "angle", 90)
+            add_slider(tr("ls.distance"), "distance", 0, 100, 11, "px")
+            add_slider(tr("ls.size"), "size", 0, 100, 14, "px")
         elif key == "outer_glow":
             add_combo(tr("ls.blend_mode"), "blend_mode", blend_modes)
             add_color(tr("ls.color"), "color", QColor(255,255,150))
@@ -140,10 +210,16 @@ class LayerStyleDialog(QDialog):
         elif key == "gradient_overlay":
             add_combo(tr("ls.blend_mode"), "blend_mode", blend_modes)
             add_slider(tr("ls.opacity"), "opacity", 0, 100, 100, "%")
-            add_color("Color 1", "color1", QColor(255,255,255))
-            add_color("Color 2", "color2", QColor(0,0,0))
-        else:
-            form.addRow(QLabel("Настройки для этого стиля в разработке..."))
+            
+            add_gradient(tr("fill_layer.gradient"), "stops", [(0.0, QColor(0,0,0)), (1.0, QColor(255,255,255))])
+            gtypes = [(tr("opts.gradient.linear"), "linear"), (tr("opts.gradient.radial"), "radial")]
+            add_combo(tr("opts.gradient.type"), "type", gtypes)
+            add_angle(tr("ls.angle"), "angle", 90)
+        elif key == "pattern_overlay":
+            add_combo(tr("ls.blend_mode"), "blend_mode", blend_modes)
+            add_slider(tr("ls.opacity"), "opacity", 0, 100, 100, "%")
+            add_pattern(tr("ls.pattern"), "pattern", "")
+            add_slider(tr("ls.scale"), "scale", 1, 1000, 100, "%")
 
     def _read_data(self):
         for key, p in self.pages.items():
@@ -154,6 +230,7 @@ class LayerStyleDialog(QDialog):
                 if isinstance(widget, QSpinBox): state[prop] = widget.value()
                 elif hasattr(widget, "color"): state[prop] = widget.color()
                 elif isinstance(widget, QComboBox): state[prop] = widget.currentData()
+                elif isinstance(widget, GradientPreviewWidget): state[prop] = widget._stops
             self.current_styles[key] = state
 
     def _load_data(self):
@@ -171,6 +248,8 @@ class LayerStyleDialog(QDialog):
                     elif isinstance(widget, QComboBox):
                         idx = widget.findData(state[prop])
                         if idx >= 0: widget.setCurrentIndex(idx)
+                    elif isinstance(widget, GradientPreviewWidget):
+                        widget.set_stops(state[prop])
                     widget.blockSignals(False)
         self.list_widget.blockSignals(False)
 

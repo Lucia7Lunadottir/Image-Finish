@@ -302,6 +302,10 @@
   "ls.spread": "Размах:",
   "ls.size": "Размер:",
   "ls.color": "Цвет:",
+  "ls.highlight_color": "Цвет подсветки:",
+  "ls.shadow_color": "Цвет тени:",
+  "ls.scale": "Масштаб:",
+  "ls.pattern": "Узор:",
 
   "layer.toggle_visibility":  "Переключить видимость",
   "layer.lock_alpha":         "Заблокировать прозрачность пикселей",
