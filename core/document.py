@@ -62,7 +62,7 @@ def _apply_layer_adjustment(image: QImage, layer) -> QImage:
             if gamma <= 0.0: gamma = 1.0
             if in_max <= in_min: in_max = in_min + 1
             
-            return apply_levels(image, in_min, in_max, gamma, out_min, out_max)
+            return apply_levels(image, in_min, gamma, in_max, out_min, out_max)
         elif t == "exposure":
             from core.adjustments.exposure import apply_exposure
             exp = float(get_v(["exposure", "exp"], 0.0))

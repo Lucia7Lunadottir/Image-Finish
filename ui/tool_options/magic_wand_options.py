@@ -2,6 +2,7 @@ from PyQt6.QtWidgets import QWidget, QHBoxLayout, QSpinBox, QCheckBox
 from PyQt6.QtCore import Qt
 from .base_options import BaseOptions
 from ui.adjustments_dialog import _JumpSlider
+from core.locale import tr
 
 class MagicWandOptions(BaseOptions):
     def __init__(self, parent=None):
@@ -31,22 +32,28 @@ class MagicWandOptions(BaseOptions):
         self.layout.addWidget(tol_widget)
 
         # --- Галочки (Чекбоксы) ---
-        self._aa_cb = QCheckBox("Сглаживание")
+        self._aa_cb = QCheckBox(tr("opts.anti_alias"))
         self._aa_cb.setChecked(True)
         self._aa_cb.toggled.connect(lambda v: self.option_changed.emit("anti_alias", v))
         self.layout.addWidget(self._aa_cb)
 
-        self._contig_cb = QCheckBox("Прилегающий")
+        self._contig_cb = QCheckBox(tr("opts.contiguous"))
         self._contig_cb.setChecked(True)
         self._contig_cb.toggled.connect(lambda v: self.option_changed.emit("contiguous", v))
         self.layout.addWidget(self._contig_cb)
 
-        self._sample_cb = QCheckBox("Со всех слоёв")
+        self._sample_cb = QCheckBox(tr("opts.sample_all_layers"))
         self._sample_cb.setChecked(False)
         self._sample_cb.toggled.connect(lambda v: self.option_changed.emit("sample_all", v))
         self.layout.addWidget(self._sample_cb)
 
         self.layout.addStretch()
+
+    def retranslate(self):
+        super().retranslate()
+        self._aa_cb.setText(tr("opts.anti_alias"))
+        self._contig_cb.setText(tr("opts.contiguous"))
+        self._sample_cb.setText(tr("opts.sample_all_layers"))
 
     def update_from_opts(self, opts: dict):
         self._tol_spin.setValue(opts.get("fill_tolerance", 32))

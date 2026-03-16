@@ -30,7 +30,7 @@ class BrushOptions(BaseOptions):
                     name = os.path.splitext(os.path.basename(path))[0]
                     self._mask_combo.addItem(self._get_icon(path), name, path)
 
-        self._mask_combo.addItem(QIcon(), "Загрузить...", "load_custom")
+        self._mask_combo.addItem(QIcon(), tr("opts.load"), "load_custom")
         
         self._mask_combo.activated.connect(self._on_mask_activated)
         self.layout.addWidget(self._mask_combo)
@@ -222,7 +222,7 @@ class BrushOptions(BaseOptions):
     def _on_mask_activated(self, idx):
         data = self._mask_combo.itemData(idx)
         if data == "load_custom":
-            path, _ = QFileDialog.getOpenFileName(self, "Выберите изображение для кисти", "", "Images (*.png *.jpg *.jpeg *.bmp)")
+            path, _ = QFileDialog.getOpenFileName(self, tr("opts.brush_select_image"), "", "Images (*.png *.jpg *.jpeg *.bmp)")
             if path:
                 filename = os.path.basename(path)
                 name = os.path.splitext(filename)[0]
@@ -309,6 +309,7 @@ class BrushOptions(BaseOptions):
         self._mask_combo.setItemText(0, tr("opts.mask.round"))
         self._mask_combo.setItemText(1, tr("opts.mask.square"))
         self._mask_combo.setItemText(2, tr("opts.mask.scatter"))
+        self._mask_combo.setItemText(self._mask_combo.count() - 1, tr("opts.load"))
 
         modes = [
             "blend.normal", "blend.multiply", "blend.screen", "blend.overlay",

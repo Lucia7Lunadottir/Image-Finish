@@ -14,7 +14,7 @@ def _slider_spin(lo: int, hi: int, val: int):
     sp = QSpinBox()
     sp.setRange(lo, hi)
     sp.setValue(val)
-    sp.setFixedWidth(54)
+    sp.setFixedWidth(68)
     sl.valueChanged.connect(sp.setValue)
     sp.valueChanged.connect(sl.setValue)
     return sl, sp
@@ -126,7 +126,7 @@ class LayerStyleDialog(QDialog):
             sp.setRange(-180, 180)
             sp.setValue(val)
             sp.setSuffix("°")
-            sp.setFixedWidth(54)
+            sp.setFixedWidth(68)
             dial.valueChanged.connect(sp.setValue)
             sp.valueChanged.connect(dial.setValue)
             w = QWidget(); h = QHBoxLayout(w); h.setContentsMargins(0,0,0,0)
@@ -160,12 +160,18 @@ class LayerStyleDialog(QDialog):
             inputs[prop] = preview
 
         blend_modes = [
-            ("Normal", "SourceOver"), ("Multiply", "Multiply"),
-            ("Screen", "Screen"), ("Overlay", "Overlay"),
-            ("Darken", "Darken"), ("Lighten", "Lighten"),
-            ("Color Dodge", "ColorDodge"), ("Color Burn", "ColorBurn"),
-            ("Hard Light", "HardLight"), ("Soft Light", "SoftLight"),
-            ("Difference", "Difference"), ("Exclusion", "Exclusion")
+            (tr("blend.normal"),      "SourceOver"),
+            (tr("blend.multiply"),    "Multiply"),
+            (tr("blend.screen"),      "Screen"),
+            (tr("blend.overlay"),     "Overlay"),
+            (tr("blend.darken"),      "Darken"),
+            (tr("blend.lighten"),     "Lighten"),
+            (tr("blend.color_dodge"), "ColorDodge"),
+            (tr("blend.color_burn"),  "ColorBurn"),
+            (tr("blend.hard_light"),  "HardLight"),
+            (tr("blend.soft_light"),  "SoftLight"),
+            (tr("blend.difference"),  "Difference"),
+            (tr("blend.exclusion"),   "Exclusion"),
         ]
 
         if key in ("drop_shadow", "inner_shadow"):

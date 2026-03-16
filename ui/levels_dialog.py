@@ -179,12 +179,12 @@ class _HistogramWidget(QWidget):
             idx = min(len(valid_counts) - 1, int(len(valid_counts) * 0.98))
             max_c = max(1, valid_counts[idx])
             
-        bar_w = max(1.0, (W - 2 * self.PAD) / 256.0)
+        bar_w = max(1.0, (W - 2 * self.PAD) / 255.0)
         for i, c in enumerate(self._hist):
             if c == 0:
                 continue
             bh = min(self.HIST_H, int(self.HIST_H * c / max_c))
-            x  = int(self.PAD + i * (W - 2 * self.PAD) / 256)
+            x  = int(self.PAD + i * (W - 2 * self.PAD) / 255)
             p.fillRect(x, self.HIST_H - bh, max(1, int(bar_w)), bh,
                        QColor(150, 150, 190))
 

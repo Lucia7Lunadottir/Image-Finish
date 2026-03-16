@@ -324,6 +324,7 @@ class LayersPanel(QWidget):
     layer_rasterize     = pyqtSignal()
     layer_styles_requested = pyqtSignal(int)
     layer_clear_smart_filters = pyqtSignal()
+    layer_export_png          = pyqtSignal()
 
     def __init__(self, parent=None):
         super().__init__(parent)
@@ -613,6 +614,10 @@ class LayersPanel(QWidget):
             menu.addAction(tr("ctx.delete_vector_mask"), self.layer_delete_vector_mask.emit)
 
         menu.addSeparator()
+        if layer and ltype not in ("adjustment", "fill"):
+            exp_act = menu.addAction(tr("ctx.export_png"))
+            exp_act.triggered.connect(self.layer_export_png.emit)
+
         if ltype in ("adjustment", "fill"):
             edit_act = menu.addAction(tr("ctx.edit_layer"))
             edit_act.triggered.connect(self.layer_edit.emit)

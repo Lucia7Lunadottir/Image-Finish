@@ -1409,7 +1409,13 @@ class MainWindow(QMainWindow,
 
     def _get_adj_dialog(self, layer, t):
         is_adj = getattr(layer, "layer_type", "raster") == "adjustment"
-        target_img = self._document.get_composite() if is_adj else layer.image
+        if is_adj:
+            _saved_adj = layer.adjustment_data
+            layer.adjustment_data = {"type": t}
+            target_img = self._document.get_composite()
+            layer.adjustment_data = _saved_adj
+        else:
+            target_img = layer.image
 
         class LayerProxy:
             def __init__(self, real, img):
@@ -1518,15 +1524,16 @@ class MainWindow(QMainWindow,
     def _new_adj_layer(self, adj_type: str):
         if not self._document: return
         idx = self._document.active_layer_index
+        self._push_history(tr("history.new_adj_layer"))  # snapshot BEFORE adding
         layer = self._document.add_layer(tr("layer.name.adjustment"), idx + 1)
         layer.layer_type = "adjustment"
         layer.adjustment_data = {"type": adj_type}
-        
+
         dlg = self._get_adj_dialog(layer, adj_type)
         if dlg and dlg.exec():
-            self._push_history(tr("history.new_adj_layer"))
             self._refresh_layers()
         else:
+            self._history.undo()  # discard the snapshot we just pushed
             self._document.layers.remove(layer)
             self._document.active_layer_index = idx
             self._canvas_refresh()

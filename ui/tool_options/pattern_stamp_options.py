@@ -22,7 +22,7 @@ class PatternStampOptions(BrushOptions):
                     name = os.path.splitext(os.path.basename(path))[0]
                     self._pattern_combo.addItem(QIcon(path), name, path)
                     
-        self._pattern_combo.addItem(QIcon(), "Загрузить...", "load_custom")
+        self._pattern_combo.addItem(QIcon(), tr("opts.load"), "load_custom")
         self._pattern_combo.activated.connect(self._on_pattern_activated)
         
         pat_widget = QWidget()
@@ -52,7 +52,7 @@ class PatternStampOptions(BrushOptions):
     def _on_pattern_activated(self, idx):
         data = self._pattern_combo.itemData(idx)
         if data == "load_custom":
-            path, _ = QFileDialog.getOpenFileName(self, "Выберите узор", "", "Images (*.png *.jpg *.jpeg *.bmp)")
+            path, _ = QFileDialog.getOpenFileName(self, tr("opts.pattern_select"), "", "Images (*.png *.jpg *.jpeg *.bmp)")
             if path:
                 filename = os.path.basename(path)
                 name = os.path.splitext(filename)[0]
@@ -106,3 +106,4 @@ class PatternStampOptions(BrushOptions):
         super().retranslate()
         self._pat_lbl.setText(tr("opts.pattern"))
         self._scale_lbl.setText(tr("opts.pattern_scale"))
+        self._pattern_combo.setItemText(self._pattern_combo.count() - 1, tr("opts.load"))
