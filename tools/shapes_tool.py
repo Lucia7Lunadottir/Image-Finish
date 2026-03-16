@@ -227,6 +227,7 @@ class ShapesTool(BaseTool):
         fill  = bool(opts.get("shape_fill", False))
         sides = int(opts.get("shape_sides", 6))
         angle = self._angle
+        shape_color = opts.get("shape_color", fg)
 
         from core.layer import Layer
         n = sum(1 for l in doc.layers if getattr(l, "layer_type", "raster") == "vector") + 1
@@ -237,7 +238,7 @@ class ShapesTool(BaseTool):
         painter.setRenderHint(QPainter.RenderHint.Antialiasing)
         if doc.selection and not doc.selection.isEmpty():
             painter.setClipPath(doc.selection)
-        self._draw_shape(painter, shape, rect, self._start, end, sides, angle, fill, fg, bg, size)
+        self._draw_shape(painter, shape, rect, self._start, end, sides, angle, fill, shape_color, shape_color, size)
         painter.end()
 
         new_layer.shape_data = {
@@ -246,7 +247,7 @@ class ShapesTool(BaseTool):
             "start": (int(self._start.x()), int(self._start.y())),
             "end":   (int(end.x()), int(end.y())),
             "sides": sides, "angle": angle, "fill": fill, "size": size,
-            "fg":    fg.name(), "bg": bg.name(),
+            "fg":    shape_color.name(), "bg": shape_color.name(),
         }
 
         doc.layers.append(new_layer)

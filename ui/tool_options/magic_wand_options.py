@@ -1,6 +1,7 @@
-from PyQt6.QtWidgets import QWidget, QHBoxLayout, QSlider, QSpinBox, QCheckBox
+from PyQt6.QtWidgets import QWidget, QHBoxLayout, QSpinBox, QCheckBox
 from PyQt6.QtCore import Qt
 from .base_options import BaseOptions
+from ui.adjustments_dialog import _JumpSlider
 
 class MagicWandOptions(BaseOptions):
     def __init__(self, parent=None):
@@ -13,7 +14,7 @@ class MagicWandOptions(BaseOptions):
         tol_layout = QHBoxLayout(tol_widget)
         tol_layout.setContentsMargins(0, 0, 0, 0)
 
-        self._tol_slider = QSlider(Qt.Orientation.Horizontal)
+        self._tol_slider = _JumpSlider(Qt.Orientation.Horizontal)
         self._tol_slider.setRange(0, 100)
         self._tol_slider.setFixedWidth(80)
 

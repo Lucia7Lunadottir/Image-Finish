@@ -367,6 +367,15 @@ class MainWindow(QMainWindow,
 
         # Filter
         filter_m = self._menu(mb, "menu.filter")
+        
+        blur_gallery_m = self._menu(filter_m, "menu.blur_gallery")
+        self._act(blur_gallery_m, "menu.blur.field",      self._blur_field)
+        self._act(blur_gallery_m, "menu.blur.iris",       self._blur_iris)
+        self._act(blur_gallery_m, "menu.blur.tilt_shift", self._blur_tilt_shift)
+        self._act(blur_gallery_m, "menu.blur.path",       self._blur_path)
+        self._act(blur_gallery_m, "menu.blur.spin",       self._blur_spin)
+        filter_m.addSeparator()
+
         blur_m   = self._menu(filter_m, "menu.blur")
         self._act(blur_m, "menu.blur.average",  self._blur_average)
         self._act(blur_m, "menu.blur.blur",     self._blur_simple)
@@ -933,6 +942,16 @@ class MainWindow(QMainWindow,
             self._canvas.reset_rotation()
             return
         if key == "transform_params":
+            layer = self._document.get_active_layer()
+            if layer and getattr(layer, "layer_type", "raster") == "text":
+                if hasattr(self, "_status"):
+                    self._status.showMessage(tr("err.text_layer_no_transform"), 3000)
+                tool = self._canvas.active_tool
+                if hasattr(tool, "cancel_transform"):
+                    tool.cancel_transform(self._document)
+                    self._canvas_refresh()
+                    self._opts_bar.update_tool_state(None)
+                return
             tool = self._canvas.active_tool
             if hasattr(tool, "set_transform_params"):
                 tool.set_transform_params(self._document, value)
@@ -1415,3 +1434,38 @@ class MainWindow(QMainWindow,
         layer.text_data = {**td, **TextTool._snap_opts(opts)}
         self._canvas_refresh()
         self._refresh_layers()
+
+    # ================================================================= Blur Gallery
+    def _open_blur_gallery(self, mode: str):
+        layer = self._document.get_active_layer()
+        if not layer or layer.image.isNull() or getattr(layer, "layer_type", "raster") != "raster":
+            return
+            
+        from core.history import HistoryState, clone_work_path
+        pre_state = HistoryState(
+            description=tr("menu.blur_gallery") + f" ({mode})",
+            layers_snapshot=self._document.snapshot_layers(),
+            active_layer_index=self._document.active_layer_index,
+            doc_width=self._document.width,
+            doc_height=self._document.height,
+            selection_snapshot=QPainterPath(self._document.selection) if self._document.selection else None,
+            work_path_snapshot=clone_work_path(getattr(self._document, "work_path", None)),
+            alpha_channels_snapshot=list(getattr(self._document, "alpha_channels", [])),
+            color_mode_snapshot=getattr(self._document, "color_mode", "RGB"),
+            bit_depth_snapshot=getattr(self._document, "bit_depth", 8)
+        )
+            
+        from ui.blur_gallery_dialog import BlurGalleryDialog
+        dlg = BlurGalleryDialog(layer, mode, self._canvas_refresh, self)
+        if dlg.exec():
+            self._history.push(pre_state)
+            self._canvas_refresh()
+            self._refresh_layers()
+        else:
+            self._canvas_refresh()
+            
+    def _blur_field(self): self._open_blur_gallery("field")
+    def _blur_iris(self): self._open_blur_gallery("iris")
+    def _blur_tilt_shift(self): self._open_blur_gallery("tilt_shift")
+    def _blur_path(self): self._open_blur_gallery("path")
+    def _blur_spin(self): self._open_blur_gallery("spin")

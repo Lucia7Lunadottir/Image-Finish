@@ -1,6 +1,6 @@
 from PyQt6.QtWidgets import (QDialog, QVBoxLayout, QHBoxLayout, QLabel,
                              QPushButton, QSpinBox, QDialogButtonBox, QWidget,
-                             QSizePolicy, QColorDialog)
+                             QSizePolicy)
 from PyQt6.QtCore import Qt, pyqtSignal, QRect, QPoint
 from PyQt6.QtGui import (QColor, QPainter, QLinearGradient, QBrush, QPen, QPolygon)
 from core.locale import tr
@@ -199,10 +199,10 @@ class GradientBar(QWidget):
     # ── Internal ──────────────────────────────────────────────────────────────
 
     def _pick_color(self, index: int):
-        c = QColorDialog.getColor(
-            self._stops[index][1], self,
-            options=QColorDialog.ColorDialogOption.ShowAlphaChannel)
-        if c.isValid():
+        from ui.hsv_picker import ColorPickerDialog
+        
+        c = ColorPickerDialog.get_color(self._stops[index][1], self)
+        if c is not None:
             self._stops[index][1] = c
             self.stops_changed.emit(self.get_stops())
             self.stop_selected.emit(self._selected)
@@ -404,7 +404,7 @@ class GradientEditorDialog(QDialog):
         # Используем rgba для корректного отображения цвета с прозрачностью на кнопке
         rgba_str = f"rgba({color.red()}, {color.green()}, {color.blue()}, {color.alphaF()})"
         self._color_btn.setStyleSheet(
-            f"background:{rgba_str}; border:1px solid #555; border-radius:3px;")
+            f"QPushButton {{ background:{rgba_str}; border:1px solid #555; border-radius:3px; }}")
         self._current_color = QColor(color)
 
     def _on_pos_spin_changed(self, val: int):
@@ -417,12 +417,13 @@ class GradientEditorDialog(QDialog):
         if idx < 0 or idx >= len(self._bar._stops):
             return
         current = self._bar._stops[idx][1]
-        c = QColorDialog.getColor(
-            current, self,
-            options=QColorDialog.ColorDialogOption.ShowAlphaChannel)
-        if c.isValid():
-            self._bar.set_stop_color(idx, c)
-            self._update_color_swatch(c)
+        
+        from ui.hsv_picker import ColorPickerDialog
+        
+        new_color = ColorPickerDialog.get_color(current, self)
+        if new_color is not None:
+            self._bar.set_stop_color(idx, new_color)
+            self._update_color_swatch(new_color)
 
 
     def _on_op_spin_changed(self, val: int):

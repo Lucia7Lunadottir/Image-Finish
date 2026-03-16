@@ -1,6 +1,7 @@
-from PyQt6.QtWidgets import QSlider, QSpinBox
+from PyQt6.QtWidgets import QSpinBox
 from PyQt6.QtCore import Qt
 from .base_options import BaseOptions
+from ui.adjustments_dialog import _JumpSlider
 
 class MagneticLassoOptions(BaseOptions):
     def __init__(self, parent=None):
@@ -26,7 +27,7 @@ class MagneticLassoOptions(BaseOptions):
         self.layout.addStretch()
 
     def _make_slider(self, min_val, max_val, default_val, suffix):
-        sl = QSlider(Qt.Orientation.Horizontal)
+        sl = _JumpSlider(Qt.Orientation.Horizontal)
         sl.setRange(min_val, max_val)
         sl.setValue(default_val)
         sl.setFixedWidth(80)

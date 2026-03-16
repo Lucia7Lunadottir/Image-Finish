@@ -1,13 +1,14 @@
 from PyQt6.QtWidgets import (QDialog, QVBoxLayout, QHBoxLayout, QLabel, QListWidget, QStackedWidget,
-                             QCheckBox, QPushButton, QSlider, QSpinBox, QComboBox, QWidget, QDialogButtonBox, QListWidgetItem, QFormLayout, QDial)
+                             QCheckBox, QPushButton, QSpinBox, QComboBox, QWidget, QDialogButtonBox, QListWidgetItem, QFormLayout, QDial)
 from PyQt6.QtCore import Qt, QTimer
 from PyQt6.QtGui import QColor, QIcon
 from ui.gradient_editor import GradientPreviewWidget, GradientEditorDialog
 from core.locale import tr
 from core.adjustments._widgets import _ColorButton
+from ui.adjustments_dialog import _JumpSlider
 
 def _slider_spin(lo: int, hi: int, val: int):
-    sl = QSlider(Qt.Orientation.Horizontal)
+    sl = _JumpSlider(Qt.Orientation.Horizontal)
     sl.setRange(lo, hi)
     sl.setValue(val)
     sp = QSpinBox()

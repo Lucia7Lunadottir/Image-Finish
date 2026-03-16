@@ -66,14 +66,15 @@ class _ColorButton(QPushButton):
         self.clicked.connect(self._pick)
 
     def _refresh_style(self):
+        c = self._color
+        rgba = f"rgba({c.red()}, {c.green()}, {c.blue()}, {c.alpha()})"
         self.setStyleSheet(
-            f"background-color: {self._color.name()};"
-            " border: 1px solid #585b70; border-radius: 3px;")
+            f"QPushButton {{ background-color: {rgba}; border: 1px solid #585b70; border-radius: 3px; }}")
 
     def _pick(self):
-        from PyQt6.QtWidgets import QColorDialog
-        c = QColorDialog.getColor(self._color, self, tr("adj.choose_color"))
-        if c.isValid():
+        from ui.hsv_picker import ColorPickerDialog
+        c = ColorPickerDialog.get_color(self._color, self.window(), tr("adj.choose_color"))
+        if c is not None:
             self._color = c
             self._refresh_style()
             self.colorChanged.emit(c)

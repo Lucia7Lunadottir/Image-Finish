@@ -1,8 +1,9 @@
 from PyQt6.QtWidgets import (QDialog, QVBoxLayout, QHBoxLayout, QLabel,
-                             QComboBox, QSlider, QSpinBox, QDialogButtonBox,
+                             QComboBox, QSpinBox, QDialogButtonBox,
                              QWidget, QFormLayout)
 from PyQt6.QtCore import Qt
 from core.locale import tr
+from ui.adjustments_dialog import _JumpSlider
 
 
 _ADJ_TYPES = ["brightness_contrast", "hue_saturation", "invert"]
@@ -85,7 +86,7 @@ class AdjustmentLayerDialog(QDialog):
 
     @staticmethod
     def _slider_spin(lo: int, hi: int, val: int):
-        sl = QSlider(Qt.Orientation.Horizontal)
+        sl = _JumpSlider(Qt.Orientation.Horizontal)
         sl.setRange(lo, hi)
         sl.setValue(val)
         sp = QSpinBox()

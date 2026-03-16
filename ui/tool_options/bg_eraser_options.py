@@ -1,7 +1,8 @@
-from PyQt6.QtWidgets import QWidget, QHBoxLayout, QSlider, QSpinBox
+from PyQt6.QtWidgets import QWidget, QHBoxLayout, QSpinBox
 from PyQt6.QtCore import Qt
 from .base_options import BaseOptions
 from core.locale import tr
+from ui.adjustments_dialog import _JumpSlider
 
 class BackgroundEraserOptions(BaseOptions):
     def __init__(self, parent=None):
@@ -12,7 +13,7 @@ class BackgroundEraserOptions(BaseOptions):
         size_widget = QWidget()
         size_layout = QHBoxLayout(size_widget)
         size_layout.setContentsMargins(0, 0, 0, 0)
-        self._size_slider = QSlider(Qt.Orientation.Horizontal)
+        self._size_slider = _JumpSlider(Qt.Orientation.Horizontal)
         self._size_slider.setRange(1, 500)
         self._size_slider.setFixedWidth(100)
         self._size_spin = QSpinBox()
@@ -28,7 +29,7 @@ class BackgroundEraserOptions(BaseOptions):
         tol_widget = QWidget()
         tol_layout = QHBoxLayout(tol_widget)
         tol_layout.setContentsMargins(0, 0, 0, 0)
-        self._tol_slider = QSlider(Qt.Orientation.Horizontal)
+        self._tol_slider = _JumpSlider(Qt.Orientation.Horizontal)
         self._tol_slider.setRange(0, 100)
         self._tol_slider.setFixedWidth(100)
         self._tol_spin = QSpinBox()

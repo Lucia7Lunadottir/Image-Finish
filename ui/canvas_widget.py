@@ -12,7 +12,8 @@ from tools.other_tools import (SelectTool, CropTool, ShapesTool,
 _BRUSH_TOOLS = {"Brush", "Eraser", "BackgroundEraser", "Blur", "Sharpen", "Smudge", "CloneStamp", "PatternStamp",
                 "Pencil", "ColorReplacement", "MixerBrush", 
                 "SpotHealing", "HealingBrush", "HistoryBrush",
-                "Dodge", "Burn", "Sponge"}
+                "Dodge", "Burn", "Sponge",
+                "QuickSelection"}
 
 
 class CanvasWidget(QWidget):
@@ -721,7 +722,8 @@ class CanvasWidget(QWidget):
                 painter.scale(self.zoom, self.zoom)
                 painter.setRenderHint(QPainter.RenderHint.Antialiasing)
                 stroke = max(1, int(self.tool_opts.get("brush_size", 3)))
-                pen = QPen(self.fg_color, stroke)
+                shape_color = self.tool_opts.get("shape_color", self.fg_color)
+                pen = QPen(shape_color, stroke)
                 pen.setStyle(Qt.PenStyle.DashLine)
                 painter.setPen(pen)
                 painter.setBrush(Qt.BrushStyle.NoBrush)
@@ -1107,6 +1109,20 @@ class CanvasWidget(QWidget):
 
         if ev.button() == Qt.MouseButton.LeftButton and self.active_tool:
             tool_name = getattr(self.active_tool, "name", "")
+            layer = self.document.get_active_layer() if self.document else None
+            
+            if layer and getattr(layer, "layer_type", "raster") == "text":
+                forbidden = {"Brush", "Eraser", "BackgroundEraser", "MagicEraser", "CloneStamp", "PatternStamp",
+                             "Pencil", "ColorReplacement", "MixerBrush", "HistoryBrush",
+                             "Fill", "Blur", "Sharpen", "Smudge", "Dodge", "Burn", "Sponge",
+                             "Gradient", "Patch", "SpotHealing", "HealingBrush", "RedEye",
+                             "Warp", "PuppetWarp", "PerspectiveWarp"}
+                if tool_name in forbidden:
+                    if hasattr(self.window(), "_status"):
+                        from core.locale import tr
+                        self.window()._status.showMessage(tr("err.text_layer_no_draw"), 3000)
+                    return
+
             if tool_name in _BRUSH_TOOLS:
                 mirror_x = bool(self.tool_opts.get("brush_mirror_x", False))
                 mirror_y = bool(self.tool_opts.get("brush_mirror_y", False))
@@ -1154,8 +1170,24 @@ class CanvasWidget(QWidget):
 
             old_layer_idx = self.document.active_layer_index if self.document else -1
             doc_pos = self.to_doc(ev.position())
+            
+            old_transforming = getattr(self.active_tool, "is_transforming", False)
+            
             self.active_tool.on_press(doc_pos, self.document,
                                       self.fg_color, self.bg_color, self.tool_opts)
+                                      
+            if layer and getattr(layer, "layer_type", "raster") == "text" and tool_name == "Move":
+                new_transforming = getattr(self.active_tool, "is_transforming", False)
+                if new_transforming and not old_transforming:
+                    if hasattr(self.active_tool, "cancel_transform"):
+                        self.active_tool.cancel_transform(self.document)
+                    self._stroke_in_progress = False
+                    if hasattr(self.window(), "_status"):
+                        from core.locale import tr
+                        self.window()._status.showMessage(tr("err.text_layer_no_transform"), 3000)
+                    self.update()
+                    return
+
             self._cache_dirty = True
             self.update()
 

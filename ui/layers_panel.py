@@ -1,10 +1,11 @@
 from PyQt6.QtWidgets import (QWidget, QVBoxLayout, QHBoxLayout, QLabel,
                              QPushButton, QListWidget, QListWidgetItem,
-                             QSlider, QCheckBox, QAbstractItemView, QMenu, QComboBox, QLineEdit)
+                             QCheckBox, QAbstractItemView, QMenu, QComboBox, QLineEdit)
 from PyQt6.QtCore import Qt, pyqtSignal
 from PyQt6.QtGui import QColor, QIcon, QPixmap, QPainter, QPen
 
 from core.locale import tr
+from ui.adjustments_dialog import _JumpSlider
 
 
 def _make_eye_icon(visible: bool) -> QIcon:
@@ -366,7 +367,7 @@ class LayersPanel(QWidget):
         op_lo.setSpacing(6)
         self._opacity_lbl = QLabel(tr("panel.opacity"))
         op_lo.addWidget(self._opacity_lbl)
-        self._opacity_slider = QSlider(Qt.Orientation.Horizontal)
+        self._opacity_slider = _JumpSlider(Qt.Orientation.Horizontal)
         self._opacity_slider.setRange(0, 100)
         self._opacity_slider.setValue(100)
         self._opacity_slider.valueChanged.connect(self._on_opacity_changed)

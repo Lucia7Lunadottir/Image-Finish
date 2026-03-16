@@ -1,14 +1,15 @@
 from PyQt6.QtWidgets import (QWidget, QHBoxLayout, QLabel,
-                             QSlider, QSpinBox, QComboBox, QCheckBox)
+                             QSpinBox, QComboBox, QCheckBox)
 from PyQt6.QtCore import Qt
 from .base_options import BaseOptions
 from core.locale import tr
 from ui.gradient_editor import GradientPreviewWidget, GradientEditorDialog
 from PyQt6.QtGui import QColor
+from ui.adjustments_dialog import _JumpSlider
 
 
-def _hslider(minimum: int, maximum: int, value: int) -> QSlider:
-    s = QSlider(Qt.Orientation.Horizontal)
+def _hslider(minimum: int, maximum: int, value: int):
+    s = _JumpSlider(Qt.Orientation.Horizontal)
     s.setMinimum(minimum)
     s.setMaximum(maximum)
     s.setValue(value)

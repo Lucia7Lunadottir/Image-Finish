@@ -101,23 +101,23 @@ class FillLayerDialog(QDialog):
         self._c2_btn.setIconSize(pix.size())
 
     def _pick_color(self):
-        from PyQt6.QtWidgets import QColorDialog
-        c = QColorDialog.getColor(self._color, self, tr("adj.choose_color"))
-        if c.isValid():
+        from ui.hsv_picker import ColorPickerDialog
+        c = ColorPickerDialog.get_color(self._color, self, tr("adj.choose_color"))
+        if c is not None:
             self._color = c
             self._update_color_btn()
 
     def _pick_color1(self):
-        from PyQt6.QtWidgets import QColorDialog
-        c = QColorDialog.getColor(self._color1, self, tr("adj.choose_color"))
-        if c.isValid():
+        from ui.hsv_picker import ColorPickerDialog
+        c = ColorPickerDialog.get_color(self._color1, self, tr("adj.choose_color"))
+        if c is not None:
             self._color1 = c
             self._update_c1_btn()
 
     def _pick_color2(self):
-        from PyQt6.QtWidgets import QColorDialog
-        c = QColorDialog.getColor(self._color2, self, tr("adj.choose_color"))
-        if c.isValid():
+        from ui.hsv_picker import ColorPickerDialog
+        c = ColorPickerDialog.get_color(self._color2, self, tr("adj.choose_color"))
+        if c is not None:
             self._color2 = c
             self._update_c2_btn()
 

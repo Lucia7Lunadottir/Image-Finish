@@ -1,9 +1,10 @@
 import numpy as np
 from PyQt6.QtWidgets import (QDialog, QVBoxLayout, QHBoxLayout, QLabel, 
-                             QSlider, QPushButton, QColorDialog, QDialogButtonBox)
+                             QPushButton, QDialogButtonBox, QSpinBox)
 from PyQt6.QtCore import Qt
 from PyQt6.QtGui import QColor, QImage, QBitmap, QRegion, QPainterPath, QPixmap
 from core.locale import tr
+from ui.adjustments_dialog import _JumpSlider
 
 class ColorRangeDialog(QDialog):
     def __init__(self, document, update_cb, parent=None):
@@ -30,7 +31,7 @@ class ColorRangeDialog(QDialog):
         row1.addWidget(QLabel(tr("adj.photo_filter.color")))
         self.color_btn = QPushButton()
         self.color_btn.setFixedSize(40, 24)
-        self.color_btn.setStyleSheet(f"background-color: {self.target_color.name()}; border: 1px solid #aaa;")
+        self.color_btn.setStyleSheet(f"QPushButton {{ background-color: {self.target_color.name()}; border: 1px solid #aaa; }}")
         self.color_btn.clicked.connect(self.choose_color)
         row1.addWidget(self.color_btn)
         row1.addStretch()
@@ -38,11 +39,19 @@ class ColorRangeDialog(QDialog):
 
         row2 = QHBoxLayout()
         row2.addWidget(QLabel(tr("color_range.fuzziness")))
-        self.fuzz_slider = QSlider(Qt.Orientation.Horizontal)
+        self.fuzz_slider = _JumpSlider(Qt.Orientation.Horizontal)
         self.fuzz_slider.setRange(0, 200)
         self.fuzz_slider.setValue(40)
         self.fuzz_slider.valueChanged.connect(self.apply_preview)
         row2.addWidget(self.fuzz_slider)
+        
+        self.fuzz_spin = QSpinBox()
+        self.fuzz_spin.setRange(0, 200)
+        self.fuzz_spin.setValue(40)
+        self.fuzz_slider.valueChanged.connect(self.fuzz_spin.setValue)
+        self.fuzz_spin.valueChanged.connect(self.fuzz_slider.setValue)
+        row2.addWidget(self.fuzz_spin)
+        
         self.layout.addLayout(row2)
 
         btns = QDialogButtonBox(QDialogButtonBox.StandardButton.Ok | QDialogButtonBox.StandardButton.Cancel)
@@ -53,10 +62,11 @@ class ColorRangeDialog(QDialog):
         self.apply_preview()
 
     def choose_color(self):
-        c = QColorDialog.getColor(self.target_color, self)
-        if c.isValid():
+        from ui.hsv_picker import ColorPickerDialog
+        c = ColorPickerDialog.get_color(self.target_color, self, tr("color_range.title"))
+        if c is not None:
             self.target_color = c
-            self.color_btn.setStyleSheet(f"background-color: {self.target_color.name()}; border: 1px solid #aaa;")
+            self.color_btn.setStyleSheet(f"QPushButton {{ background-color: {self.target_color.name()}; border: 1px solid #aaa; }}")
             self.apply_preview()
 
     def apply_preview(self):

@@ -1,11 +1,12 @@
 import os
 import glob
 import shutil
-from PyQt6.QtWidgets import QWidget, QHBoxLayout, QSlider, QSpinBox, QDial, QComboBox, QFileDialog, QCheckBox, QPushButton, QLabel
+from PyQt6.QtWidgets import QWidget, QHBoxLayout, QSpinBox, QDial, QComboBox, QFileDialog, QCheckBox, QPushButton, QLabel
 from PyQt6.QtGui import QIcon, QPixmap, QPainter, QColor, QBrush, QImage
 from PyQt6.QtCore import Qt, QSize
 from .base_options import BaseOptions
 from core.locale import tr
+from ui.adjustments_dialog import _JumpSlider
 
 class BrushOptions(BaseOptions):
     """Панель опций для инструментов с кистью (Кисть, Ластик и т.д.)."""
@@ -56,7 +57,7 @@ class BrushOptions(BaseOptions):
         size_widget = QWidget()
         size_layout = QHBoxLayout(size_widget)
         size_layout.setContentsMargins(0, 0, 0, 0)
-        self._size_slider = QSlider(Qt.Orientation.Horizontal)
+        self._size_slider = _JumpSlider(Qt.Orientation.Horizontal)
         self._size_slider.setRange(1, 500)
         self._size_slider.setFixedWidth(100)
         self._size_spin = QSpinBox()
@@ -75,7 +76,7 @@ class BrushOptions(BaseOptions):
         opacity_widget = QWidget()
         opacity_layout = QHBoxLayout(opacity_widget)
         opacity_layout.setContentsMargins(0, 0, 0, 0)
-        self._opacity_slider = QSlider(Qt.Orientation.Horizontal)
+        self._opacity_slider = _JumpSlider(Qt.Orientation.Horizontal)
         self._opacity_slider.setRange(1, 100)
         self._opacity_slider.setFixedWidth(100)
         self._opacity_spin = QSpinBox()
@@ -96,7 +97,7 @@ class BrushOptions(BaseOptions):
         hardness_widget = QWidget()
         hardness_layout = QHBoxLayout(hardness_widget)
         hardness_layout.setContentsMargins(0, 0, 0, 0)
-        self._hardness_slider = QSlider(Qt.Orientation.Horizontal)
+        self._hardness_slider = _JumpSlider(Qt.Orientation.Horizontal)
         self._hardness_slider.setRange(0, 100)
         self._hardness_slider.setFixedWidth(100)
         self._hardness_spin = QSpinBox()

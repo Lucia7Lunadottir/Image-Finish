@@ -1,7 +1,8 @@
-from PyQt6.QtWidgets import QSlider, QSpinBox, QHBoxLayout, QLabel
+from PyQt6.QtWidgets import QSpinBox, QHBoxLayout, QLabel
 from PyQt6.QtCore import Qt
 from .base_options import BaseOptions
 from core.locale import tr
+from ui.adjustments_dialog import _JumpSlider
 
 class PatchOptions(BaseOptions):
     def __init__(self, parent=None):
@@ -10,7 +11,7 @@ class PatchOptions(BaseOptions):
         self.layout.addSpacing(15)
         self.layout.addWidget(self._lbl("opts.patch.diffusion"))
 
-        self._diff_slider = QSlider(Qt.Orientation.Horizontal)
+        self._diff_slider = _JumpSlider(Qt.Orientation.Horizontal)
         self._diff_slider.setRange(1, 10)
         self._diff_slider.setFixedWidth(80)
         
@@ -28,7 +29,7 @@ class PatchOptions(BaseOptions):
         self.layout.addSpacing(15)
         self.layout.addWidget(self._lbl("opts.opacity"))
         
-        self._op_slider = QSlider(Qt.Orientation.Horizontal)
+        self._op_slider = _JumpSlider(Qt.Orientation.Horizontal)
         self._op_slider.setRange(1, 100)
         self._op_slider.setFixedWidth(80)
         
@@ -69,7 +70,7 @@ class SpotHealingOptions(BaseOptions):
         self.layout.addSpacing(15)
         self.layout.addWidget(self._lbl("opts.size"))
 
-        self._size_slider = QSlider(Qt.Orientation.Horizontal)
+        self._size_slider = _JumpSlider(Qt.Orientation.Horizontal)
         self._size_slider.setRange(1, 500)
         self._size_slider.setFixedWidth(100)
         
@@ -87,7 +88,7 @@ class SpotHealingOptions(BaseOptions):
         self.layout.addSpacing(15)
         self.layout.addWidget(self._lbl("opts.opacity"))
         
-        self._op_slider = QSlider(Qt.Orientation.Horizontal)
+        self._op_slider = _JumpSlider(Qt.Orientation.Horizontal)
         self._op_slider.setRange(1, 100)
         self._op_slider.setFixedWidth(80)
         
@@ -129,7 +130,7 @@ class RedEyeOptions(BaseOptions):
 
         # Размер зрачка
         self.layout.addWidget(self._lbl("opts.red_eye.size"))
-        self._size_slider = QSlider(Qt.Orientation.Horizontal)
+        self._size_slider = _JumpSlider(Qt.Orientation.Horizontal)
         self._size_slider.setRange(1, 100)
         self._size_slider.setFixedWidth(80)
         self._size_spin = QSpinBox()
@@ -145,7 +146,7 @@ class RedEyeOptions(BaseOptions):
 
         # Степень затемнения
         self.layout.addWidget(self._lbl("opts.red_eye.darken"))
-        self._dark_slider = QSlider(Qt.Orientation.Horizontal)
+        self._dark_slider = _JumpSlider(Qt.Orientation.Horizontal)
         self._dark_slider.setRange(1, 100)
         self._dark_slider.setFixedWidth(80)
         self._dark_spin = QSpinBox()

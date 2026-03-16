@@ -3,7 +3,7 @@ import numpy as np
 import ctypes
 
 from PyQt6.QtWidgets import (QDialog, QVBoxLayout, QHBoxLayout, QLabel, 
-                             QSlider, QSpinBox, QComboBox, QPushButton, 
+                             QSpinBox, QComboBox, QPushButton, 
                              QDialogButtonBox, QWidget, QScrollArea, QFrame)
 from PyQt6.QtCore import Qt, QPoint, QPointF, QRect, QRectF, QTimer
 from PyQt6.QtGui import (QImage, QPainter, QColor, QPen, QBrush, QPixmap, 
@@ -11,6 +11,7 @@ from PyQt6.QtGui import (QImage, QPainter, QColor, QPen, QBrush, QPixmap,
 
 from core.locale import tr
 from core.adjustments.hdr_toning import _box_blur_ch
+from ui.adjustments_dialog import _JumpSlider
 
 def _blur_mask(m, r):
     if r <= 0: return m
@@ -237,34 +238,34 @@ class SelectAndMaskDialog(QDialog):
         self.mode_combo.currentIndexChanged.connect(self._on_mode_change)
         pl.addWidget(self.mode_combo)
         
-        self.op_sl = QSlider(Qt.Orientation.Horizontal); self.op_sl.setRange(0, 100); self.op_sl.setValue(50)
+        self.op_sl = _JumpSlider(Qt.Orientation.Horizontal); self.op_sl.setRange(0, 100); self.op_sl.setValue(50)
         self.op_sl.valueChanged.connect(lambda v: self._render_preview())
         pl.addWidget(lbl(tr("sam.opacity")))
         pl.addWidget(self.op_sl)
         
         pl.addWidget(lbl(tr("opts.size"), True))
-        self.size_sl = QSlider(Qt.Orientation.Horizontal); self.size_sl.setRange(1, 500); self.size_sl.setValue(40)
+        self.size_sl = _JumpSlider(Qt.Orientation.Horizontal); self.size_sl.setRange(1, 500); self.size_sl.setValue(40)
         self.size_sl.valueChanged.connect(lambda v: setattr(self, "brush_size", v))
         pl.addWidget(self.size_sl)
         
         pl.addWidget(lbl(tr("sam.global"), True))
         
-        self.sm_sl = QSlider(Qt.Orientation.Horizontal); self.sm_sl.setRange(0, 100); self.sm_sl.setValue(0)
+        self.sm_sl = _JumpSlider(Qt.Orientation.Horizontal); self.sm_sl.setRange(0, 100); self.sm_sl.setValue(0)
         self.sm_sl.valueChanged.connect(lambda v: self._timer.start(40))
         pl.addWidget(lbl(tr("sam.smooth")))
         pl.addWidget(self.sm_sl)
         
-        self.ft_sl = QSlider(Qt.Orientation.Horizontal); self.ft_sl.setRange(0, 100); self.ft_sl.setValue(0)
+        self.ft_sl = _JumpSlider(Qt.Orientation.Horizontal); self.ft_sl.setRange(0, 100); self.ft_sl.setValue(0)
         self.ft_sl.valueChanged.connect(lambda v: self._timer.start(40))
         pl.addWidget(lbl(tr("sam.feather")))
         pl.addWidget(self.ft_sl)
         
-        self.ct_sl = QSlider(Qt.Orientation.Horizontal); self.ct_sl.setRange(0, 100); self.ct_sl.setValue(0)
+        self.ct_sl = _JumpSlider(Qt.Orientation.Horizontal); self.ct_sl.setRange(0, 100); self.ct_sl.setValue(0)
         self.ct_sl.valueChanged.connect(lambda v: self._timer.start(40))
         pl.addWidget(lbl(tr("sam.contrast")))
         pl.addWidget(self.ct_sl)
         
-        self.sh_sl = QSlider(Qt.Orientation.Horizontal); self.sh_sl.setRange(-100, 100); self.sh_sl.setValue(0)
+        self.sh_sl = _JumpSlider(Qt.Orientation.Horizontal); self.sh_sl.setRange(-100, 100); self.sh_sl.setValue(0)
         self.sh_sl.valueChanged.connect(lambda v: self._timer.start(40))
         pl.addWidget(lbl(tr("sam.shift")))
         pl.addWidget(self.sh_sl)

@@ -1,14 +1,17 @@
 import os
 import glob
 from PyQt6.QtWidgets import (QWidget, QHBoxLayout, QLabel,
-                             QSlider, QSpinBox, QComboBox, QCheckBox)
+                             QSpinBox, QComboBox, QCheckBox)
+from PyQt6.QtGui import QColor
 from PyQt6.QtCore import Qt
 from .base_options import BaseOptions
 from core.locale import tr
+from core.adjustments._widgets import _ColorButton
+from ui.adjustments_dialog import _JumpSlider
 
 
-def _hslider(minimum: int, maximum: int, value: int) -> QSlider:
-    s = QSlider(Qt.Orientation.Horizontal)
+def _hslider(minimum: int, maximum: int, value: int):
+    s = _JumpSlider(Qt.Orientation.Horizontal)
     s.setMinimum(minimum)
     s.setMaximum(maximum)
     s.setValue(value)
@@ -90,6 +93,12 @@ class ShapesOptions(BaseOptions):
         self.layout.addWidget(angle_sp)
         self.layout.addWidget(self._angle_random_cb)
         self.layout.addWidget(fill_cb)
+        
+        self.layout.addWidget(self._lbl("opts.shape.color"))
+        self._color_btn = _ColorButton(QColor(0, 0, 0))
+        self._color_btn.colorChanged.connect(lambda c: self.option_changed.emit("shape_color", c))
+        self.layout.addWidget(self._color_btn)
+
         self.layout.addWidget(self._lbl("opts.stroke"))
         self.layout.addWidget(sl)
         self.layout.addWidget(sp)
@@ -99,3 +108,10 @@ class ShapesOptions(BaseOptions):
         self._combo.addItem(name)
         self._custom_shapes.append(path)
         self._combo.setCurrentIndex(self._combo.count() - 1)
+
+    def update_from_opts(self, opts: dict):
+        color = opts.get("shape_color", QColor(0, 0, 0))
+        if hasattr(self, "_color_btn"):
+            self._color_btn.blockSignals(True)
+            self._color_btn.set_color(color)
+            self._color_btn.blockSignals(False)
