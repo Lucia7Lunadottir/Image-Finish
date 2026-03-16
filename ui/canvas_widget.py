@@ -81,6 +81,7 @@ class CanvasWidget(QWidget):
         # Позиция мыши для курсора-кружка
         self._mouse_pos: QPointF = QPointF(-100, -100)
         self._show_brush_cursor: bool = False
+        self._is_mouse_in: bool = False
 
         self._composite_cache: QImage | None = None
         self._cache_dirty: bool = True
@@ -287,7 +288,19 @@ class CanvasWidget(QWidget):
             painter.save()
             painter.translate(self._pan)
             painter.scale(self.zoom, self.zoom)
+            
+            old_hovers = {}
+            if not getattr(self, "_is_mouse_in", True):
+                for attr in ["hover_pos", "_hover_pos", "current_pos", "_current_pos", "preview_end", "_preview_end"]:
+                    if hasattr(self.active_tool, attr):
+                        old_hovers[attr] = getattr(self.active_tool, attr)
+                        setattr(self.active_tool, attr, None)
+                        
             self.active_tool.draw_overlays(painter, max(1.0, 1.0 / self.zoom), self.document)
+            
+            for attr, val in old_hovers.items():
+                setattr(self.active_tool, attr, val)
+                
             painter.restore()
 
         # Курсор кисти — всегда в координатах виджета, без поворота
@@ -554,7 +567,7 @@ class CanvasWidget(QWidget):
                     painter.drawPolyline(poly)
 
                     # Для полигонального рисуем линию тянущуюся за курсором
-                    if current_pos:
+                    if current_pos and getattr(self, "_is_mouse_in", True):
                         painter.setPen(pen1)
                         painter.drawLine(points[-1], current_pos)
                         painter.setPen(pen2)
@@ -1111,17 +1124,22 @@ class CanvasWidget(QWidget):
             tool_name = getattr(self.active_tool, "name", "")
             layer = self.document.get_active_layer() if self.document else None
             
-            if layer and getattr(layer, "layer_type", "raster") == "text":
-                forbidden = {"Brush", "Eraser", "BackgroundEraser", "MagicEraser", "CloneStamp", "PatternStamp",
-                             "Pencil", "ColorReplacement", "MixerBrush", "HistoryBrush",
-                             "Fill", "Blur", "Sharpen", "Smudge", "Dodge", "Burn", "Sponge",
-                             "Gradient", "Patch", "SpotHealing", "HealingBrush", "RedEye",
-                             "Warp", "PuppetWarp", "PerspectiveWarp"}
-                if tool_name in forbidden:
-                    if hasattr(self.window(), "_status"):
-                        from core.locale import tr
-                        self.window()._status.showMessage(tr("err.text_layer_no_draw"), 3000)
-                    return
+            if layer:
+                ltype = getattr(layer, "layer_type", "raster")
+                if ltype in ("text", "smart_object"):
+                    forbidden = {"Brush", "Eraser", "BackgroundEraser", "MagicEraser", "CloneStamp", "PatternStamp",
+                                 "Pencil", "ColorReplacement", "MixerBrush", "HistoryBrush",
+                                 "Fill", "Blur", "Sharpen", "Smudge", "Dodge", "Burn", "Sponge",
+                                 "Gradient", "Patch", "SpotHealing", "HealingBrush", "RedEye"}
+                    if ltype == "text":
+                        forbidden.update({"Warp", "PuppetWarp", "PerspectiveWarp"})
+                        
+                    if tool_name in forbidden:
+                        if hasattr(self.window(), "_status"):
+                            from core.locale import tr
+                            msg = tr("err.smart_object_no_draw") if ltype == "smart_object" else tr("err.text_layer_no_draw")
+                            self.window()._status.showMessage(msg, 3000)
+                        return
 
             if tool_name in _BRUSH_TOOLS:
                 mirror_x = bool(self.tool_opts.get("brush_mirror_x", False))
@@ -1212,6 +1230,17 @@ class CanvasWidget(QWidget):
             self.tool_opts["_pressure"] = 1.0
 
         self._mouse_pos = ev.position()
+
+        # Спасение от зависания кисти/пера, если кнопка мыши была отпущена за пределами холста
+        if self._stroke_in_progress and not (ev.buttons() & Qt.MouseButton.LeftButton):
+            doc_pos = self.to_doc(ev.position())
+            if self.active_tool:
+                self.active_tool.on_release(doc_pos, self.document, self.fg_color, self.bg_color, self.tool_opts)
+            self._stroke_in_progress = False
+            self._cache_dirty = True
+            self.update()
+            self.document_changed.emit()
+            import gc; gc.collect()
 
         if getattr(self, "_dragging_sym_center", False):
             doc_pos = self.to_doc(ev.position())
@@ -1331,10 +1360,18 @@ class CanvasWidget(QWidget):
         self._emit_tool_state()
 
     def enterEvent(self, ev):
+        self._is_mouse_in = True
         self._update_cursor()
 
     def leaveEvent(self, ev):
+        self._is_mouse_in = False
         self._show_brush_cursor = False
+        if self.active_tool and hasattr(self.active_tool, "on_leave"):
+            self.active_tool.on_leave()
+        if self.active_tool:
+            for attr in ["_hover_pos", "_current_mouse_pos", "_mouse_pos", "hover_pos", "current_pos", "_current_pos", "_preview_end", "preview_end", "_last_pos"]:
+                if hasattr(self.active_tool, attr):
+                    setattr(self.active_tool, attr, None)
         self.update()
 
     def wheelEvent(self, ev):

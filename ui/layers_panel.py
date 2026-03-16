@@ -323,6 +323,7 @@ class LayersPanel(QWidget):
     layer_smart_object  = pyqtSignal()
     layer_rasterize     = pyqtSignal()
     layer_styles_requested = pyqtSignal(int)
+    layer_clear_smart_filters = pyqtSignal()
 
     def __init__(self, parent=None):
         super().__init__(parent)
@@ -618,6 +619,9 @@ class LayersPanel(QWidget):
         if ltype in ("raster", "text", "vector"):
             so_act = menu.addAction(tr("ctx.smart_object"))
             so_act.triggered.connect(self.layer_smart_object.emit)
+        elif ltype == "smart_object":
+            clr_act = menu.addAction(tr("ctx.clear_smart_filters"))
+            clr_act.triggered.connect(self.layer_clear_smart_filters.emit)
         if ltype != "raster":
             rast_act = menu.addAction(tr("ctx.rasterize"))
             rast_act.triggered.connect(self.layer_rasterize.emit)

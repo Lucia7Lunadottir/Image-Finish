@@ -334,11 +334,86 @@ class Document:
                     else:
                         img_to_draw = layer.image
                         
+                    active_stroke = getattr(layer, "active_stroke", None)
+                    if active_stroke and not getattr(layer, "editing_mask", False):
+                        stroke_img = active_stroke["img"]
+                        offset_style = (getattr(layer, "layer_styles", None) or {}).get("offset", {})
+                        if offset_style.get("enabled"):
+                            dx_pct = offset_style.get("dx_pct", 0)
+                            dy_pct = offset_style.get("dy_pct", 0)
+                            edge_mode = offset_style.get("edge_mode", "wrap")
+                            if dx_pct != 0 or dy_pct != 0:
+                                h, w = stroke_img.height(), stroke_img.width()
+                                dx = -int(w * dx_pct / 100.0)
+                                dy = -int(h * dy_pct / 100.0)
+                                import numpy as np, ctypes
+                                ptr = stroke_img.constBits()
+                                buf = (ctypes.c_uint8 * stroke_img.sizeInBytes()).from_address(int(ptr))
+                                arr = np.ndarray((h, stroke_img.bytesPerLine() // 4, 4), dtype=np.uint8, buffer=buf)
+                                if edge_mode == "wrap":
+                                    res_arr = np.roll(np.roll(arr, dy, axis=0), dx, axis=1)
+                                    stroke_img = QImage(res_arr.data, w, h, w*4, QImage.Format.Format_ARGB32_Premultiplied)
+                                    stroke_img.ndarray = res_arr
+                                elif edge_mode == "repeat":
+                                    Y, X = np.ogrid[:h, :w]
+                                    Y = np.clip(Y - dy, 0, h - 1); X = np.clip(X - dx, 0, w - 1)
+                                    res_arr = arr[Y, X]
+                                    stroke_img = QImage(res_arr.data, w, h, w*4, QImage.Format.Format_ARGB32_Premultiplied)
+                                    stroke_img.ndarray = res_arr
+                                else:
+                                    res_arr = np.zeros_like(arr)
+                                    y1_src, y2_src = max(0, -dy), min(h, h - dy); x1_src, x2_src = max(0, -dx), min(w, w - dx)
+                                    y1_dst, y2_dst = max(0, dy), min(h, h + dy); x1_dst, x2_dst = max(0, dx), min(w, w + dx)
+                                    if y1_src < y2_src and x1_src < x2_src: res_arr[y1_dst:y2_dst, x1_dst:x2_dst] = arr[y1_src:y2_src, x1_src:x2_src]
+                                    stroke_img = QImage(res_arr.data, w, h, w*4, QImage.Format.Format_ARGB32_Premultiplied)
+                                    stroke_img.ndarray = res_arr
+
+                        if not getattr(img_to_draw, "is_copy", False):
+                            img_to_draw = img_to_draw.copy()
+                            img_to_draw.is_copy = True
+                        p = QPainter(img_to_draw)
+                        p.setRenderHint(QPainter.RenderHint.Antialiasing)
+                        if active_stroke["clip"]:
+                            p.setClipPath(active_stroke["clip"].translated(-layer.offset.x(), -layer.offset.y()))
+                        p.setCompositionMode(active_stroke["mode"])
+                        p.setOpacity(active_stroke["opacity"])
+                        p.drawImage(0, 0, stroke_img)
+                        p.end()
+
                     current_offset = layer.offset
                     if getattr(layer, "layer_styles", None):
                         from core.layer_styles import apply_layer_styles
                         img_to_draw, offset_delta = apply_layer_styles(img_to_draw, layer.layer_styles)
                         current_offset = current_offset + offset_delta
+                        
+                        # Применяем стиль Сдвиг (Offset)
+                        offset_style = layer.layer_styles.get("offset", {})
+                        if offset_style.get("enabled"):
+                            dx_pct = offset_style.get("dx_pct", 0)
+                            dy_pct = offset_style.get("dy_pct", 0)
+                            edge_mode = offset_style.get("edge_mode", "wrap")
+                            if dx_pct != 0 or dy_pct != 0:
+                                h, w = img_to_draw.height(), img_to_draw.width()
+                                dx = int(w * dx_pct / 100.0)
+                                dy = int(h * dy_pct / 100.0)
+                                import numpy as np
+                                import ctypes
+                                ptr = img_to_draw.constBits()
+                                buf = (ctypes.c_uint8 * img_to_draw.sizeInBytes()).from_address(int(ptr))
+                                arr = np.ndarray((h, img_to_draw.bytesPerLine() // 4, 4), dtype=np.uint8, buffer=buf)
+                                if edge_mode == "wrap":
+                                    res_arr = np.roll(np.roll(arr, dy, axis=0), dx, axis=1)
+                                elif edge_mode == "repeat":
+                                    Y, X = np.ogrid[:h, :w]
+                                    Y = np.clip(Y - dy, 0, h - 1); X = np.clip(X - dx, 0, w - 1)
+                                    res_arr = arr[Y, X]
+                                else: # transparent
+                                    res_arr = np.zeros_like(arr)
+                                    y1_src, y2_src = max(0, -dy), min(h, h - dy); x1_src, x2_src = max(0, -dx), min(w, w - dx)
+                                    y1_dst, y2_dst = max(0, dy), min(h, h + dy); x1_dst, x2_dst = max(0, dx), min(w, w + dx)
+                                    if y1_src < y2_src and x1_src < x2_src: res_arr[y1_dst:y2_dst, x1_dst:x2_dst] = arr[y1_src:y2_src, x1_src:x2_src]
+                                img_to_draw = QImage(res_arr.data, w, h, w*4, QImage.Format.Format_ARGB32_Premultiplied).copy()
+                                img_to_draw.is_copy = True
 
                     has_mask = getattr(layer, "mask", None) is not None and getattr(layer, "mask_enabled", True)
                     
@@ -355,9 +430,22 @@ class Document:
                         arr = arr_full[:, :img_to_draw.width(), :]
 
                         if has_mask:
-                            m_ptr = layer.mask.constBits()
-                            m_buf = (ctypes.c_uint8 * layer.mask.sizeInBytes()).from_address(int(m_ptr))
-                            m_arr = np.ndarray((layer.mask.height(), layer.mask.bytesPerLine() // 4, 4), dtype=np.uint8, buffer=m_buf)[:, :img_to_draw.width(), :]
+                            current_mask = layer.mask
+                            active_stroke = getattr(layer, "active_stroke", None)
+                            if active_stroke and getattr(layer, "editing_mask", False):
+                                current_mask = current_mask.copy()
+                                p = QPainter(current_mask)
+                                p.setRenderHint(QPainter.RenderHint.Antialiasing)
+                                if active_stroke["clip"]:
+                                    p.setClipPath(active_stroke["clip"].translated(-layer.offset.x(), -layer.offset.y()))
+                                p.setCompositionMode(active_stroke["mode"])
+                                p.setOpacity(active_stroke["opacity"])
+                                p.drawImage(0, 0, active_stroke["img"])
+                                p.end()
+
+                            m_ptr = current_mask.constBits()
+                            m_buf = (ctypes.c_uint8 * current_mask.sizeInBytes()).from_address(int(m_ptr))
+                            m_arr = np.ndarray((current_mask.height(), current_mask.bytesPerLine() // 4, 4), dtype=np.uint8, buffer=m_buf)[:, :img_to_draw.width(), :]
                             
                             mask_f = m_arr[..., 1].astype(np.float32) / 255.0
                             arr[..., 0] = (arr[..., 0] * mask_f).astype(np.uint8)

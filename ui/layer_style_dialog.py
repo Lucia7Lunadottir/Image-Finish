@@ -59,6 +59,7 @@ class LayerStyleDialog(QDialog):
             ("satin", tr("ls.satin")), ("color_overlay", tr("ls.color_overlay")),
             ("gradient_overlay", tr("ls.gradient_overlay")), ("pattern_overlay", tr("ls.pattern_overlay")),
             ("outer_glow", tr("ls.outer_glow")), ("drop_shadow", tr("ls.drop_shadow")),
+            ("offset", tr("ls.offset")),
         ]
         
         for key, name in effects:
@@ -221,6 +222,19 @@ class LayerStyleDialog(QDialog):
             add_slider(tr("ls.opacity"), "opacity", 0, 100, 100, "%")
             add_pattern(tr("ls.pattern"), "pattern", "")
             add_slider(tr("ls.scale"), "scale", 1, 1000, 100, "%")
+        elif key == "offset":
+            add_slider(tr("ls.offset_x"), "dx_pct", -100, 100, 0, "%")
+            add_slider(tr("ls.offset_y"), "dy_pct", -100, 100, 0, "%")
+            edge_modes = [
+                (tr("other.wrap"), "wrap"),
+                (tr("other.repeat"), "repeat"),
+                (tr("other.bg"), "transparent")
+            ]
+            add_combo(tr("other.edge"), "edge_mode", edge_modes)
+            
+            reset_btn = QPushButton(tr("adj.reset"))
+            reset_btn.clicked.connect(lambda: (inputs["dx_pct"].setValue(0), inputs["dy_pct"].setValue(0), inputs["edge_mode"].setCurrentIndex(0)))
+            form.addRow("", reset_btn)
 
     def _read_data(self):
         for key, p in self.pages.items():

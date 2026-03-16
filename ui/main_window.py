@@ -1,6 +1,6 @@
 from PyQt6.QtWidgets import (QMainWindow, QWidget, QHBoxLayout, QVBoxLayout,
                              QMenu, QStatusBar, QFileDialog, QMessageBox, QSplitter, QTabWidget)
-from PyQt6.QtCore import Qt, QRectF, QRect, QPoint, QPointF
+from PyQt6.QtCore import Qt, QRectF, QRect, QPoint, QPointF, QSettings
 from PyQt6.QtGui import QAction, QKeySequence, QColor, QPainterPath, QPainter, QBrush
 
 from ui.canvas_widget    import CanvasWidget
@@ -128,6 +128,9 @@ class MainWindow(QMainWindow,
         super().__init__()
         self.setWindowTitle(tr("title.untitled"))
 
+        self._recent_files = []
+        self._load_recent_files()
+
         self._document = Document(800, 600, QColor(255, 255, 255))
         self._history  = HistoryManager()
         self._document.history = self._history
@@ -217,6 +220,10 @@ class MainWindow(QMainWindow,
         file_m = self._menu(mb, "menu.file")
         self._act(file_m, "menu.new",        self._new_doc,    QKeySequence.StandardKey.New)
         self._act(file_m, "menu.open",       self._open_file,  QKeySequence.StandardKey.Open)
+        
+        self._recent_menu = self._menu(file_m, "menu.open_recent")
+        self._update_recent_menu()
+        
         file_m.addSeparator()
         self._act(file_m, "menu.save",       self._save,       QKeySequence.StandardKey.Save)
         self._act(file_m, "menu.save_as",    self._save_as,    QKeySequence("Ctrl+Shift+S"))
@@ -368,6 +375,11 @@ class MainWindow(QMainWindow,
         # Filter
         filter_m = self._menu(mb, "menu.filter")
         
+        self._act(filter_m, "menu.filter.camera_raw",      lambda: self._open_specific_filter("camera_raw"), QKeySequence("Shift+Ctrl+A"))
+        self._act(filter_m, "menu.filter.lens_correction", lambda: self._open_specific_filter("lens_correction"), QKeySequence("Shift+Ctrl+R"))
+        self._act(filter_m, "menu.filter.liquify",         lambda: self._open_specific_filter("liquify"), QKeySequence("Shift+Ctrl+X"))
+        filter_m.addSeparator()
+        
         blur_gallery_m = self._menu(filter_m, "menu.blur_gallery")
         self._act(blur_gallery_m, "menu.blur.field",      self._blur_field)
         self._act(blur_gallery_m, "menu.blur.iris",       self._blur_iris)
@@ -389,6 +401,74 @@ class MainWindow(QMainWindow,
         self._act(blur_m, "menu.blur.surface",  self._surface_blur)
         self._act(blur_m, "menu.blur.shape",    self._shape_blur)
         self._act(blur_m, "menu.blur.lens",     self._lens_blur)
+        filter_m.addSeparator()
+        
+        sharpen_m = self._menu(filter_m, "menu.sharpen_gallery")
+        self._act(sharpen_m, "menu.sharpen.sharpen", lambda: self._open_sharpen("sharpen"))
+        self._act(sharpen_m, "menu.sharpen.edges",   lambda: self._open_sharpen("edges"))
+        self._act(sharpen_m, "menu.sharpen.more",    lambda: self._open_sharpen("more"))
+        self._act(sharpen_m, "menu.sharpen.smart",   lambda: self._open_sharpen("smart"))
+        self._act(sharpen_m, "menu.sharpen.unsharp", lambda: self._open_sharpen("unsharp"))
+        filter_m.addSeparator()
+
+        distort_m = self._menu(filter_m, "menu.distort")
+        self._act(distort_m, "menu.distort.displace", lambda: self._open_distort("displace"))
+        self._act(distort_m, "menu.distort.pinch",    lambda: self._open_distort("pinch"))
+        self._act(distort_m, "menu.distort.polar",    lambda: self._open_distort("polar"))
+        self._act(distort_m, "menu.distort.ripple",   lambda: self._open_distort("ripple"))
+        self._act(distort_m, "menu.distort.shear",    lambda: self._open_distort("shear"))
+        self._act(distort_m, "menu.distort.spherize", lambda: self._open_distort("spherize"))
+        self._act(distort_m, "menu.distort.twirl",    lambda: self._open_distort("twirl"))
+        self._act(distort_m, "menu.distort.wave",     lambda: self._open_distort("wave"))
+        self._act(distort_m, "menu.distort.zigzag",   lambda: self._open_distort("zigzag"))
+        
+        filter_m.addSeparator()
+        noise_m = self._menu(filter_m, "menu.noise")
+        self._act(noise_m, "menu.noise.add",      lambda: self._open_noise("add_noise"))
+        self._act(noise_m, "menu.noise.despeckle",lambda: self._open_noise("despeckle"))
+        self._act(noise_m, "menu.noise.dust",     lambda: self._open_noise("dust_scratches"))
+        self._act(noise_m, "menu.noise.median",   lambda: self._open_noise("median"))
+        self._act(noise_m, "menu.noise.reduce",   lambda: self._open_noise("reduce_noise"))
+        
+        filter_m.addSeparator()
+        pixelate_m = self._menu(filter_m, "menu.pixelate")
+        self._act(pixelate_m, "menu.pixelate.color_halftone", lambda: self._open_pixelate("color_halftone"))
+        self._act(pixelate_m, "menu.pixelate.crystallize",    lambda: self._open_pixelate("crystallize"))
+        self._act(pixelate_m, "menu.pixelate.facet",          lambda: self._open_pixelate("facet"))
+        self._act(pixelate_m, "menu.pixelate.fragment",       lambda: self._open_pixelate("fragment"))
+        self._act(pixelate_m, "menu.pixelate.mezzotint",      lambda: self._open_pixelate("mezzotint"))
+        self._act(pixelate_m, "menu.pixelate.mosaic",         lambda: self._open_pixelate("mosaic"))
+        self._act(pixelate_m, "menu.pixelate.pointillize",    lambda: self._open_pixelate("pointillize"))
+        
+        filter_m.addSeparator()
+        other_m = self._menu(filter_m, "menu.other")
+        self._act(other_m, "menu.other.custom",    lambda: self._open_other("custom"))
+        self._act(other_m, "menu.other.high_pass", lambda: self._open_other("high_pass"))
+        self._act(other_m, "menu.other.maximum",   lambda: self._open_other("maximum"))
+        self._act(other_m, "menu.other.minimum",   lambda: self._open_other("minimum"))
+        self._act(other_m, "menu.other.offset",    lambda: self._open_other("offset"))
+        
+        filter_m.addSeparator()
+        stylize_m = self._menu(filter_m, "menu.stylize")
+        self._act(stylize_m, "menu.stylize.emboss",       lambda: self._open_stylize("emboss"))
+        self._act(stylize_m, "menu.stylize.extrude",      lambda: self._open_stylize("extrude"))
+        self._act(stylize_m, "menu.stylize.find_edges",   lambda: self._open_stylize("find_edges"))
+        self._act(stylize_m, "menu.stylize.oil_paint",    lambda: self._open_stylize("oil_paint"))
+        self._act(stylize_m, "menu.stylize.solarize",     lambda: self._open_stylize("solarize"))
+        self._act(stylize_m, "menu.stylize.tiles",        lambda: self._open_stylize("tiles"))
+        self._act(stylize_m, "menu.stylize.trace_contour",lambda: self._open_stylize("trace_contour"))
+        self._act(stylize_m, "menu.stylize.wind",         lambda: self._open_stylize("wind"))
+        
+        filter_m.addSeparator()
+        render_m = self._menu(filter_m, "menu.render_gallery")
+        self._act(render_m, "menu.render.clouds",      lambda: self._open_render("clouds"))
+        self._act(render_m, "menu.render.diff_clouds", lambda: self._open_render("diff_clouds"))
+        self._act(render_m, "menu.render.fibers",      lambda: self._open_render("fibers"))
+        self._act(render_m, "menu.render.lens_flare",  lambda: self._open_render("lens_flare"))
+        self._act(render_m, "menu.render.lighting",    lambda: self._open_render("lighting"))
+        self._act(render_m, "menu.render.wood",        lambda: self._open_render("wood"))
+        self._act(render_m, "menu.render.frame",       lambda: self._open_render("frame"))
+        self._act(render_m, "menu.render.flame",       lambda: self._open_render("flame"))
 
         # View
         view_m = self._menu(mb, "menu.view")
@@ -470,6 +550,7 @@ class MainWindow(QMainWindow,
         for code, act in self._lang_acts.items():
             act.setChecked(code == cur)
         self._update_mode_menu()
+        self._update_recent_menu()
         self._toolbar.retranslate()
         self._opts_bar.retranslate()
         self._layers_panel.retranslate()
@@ -534,6 +615,8 @@ class MainWindow(QMainWindow,
         self._layers_panel.layer_smart_object.connect(self._new_smart_object)
         self._layers_panel.layer_rasterize.connect(self._rasterize_layer)
         self._layers_panel.layer_styles_requested.connect(self._open_layer_styles)
+        if hasattr(self._layers_panel, "layer_clear_smart_filters"):
+            self._layers_panel.layer_clear_smart_filters.connect(self._clear_smart_filters)
         self._channels_panel.channel_changed.connect(self._on_channel_changed)
         self._channels_panel.save_requested.connect(self._save_selection)
         self._channels_panel.load_requested.connect(self._load_selection_btn)
@@ -811,6 +894,7 @@ class MainWindow(QMainWindow,
         depth = getattr(self._document, "bit_depth", 8)
         mode_str = f"{mode}/{depth}"
         if hasattr(self, "_filepath") and self._filepath:
+            self._add_recent_file(self._filepath)
             name = self._filepath.split("/")[-1]
             self.setWindowTitle(tr("title.with_file", name=name, mode=mode_str))
         else:
@@ -1300,6 +1384,27 @@ class MainWindow(QMainWindow,
         elif hasattr(super(), "_on_edit_layer"):
             super()._on_edit_layer()
             
+    def _new_smart_object(self):
+        layer = self._document.get_active_layer()
+        if not layer or getattr(layer, "layer_type", "raster") == "smart_object":
+            return
+        self._push_history(tr("history.new_smart_object"))
+        layer.layer_type = "smart_object"
+        if not hasattr(layer, "smart_data") or layer.smart_data is None:
+            layer.smart_data = {}
+        layer.smart_data["original"] = layer.image.copy()
+        self._refresh_layers()
+        self._canvas_refresh()
+        
+    def _clear_smart_filters(self):
+        layer = self._document.get_active_layer()
+        if layer and getattr(layer, "layer_type", "raster") == "smart_object":
+            if hasattr(layer, "smart_data") and layer.smart_data and "original" in layer.smart_data:
+                self._push_history(tr("history.clear_smart_filters"))
+                layer.image = layer.smart_data["original"].copy()
+                self._canvas_refresh()
+                self._refresh_layers()
+
     def _export_slices(self):
         slices = getattr(self._document, "slices", [])
         if not slices:
@@ -1438,7 +1543,7 @@ class MainWindow(QMainWindow,
     # ================================================================= Blur Gallery
     def _open_blur_gallery(self, mode: str):
         layer = self._document.get_active_layer()
-        if not layer or layer.image.isNull() or getattr(layer, "layer_type", "raster") != "raster":
+        if not layer or layer.image.isNull() or getattr(layer, "layer_type", "raster") not in ("raster", "smart_object"):
             return
             
         from core.history import HistoryState, clone_work_path
@@ -1463,9 +1568,305 @@ class MainWindow(QMainWindow,
             self._refresh_layers()
         else:
             self._canvas_refresh()
+
+    # ================================================================= Specific Filters
+    def _open_specific_filter(self, mode: str):
+        layer = self._document.get_active_layer()
+        if not layer or layer.image.isNull() or getattr(layer, "layer_type", "raster") not in ("raster", "smart_object"):
+            return
+            
+        from core.history import HistoryState, clone_work_path
+        pre_state = HistoryState(
+            description=tr(f"menu.filter.{mode}").replace('…', ''),
+            layers_snapshot=self._document.snapshot_layers(),
+            active_layer_index=self._document.active_layer_index,
+            doc_width=self._document.width,
+            doc_height=self._document.height,
+            selection_snapshot=QPainterPath(self._document.selection) if self._document.selection else None,
+            work_path_snapshot=clone_work_path(getattr(self._document, "work_path", None)),
+            alpha_channels_snapshot=list(getattr(self._document, "alpha_channels", [])),
+            color_mode_snapshot=getattr(self._document, "color_mode", "RGB"),
+            bit_depth_snapshot=getattr(self._document, "bit_depth", 8)
+        )
+            
+        from ui.specific_filters_dialog import SpecificFiltersDialog
+        dlg = SpecificFiltersDialog(layer, mode, self._canvas_refresh, self)
+        if dlg.exec():
+            self._history.push(pre_state)
+            self._canvas_refresh()
+            self._refresh_layers()
+        else:
+            self._canvas_refresh()
+
+    # ================================================================= Render Gallery
+    def _open_render(self, mode: str):
+        layer = self._document.get_active_layer()
+        if not layer or layer.image.isNull() or getattr(layer, "layer_type", "raster") not in ("raster", "smart_object"):
+            return
+            
+        from core.history import HistoryState, clone_work_path
+        pre_state = HistoryState(
+            description=tr(f"menu.render.{mode}").replace('…', ''),
+            layers_snapshot=self._document.snapshot_layers(),
+            active_layer_index=self._document.active_layer_index,
+            doc_width=self._document.width,
+            doc_height=self._document.height,
+            selection_snapshot=QPainterPath(self._document.selection) if self._document.selection else None,
+            work_path_snapshot=clone_work_path(getattr(self._document, "work_path", None)),
+            alpha_channels_snapshot=list(getattr(self._document, "alpha_channels", [])),
+            color_mode_snapshot=getattr(self._document, "color_mode", "RGB"),
+            bit_depth_snapshot=getattr(self._document, "bit_depth", 8)
+        )
+            
+        from ui.render_dialog import RenderDialog
+        dlg = RenderDialog(layer, mode, self._canvas_refresh, self)
+        if dlg.exec():
+            self._history.push(pre_state)
+            self._canvas_refresh()
+            self._refresh_layers()
+        else:
+            self._canvas_refresh()
+
+    # ================================================================= Recent Files
+    def _load_recent_files(self):
+        settings = QSettings("ImageFinish", "RecentFiles")
+        self._recent_files = settings.value("recent", [])
+        if not isinstance(self._recent_files, list):
+            self._recent_files = []
+
+    def _save_recent_files(self):
+        settings = QSettings("ImageFinish", "RecentFiles")
+        settings.setValue("recent", self._recent_files)
+
+    def _add_recent_file(self, path):
+        if path in self._recent_files:
+            self._recent_files.remove(path)
+        self._recent_files.insert(0, path)
+        if len(self._recent_files) > 30:
+            self._recent_files = self._recent_files[:30]
+        self._save_recent_files()
+        self._update_recent_menu()
+
+    def _remove_recent_file(self, path):
+        if path in self._recent_files:
+            self._recent_files.remove(path)
+            self._save_recent_files()
+            self._update_recent_menu()
+
+    def _update_recent_menu(self):
+        if not hasattr(self, "_recent_menu"): return
+        self._recent_menu.clear()
+        if not self._recent_files:
+            act = QAction(tr("menu.no_recent"), self)
+            act.setEnabled(False)
+            self._recent_menu.addAction(act)
+        else:
+            for path in self._recent_files:
+                act = QAction(path, self)
+                act.triggered.connect(lambda checked, p=path: self._open_recent(p))
+                self._recent_menu.addAction(act)
+            self._recent_menu.addSeparator()
+            clear_act = QAction(tr("menu.clear_recent"), self)
+            clear_act.triggered.connect(self._clear_recent)
+            self._recent_menu.addAction(clear_act)
+
+    def _clear_recent(self):
+        self._recent_files.clear()
+        self._save_recent_files()
+        self._update_recent_menu()
+
+    def _open_recent(self, path):
+        import os
+        if not os.path.exists(path):
+            QMessageBox.warning(self, tr("err.title.error"), tr("err.could_not_open").format(path=path))
+            self._remove_recent_file(path)
+            return
+            
+        # Если в FileActionsMixin есть готовый метод загрузки, используем его
+        if hasattr(self, "_open_file_path"):
+            self._open_file_path(path)
+
+    # ================================================================= Sharpen Gallery
+    def _open_sharpen(self, mode: str):
+        layer = self._document.get_active_layer()
+        if not layer or layer.image.isNull() or getattr(layer, "layer_type", "raster") not in ("raster", "smart_object"):
+            return
+            
+        from core.history import HistoryState, clone_work_path
+        pre_state = HistoryState(
+            description=tr(f"menu.sharpen.{mode}").replace('…', ''),
+            layers_snapshot=self._document.snapshot_layers(),
+            active_layer_index=self._document.active_layer_index,
+            doc_width=self._document.width,
+            doc_height=self._document.height,
+            selection_snapshot=QPainterPath(self._document.selection) if self._document.selection else None,
+            work_path_snapshot=clone_work_path(getattr(self._document, "work_path", None)),
+            alpha_channels_snapshot=list(getattr(self._document, "alpha_channels", [])),
+            color_mode_snapshot=getattr(self._document, "color_mode", "RGB"),
+            bit_depth_snapshot=getattr(self._document, "bit_depth", 8)
+        )
+            
+        from ui.sharpen_dialog import SharpenDialog
+        dlg = SharpenDialog(layer, mode, self._canvas_refresh, self)
+        if dlg.exec():
+            self._history.push(pre_state)
+            self._canvas_refresh()
+            self._refresh_layers()
+        else:
+            self._canvas_refresh()
+
+    # ================================================================= Stylize Gallery
+    def _open_stylize(self, mode: str):
+        layer = self._document.get_active_layer()
+        if not layer or layer.image.isNull() or getattr(layer, "layer_type", "raster") not in ("raster", "smart_object"):
+            return
+            
+        from core.history import HistoryState, clone_work_path
+        pre_state = HistoryState(
+            description=tr(f"menu.stylize.{mode}").replace('…', ''),
+            layers_snapshot=self._document.snapshot_layers(),
+            active_layer_index=self._document.active_layer_index,
+            doc_width=self._document.width,
+            doc_height=self._document.height,
+            selection_snapshot=QPainterPath(self._document.selection) if self._document.selection else None,
+            work_path_snapshot=clone_work_path(getattr(self._document, "work_path", None)),
+            alpha_channels_snapshot=list(getattr(self._document, "alpha_channels", [])),
+            color_mode_snapshot=getattr(self._document, "color_mode", "RGB"),
+            bit_depth_snapshot=getattr(self._document, "bit_depth", 8)
+        )
+            
+        from ui.stylize_dialog import StylizeDialog
+        dlg = StylizeDialog(layer, mode, self._canvas_refresh, self)
+        if dlg.exec():
+            self._history.push(pre_state)
+            self._canvas_refresh()
+            self._refresh_layers()
+        else:
+            self._canvas_refresh()
+
+    # ================================================================= Other Gallery
+    def _open_other(self, mode: str):
+        layer = self._document.get_active_layer()
+        if not layer or layer.image.isNull() or getattr(layer, "layer_type", "raster") not in ("raster", "smart_object"):
+            return
+            
+        from core.history import HistoryState, clone_work_path
+        pre_state = HistoryState(
+            description=tr(f"menu.other.{mode}").replace('…', ''),
+            layers_snapshot=self._document.snapshot_layers(),
+            active_layer_index=self._document.active_layer_index,
+            doc_width=self._document.width,
+            doc_height=self._document.height,
+            selection_snapshot=QPainterPath(self._document.selection) if self._document.selection else None,
+            work_path_snapshot=clone_work_path(getattr(self._document, "work_path", None)),
+            alpha_channels_snapshot=list(getattr(self._document, "alpha_channels", [])),
+            color_mode_snapshot=getattr(self._document, "color_mode", "RGB"),
+            bit_depth_snapshot=getattr(self._document, "bit_depth", 8)
+        )
+            
+        from ui.other_filters_dialog import OtherFiltersDialog
+        dlg = OtherFiltersDialog(layer, mode, self._canvas_refresh, self)
+        if dlg.exec():
+            self._history.push(pre_state)
+            self._canvas_refresh()
+            self._refresh_layers()
+        else:
+            self._canvas_refresh()
+
+    # ================================================================= Pixelate Gallery
+    def _open_pixelate(self, mode: str):
+        layer = self._document.get_active_layer()
+        if not layer or layer.image.isNull() or getattr(layer, "layer_type", "raster") not in ("raster", "smart_object"):
+            return
+            
+        from core.history import HistoryState, clone_work_path
+        pre_state = HistoryState(
+            description=tr(f"menu.pixelate.{mode}").replace('…', ''),
+            layers_snapshot=self._document.snapshot_layers(),
+            active_layer_index=self._document.active_layer_index,
+            doc_width=self._document.width,
+            doc_height=self._document.height,
+            selection_snapshot=QPainterPath(self._document.selection) if self._document.selection else None,
+            work_path_snapshot=clone_work_path(getattr(self._document, "work_path", None)),
+            alpha_channels_snapshot=list(getattr(self._document, "alpha_channels", [])),
+            color_mode_snapshot=getattr(self._document, "color_mode", "RGB"),
+            bit_depth_snapshot=getattr(self._document, "bit_depth", 8)
+        )
+            
+        from ui.pixelate_dialog import PixelateDialog
+        dlg = PixelateDialog(layer, mode, self._canvas_refresh, self)
+        if dlg.exec():
+            self._history.push(pre_state)
+            self._canvas_refresh()
+            self._refresh_layers()
+        else:
+            self._canvas_refresh()
+
+    # ================================================================= Noise Gallery
+    def _open_noise(self, mode: str):
+        layer = self._document.get_active_layer()
+        if not layer or layer.image.isNull() or getattr(layer, "layer_type", "raster") not in ("raster", "smart_object"):
+            return
+            
+        desc_key = "menu.noise.add"
+        if mode == "despeckle": desc_key = "menu.noise.despeckle"
+        elif mode == "dust_scratches": desc_key = "menu.noise.dust"
+        elif mode == "median": desc_key = "menu.noise.median"
+        elif mode == "reduce_noise": desc_key = "menu.noise.reduce"
+            
+        from core.history import HistoryState, clone_work_path
+        pre_state = HistoryState(
+            description=tr(desc_key).replace('…', ''),
+            layers_snapshot=self._document.snapshot_layers(),
+            active_layer_index=self._document.active_layer_index,
+            doc_width=self._document.width,
+            doc_height=self._document.height,
+            selection_snapshot=QPainterPath(self._document.selection) if self._document.selection else None,
+            work_path_snapshot=clone_work_path(getattr(self._document, "work_path", None)),
+            alpha_channels_snapshot=list(getattr(self._document, "alpha_channels", [])),
+            color_mode_snapshot=getattr(self._document, "color_mode", "RGB"),
+            bit_depth_snapshot=getattr(self._document, "bit_depth", 8)
+        )
+            
+        from ui.noise_dialog import NoiseDialog
+        if NoiseDialog(layer, mode, self._canvas_refresh, self).exec():
+            self._history.push(pre_state)
+            self._canvas_refresh()
+            self._refresh_layers()
+        else:
+            self._canvas_refresh()
             
     def _blur_field(self): self._open_blur_gallery("field")
     def _blur_iris(self): self._open_blur_gallery("iris")
     def _blur_tilt_shift(self): self._open_blur_gallery("tilt_shift")
     def _blur_path(self): self._open_blur_gallery("path")
     def _blur_spin(self): self._open_blur_gallery("spin")
+
+    # ================================================================= Distort Gallery
+    def _open_distort(self, mode: str):
+        layer = self._document.get_active_layer()
+        if not layer or layer.image.isNull() or getattr(layer, "layer_type", "raster") not in ("raster", "smart_object"):
+            return
+            
+        from core.history import HistoryState, clone_work_path
+        pre_state = HistoryState(
+            description=tr(f"menu.distort.{mode}"),
+            layers_snapshot=self._document.snapshot_layers(),
+            active_layer_index=self._document.active_layer_index,
+            doc_width=self._document.width,
+            doc_height=self._document.height,
+            selection_snapshot=QPainterPath(self._document.selection) if self._document.selection else None,
+            work_path_snapshot=clone_work_path(getattr(self._document, "work_path", None)),
+            alpha_channels_snapshot=list(getattr(self._document, "alpha_channels", [])),
+            color_mode_snapshot=getattr(self._document, "color_mode", "RGB"),
+            bit_depth_snapshot=getattr(self._document, "bit_depth", 8)
+        )
+            
+        from ui.distort_dialog import DistortDialog
+        dlg = DistortDialog(layer, mode, self._canvas_refresh, self)
+        if dlg.exec():
+            self._history.push(pre_state)
+            self._canvas_refresh()
+            self._refresh_layers()
+        else:
+            self._canvas_refresh()
