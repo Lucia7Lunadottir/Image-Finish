@@ -11,13 +11,16 @@ _ADJ_TYPES = ["brightness_contrast", "hue_saturation", "invert"]
 
 class AdjustmentLayerDialog(QDialog):
 
-    def __init__(self, data: dict | None = None, parent=None):
+    def __init__(self, layer, canvas_refresh, parent=None):
         super().__init__(parent)
         self.setWindowTitle(tr("adj_layer.title"))
         self.setMinimumWidth(340)
 
-        self._data = dict(data) if data else {"type": "brightness_contrast",
-                                              "brightness": 0, "contrast": 0}
+        self.layer = layer
+        self.canvas_refresh = canvas_refresh
+        self._original_data = dict(layer.adjustment_data) if layer.adjustment_data else {}
+        self._data = dict(self._original_data) if self._original_data else {"type": "brightness_contrast",
+                                                                            "brightness": 0, "contrast": 0}
 
         lo = QVBoxLayout(self)
         lo.setSpacing(8)
@@ -84,8 +87,7 @@ class AdjustmentLayerDialog(QDialog):
 
     # ── Helpers ──────────────────────────────────────────────────────────
 
-    @staticmethod
-    def _slider_spin(lo: int, hi: int, val: int):
+    def _slider_spin(self, lo: int, hi: int, val: int):
         sl = _JumpSlider(Qt.Orientation.Horizontal)
         sl.setRange(lo, hi)
         sl.setValue(val)
@@ -95,6 +97,7 @@ class AdjustmentLayerDialog(QDialog):
         sp.setFixedWidth(60)
         sl.valueChanged.connect(sp.setValue)
         sp.valueChanged.connect(sl.setValue)
+        sl.valueChanged.connect(self._trigger_preview)
         return sl, sp
 
     @staticmethod
@@ -112,6 +115,7 @@ class AdjustmentLayerDialog(QDialog):
         self._hs_widget.setVisible(t == "hue_saturation")
         self._inv_widget.setVisible(t == "invert")
         self.adjustSize()
+        self._trigger_preview()
 
     # ── Result ───────────────────────────────────────────────────────────
 
@@ -127,3 +131,16 @@ class AdjustmentLayerDialog(QDialog):
                     "saturation": self._sat_spin.value(),
                     "lightness":  self._lit_spin.value()}
         return {"type": "invert"}
+
+    def _trigger_preview(self, *args):
+        self.layer.adjustment_data = self.result_data()
+        self.canvas_refresh()
+
+    def accept(self):
+        self.layer.adjustment_data = self.result_data()
+        super().accept()
+
+    def reject(self):
+        self.layer.adjustment_data = self._original_data
+        self.canvas_refresh()
+        super().reject()

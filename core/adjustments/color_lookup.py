@@ -178,8 +178,8 @@ def apply_color_lookup(src: QImage, lut: dict, intensity: int) -> QImage:
 # ── dialog ────────────────────────────────────────────────────────────────────
 
 class ColorLookupDialog(_AdjustDialog):
-    def __init__(self, layer, canvas_refresh, parent=None):
-        super().__init__(tr("adj.color_lookup.title"), layer, canvas_refresh, parent)
+    def __init__(self, image: QImage, parent=None):
+        super().__init__(tr("adj.color_lookup.title"), image, parent)
         self.setMinimumWidth(400)
         self._lut: dict | None = None
 
@@ -227,10 +227,15 @@ class ColorLookupDialog(_AdjustDialog):
         self._apply_preview()
 
     def _apply_preview(self):
-        if self._lut is None:
-            self._layer.image = self._original.copy()
-            self._canvas_refresh()
-            return
-        self._layer.image = apply_color_lookup(
-            self._orig_argb32, self._lut, self._intensity.value())
-        self._canvas_refresh()
+        if not getattr(self, "_is_adj_layer", False):
+            from PyQt6.QtGui import QPainter
+            p = QPainter(self._image)
+            p.setCompositionMode(QPainter.CompositionMode.CompositionMode_Source)
+            if self._lut is None:
+                p.drawImage(0, 0, self._original)
+            else:
+                res = apply_color_lookup(self._orig_argb32, self._lut, self._intensity.value())
+                p.drawImage(0, 0, res)
+            p.end()
+        if hasattr(self, "_canvas_refresh"): self._canvas_refresh()
+        elif self.parent() and hasattr(self.parent(), "_canvas_refresh"): self.parent()._canvas_refresh()

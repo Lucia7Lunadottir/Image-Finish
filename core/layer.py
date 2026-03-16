@@ -108,6 +108,86 @@ class Layer:
         clone.layer_styles = copy.deepcopy(getattr(self, "layer_styles", None))
         return clone
 
+    def to_dict(self):
+        from PyQt6.QtCore import QBuffer, QIODevice, QByteArray
+        def img_to_bytes(img):
+            if not img or img.isNull(): return None
+            ba = QByteArray()
+            buf = QBuffer(ba)
+            buf.open(QIODevice.OpenModeFlag.WriteOnly)
+            img.save(buf, "PNG")
+            return ba.data()
+
+        d = {
+            "name": self.name,
+            "layer_type": getattr(self, "layer_type", "raster"),
+            "visible": self.visible,
+            "locked": self.locked,
+            "lock_alpha": getattr(self, "lock_alpha", False),
+            "lock_pixels": getattr(self, "lock_pixels", False),
+            "lock_position": getattr(self, "lock_position", False),
+            "opacity": self.opacity,
+            "blend_mode": self.blend_mode,
+            "offset": (self.offset.x(), self.offset.y()),
+            "image": img_to_bytes(self.image),
+            "mask": img_to_bytes(self.mask),
+            "mask_enabled": getattr(self, "mask_enabled", True),
+            "layer_styles": getattr(self, "layer_styles", None),
+            "adjustment_data": getattr(self, "adjustment_data", None),
+            "fill_data": getattr(self, "fill_data", None),
+            "text_data": getattr(self, "text_data", None),
+            "shape_data": getattr(self, "shape_data", None),
+            "frame_data": getattr(self, "frame_data", None),
+            "clipping": getattr(self, "clipping", False),
+            "expanded": getattr(self, "expanded", True)
+        }
+        if getattr(self, "smart_data", None) and "original" in self.smart_data:
+            d["smart_data_original"] = img_to_bytes(self.smart_data["original"])
+        return d
+
+    @classmethod
+    def from_dict(cls, d, w, h):
+        from PyQt6.QtGui import QImage
+        from PyQt6.QtCore import QPoint, QRect, QRectF
+        def bytes_to_img(b):
+            if not b: return None
+            img = QImage()
+            img.loadFromData(b, "PNG")
+            return img
+            
+        layer = cls(d["name"], w, h)
+        layer.layer_type = d.get("layer_type", "raster")
+        layer.visible = d.get("visible", True)
+        layer.locked = d.get("locked", False)
+        layer.lock_alpha = d.get("lock_alpha", False)
+        layer.lock_pixels = d.get("lock_pixels", False)
+        layer.lock_position = d.get("lock_position", False)
+        layer.opacity = d.get("opacity", 1.0)
+        layer.blend_mode = d.get("blend_mode", "Normal")
+        layer.clipping = d.get("clipping", False)
+        layer.expanded = d.get("expanded", True)
+        ox, oy = d.get("offset", (0,0))
+        layer.offset = QPoint(ox, oy)
+        
+        img = bytes_to_img(d.get("image"))
+        if img: layer.image = img
+        
+        layer.mask = bytes_to_img(d.get("mask"))
+        layer.mask_enabled = d.get("mask_enabled", True)
+        
+        layer.layer_styles = d.get("layer_styles", None)
+        layer.adjustment_data = d.get("adjustment_data", None)
+        layer.fill_data = d.get("fill_data", None)
+        layer.text_data = d.get("text_data", None)
+        layer.shape_data = d.get("shape_data", None)
+        layer.frame_data = d.get("frame_data", None)
+        
+        smd_b = d.get("smart_data_original")
+        if smd_b:
+            layer.smart_data = {"original": bytes_to_img(smd_b)}
+            
+        return layer
+
     def width(self) -> int:
         return self.image.width()
 

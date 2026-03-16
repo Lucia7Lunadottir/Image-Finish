@@ -104,6 +104,7 @@
   "menu.new_fill_gradient":"Градиент…",
   "menu.smart_object":     "Преобразовать в смарт-объект",
   "menu.rasterize_layer":  "Растрировать слой",
+  "menu.export_layer_png": "Экспорт слоя в PNG…",
   "menu.move_up":          "Вверх",
   "menu.move_down":        "Вниз",
 
@@ -314,9 +315,9 @@
   "status.info":   "  {w} × {h} пкс  |  Масштаб: {z}%  |  Слой: {layer}",
 
   "dlg.open_image":    "Открыть изображение",
-  "dlg.open_filter":   "Изображения (*.png *.jpg *.jpeg *.bmp *.webp *.tiff);;Все файлы (*)",
+  "dlg.open_filter":   "ImageFinish (*.imfn);;Photoshop (*.psd);;Изображения (*.png *.jpg *.jpeg *.bmp *.webp *.tiff);;Все файлы (*)",
   "dlg.save_as":       "Сохранить как",
-  "dlg.save_filter":   "PNG (*.png);;JPEG (*.jpg *.jpeg);;BMP (*.bmp);;Все файлы (*)",
+  "dlg.save_filter":   "ImageFinish (*.imfn);;PNG (*.png);;JPEG (*.jpg *.jpeg);;WebP (*.webp);;TIFF (*.tiff);;BMP (*.bmp);;Все файлы (*)",
   "dlg.export_png":    "Экспорт PNG",
   "dlg.export_slices": "Выберите папку для сохранения",
   "dlg.define_name":        "Имя:",
@@ -523,6 +524,7 @@
   "ctx.flatten":      "Свести изображение",
   "ctx.delete":       "Удалить",
   "ctx.edit_layer":   "Редактировать слой…",
+  "ctx.export_png":   "Экспорт слоя в PNG…",
   "ctx.smart_object": "Преобразовать в смарт-объект",
   "ctx.rasterize":    "Растрировать слой",
   "ctx.clear_smart_filters": "Очистить умные фильтры",

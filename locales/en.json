@@ -313,9 +313,9 @@
   "status.info":   "  {w} \u00d7 {h} px  |  Zoom: {z}%  |  Layer: {layer}",
 
   "dlg.open_image":    "Open Image",
-  "dlg.open_filter":   "Images (*.png *.jpg *.jpeg *.bmp *.webp *.tiff);;All Files (*)",
+  "dlg.open_filter":   "ImageFinish (*.imfn);;Photoshop (*.psd);;Images (*.png *.jpg *.jpeg *.bmp *.webp *.tiff);;All Files (*)",
   "dlg.save_as":       "Save As",
-  "dlg.save_filter":   "PNG (*.png);;JPEG (*.jpg *.jpeg);;BMP (*.bmp);;All Files (*)",
+  "dlg.save_filter":   "ImageFinish (*.imfn);;PNG (*.png);;JPEG (*.jpg *.jpeg);;WebP (*.webp);;TIFF (*.tiff);;BMP (*.bmp);;All Files (*)",
   "dlg.export_png":    "Export PNG",
   "dlg.export_slices": "Select folder for export",
   "dlg.define_name":        "Name:",

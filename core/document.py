@@ -23,47 +23,83 @@ def _get_composition_mode(mode_str: str) -> QPainter.CompositionMode:
 def _apply_layer_adjustment(image: QImage, layer) -> QImage:
     d = layer.adjustment_data or {}
     t = d.get("type", "")
+    
+    def get_v(keywords, default):
+        for kw in keywords:
+            if kw in d: return d[kw]
+        best_val = default
+        for k, v in d.items():
+            if not isinstance(v, (int, float)): continue
+            kl = k.lower()
+            if any(kw in kl for kw in keywords):
+                if "max" in keywords[0] and "min" in kl: continue
+                if "min" in keywords[0] and "max" in kl: continue
+                if "out" in keywords[0] and "in" in kl: continue
+                if "in" in keywords[0] and "out" in kl: continue
+                best_val = v
+                if isinstance(v, float): return v
+        return best_val
+
     try:
         if t == "brightness_contrast":
             from ui.adjustments_dialog import apply_brightness_contrast
-            return apply_brightness_contrast(image, d.get("brightness", 0), d.get("contrast", 0))
+            return apply_brightness_contrast(image, int(get_v(["brightness", "bright"], 0)), int(get_v(["contrast", "contr"], 0)))
         elif t == "hue_saturation":
             from ui.adjustments_dialog import apply_hue_saturation
-            return apply_hue_saturation(image, d.get("hue", 0),
-                                        d.get("saturation", 0), d.get("lightness", 0))
+            return apply_hue_saturation(image, int(get_v(["hue"], 0)), int(get_v(["saturation", "sat"], 0)), int(get_v(["lightness", "light"], 0)))
         elif t == "invert":
             from ui.adjustments_dialog import apply_invert
             return apply_invert(image)
         elif t == "levels":
             from ui.levels_dialog import apply_levels
-            return apply_levels(image, d.get("in_min", 0), d.get("in_max", 255), d.get("in_gamma", 1.0), d.get("out_min", 0), d.get("out_max", 255))
+            in_min = int(get_v(["in_min", "in_black", "in_low", "black_sp"], 0))
+            in_max = int(get_v(["in_max", "in_white", "in_high", "white_sp"], 255))
+            gamma  = float(get_v(["gamma", "mid", "gamma_sp"], 1.0))
+            out_min = int(get_v(["out_min", "out_black", "out_low", "out_min_sp"], 0))
+            out_max = int(get_v(["out_max", "out_white", "out_high", "out_max_sp"], 255))
+            
+            if gamma > 5.0: gamma /= 100.0
+            if gamma <= 0.0: gamma = 1.0
+            if in_max <= in_min: in_max = in_min + 1
+            
+            return apply_levels(image, in_min, in_max, gamma, out_min, out_max)
         elif t == "exposure":
             from core.adjustments.exposure import apply_exposure
-            return apply_exposure(image, d.get("exposure", 0.0), d.get("offset", 0.0), d.get("gamma", 1.0))
+            exp = float(get_v(["exposure", "exp"], 0.0))
+            off = float(get_v(["offset", "off"], 0.0))
+            gam = float(get_v(["gamma", "gam"], 1.0))
+            
+            if exp > 20.0 or exp < -20.0: exp /= 100.0
+            if off > 1.0 or off < -1.0: off /= 1000.0
+            if gam > 5.0: gam /= 100.0
+            if gam <= 0.0: gam = 1.0
+            
+            return apply_exposure(image, exp, off, gam)
         elif t == "vibrance":
             from core.adjustments.vibrance import apply_vibrance
-            return apply_vibrance(image, d.get("vibrance", 0), d.get("saturation", 0))
+            return apply_vibrance(image, int(get_v(["vibrance", "vib"], 0)), int(get_v(["saturation", "sat"], 0)))
         elif t == "black_white":
             from core.adjustments.black_white import apply_black_white
-            return apply_black_white(image, d.get("reds", 40), d.get("yellows", 60), d.get("greens", 40), d.get("cyans", 60), d.get("blues", 20), d.get("magentas", 80))
+            return apply_black_white(image, int(get_v(["red"], 40)), int(get_v(["yellow"], 60)), int(get_v(["green"], 40)), int(get_v(["cyan"], 60)), int(get_v(["blue"], 20)), int(get_v(["magenta"], 80)))
         elif t == "posterize":
             from core.adjustments.posterize import apply_posterize
-            return apply_posterize(image, d.get("levels", 4))
+            return apply_posterize(image, int(get_v(["level", "lvl"], 4)))
         elif t == "threshold":
             from core.adjustments.threshold import apply_threshold
-            return apply_threshold(image, d.get("threshold", 128))
+            return apply_threshold(image, int(get_v(["threshold", "thresh"], 128)))
         elif t == "photo_filter":
             from core.adjustments.photo_filter import apply_photo_filter
-            return apply_photo_filter(image, d.get("color", QColor(255,140,0)), d.get("density", 25), d.get("preserve", True))
+            color = d.get("color", QColor(255, 140, 0))
+            return apply_photo_filter(image, color, int(get_v(["density", "dens"], 25)), bool(get_v(["preserve"], True)))
         elif t == "gradient_map":
             from core.adjustments.gradient_map import apply_gradient_map
             return apply_gradient_map(image, d.get("shadows", QColor(0,0,0)), d.get("highlights", QColor(255,255,255)))
         elif t == "color_lookup":
             from core.adjustments.color_lookup import apply_color_lookup
-            return apply_color_lookup(image, d.get("lut", None), d.get("intensity", 100))
+            return apply_color_lookup(image, d.get("lut", None), int(get_v(["intensity"], 100)))
         elif t == "hdr_toning":
             from core.adjustments.hdr_toning import apply_hdr_toning
-            return apply_hdr_toning(image, d.get("radius", 10), d.get("strength", 0.5), d.get("gamma", 1.0), d.get("detail", 1.0))
+            return apply_hdr_toning(image, int(get_v(["radius", "rad"], 10)), float(get_v(["strength", "str"], 0.5)), float(get_v(["gamma"], 1.0)), float(get_v(["detail", "det"], 1.0)))
     except Exception as e:
         print(f"Error applying adjustment layer '{t}':", e)
     return image
@@ -767,6 +803,29 @@ class Document:
         bg.image = composite
         self.layers.append(bg)
         self.active_layer_index = 0
+
+    def save_to_imfn(self, path: str):
+        import pickle, gzip
+        data = {
+            "width": self.width,
+            "height": self.height,
+            "color_mode": self.color_mode,
+            "bit_depth": self.bit_depth,
+            "layers": [l.to_dict() for l in self.layers]
+        }
+        with gzip.open(path, "wb") as f:
+            pickle.dump(data, f)
+
+    @classmethod
+    def load_from_imfn(cls, path: str):
+        import pickle, gzip
+        with gzip.open(path, "rb") as f:
+            data = pickle.load(f)
+        doc = cls(data["width"], data["height"])
+        doc.color_mode = data.get("color_mode", "RGB")
+        doc.bit_depth = data.get("bit_depth", 8)
+        doc.layers = [Layer.from_dict(ld, doc.width, doc.height) for ld in data.get("layers", [])]
+        return doc
 
     def __repr__(self) -> str:
         return f"<Document {self.width}x{self.height} layers={len(self.layers)}>"

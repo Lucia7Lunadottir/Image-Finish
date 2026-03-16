@@ -24,12 +24,16 @@ def compute_histogram(img: QImage) -> list:
         ptr = argb.constBits()
         ptr.setsize(argb.sizeInBytes())
         arr = np.frombuffer(ptr, dtype=np.uint8).reshape((argb.height(), argb.width(), 4))
-        # BGRA layout: R=2, G=1, B=0
-        lum = (0.299 * arr[:, :, 2].astype(np.float32)
-             + 0.587 * arr[:, :, 1].astype(np.float32)
-             + 0.114 * arr[:, :, 0].astype(np.float32)).astype(np.uint8)
-        del arr
-        del ptr
+        
+        mask = arr[:, :, 3] > 0
+        if not np.any(mask):
+            return [0] * 256
+            
+        b = arr[:, :, 0][mask].astype(np.float32)
+        g = arr[:, :, 1][mask].astype(np.float32)
+        r = arr[:, :, 2][mask].astype(np.float32)
+        
+        lum = (0.299 * r + 0.587 * g + 0.114 * b).astype(np.uint8)
         counts, _ = np.histogram(lum, bins=256, range=(0, 256))
         return counts.tolist()
     except ImportError:
@@ -37,10 +41,11 @@ def compute_histogram(img: QImage) -> list:
         for y in range(argb.height()):
             for x in range(argb.width()):
                 px = argb.pixel(x, y)
-                lum = int(0.299 * ((px >> 16) & 0xFF)
-                        + 0.587 * ((px >>  8) & 0xFF)
-                        + 0.114 * (px & 0xFF))
-                hist[min(255, lum)] += 1
+                if (px >> 24) & 0xFF > 0:
+                    lum = int(0.299 * ((px >> 16) & 0xFF)
+                            + 0.587 * ((px >>  8) & 0xFF)
+                            + 0.114 * (px & 0xFF))
+                    hist[min(255, lum)] += 1
         return hist
 
 
@@ -167,12 +172,18 @@ class _HistogramWidget(QWidget):
         p.fillRect(0, 0, W, self.HIST_H, QColor(18, 18, 28))
 
         # bars
-        max_c = max(1, max(self._hist[1:255]))
+        valid_counts = sorted([c for c in self._hist if c > 0])
+        if not valid_counts:
+            max_c = 1
+        else:
+            idx = min(len(valid_counts) - 1, int(len(valid_counts) * 0.98))
+            max_c = max(1, valid_counts[idx])
+            
         bar_w = max(1.0, (W - 2 * self.PAD) / 256.0)
         for i, c in enumerate(self._hist):
             if c == 0:
                 continue
-            bh = int(self.HIST_H * c / max_c)
+            bh = min(self.HIST_H, int(self.HIST_H * c / max_c))
             x  = int(self.PAD + i * (W - 2 * self.PAD) / 256)
             p.fillRect(x, self.HIST_H - bh, max(1, int(bar_w)), bh,
                        QColor(150, 150, 190))
@@ -377,16 +388,15 @@ class LevelsDialog(QDialog):
 
     _DEBOUNCE_MS = 40
 
-    def __init__(self, layer, canvas_refresh, parent=None):
+    def __init__(self, image: QImage, parent=None):
         super().__init__(parent)
         self.setWindowTitle(tr("adj.levels.title"))
         self.setModal(True)
         self.setMinimumWidth(460)
 
-        self._layer          = layer
-        self._original       = layer.image.copy()
+        self._image          = image
+        self._original       = image.copy()
         self._orig_argb32    = _to_argb32(self._original)
-        self._canvas_refresh = canvas_refresh
 
         self._black   = 0
         self._gamma   = 1.0
@@ -562,11 +572,19 @@ class LevelsDialog(QDialog):
     # ── preview + apply ───────────────────────────────────────────────────────
 
     def _apply_preview(self):
-        self._layer.image = apply_levels(
+        res = apply_levels(
             self._orig_argb32,
             self._black, self._gamma, self._white,
             self._out_min, self._out_max)
-        self._canvas_refresh()
+            
+        if not getattr(self, "_is_adj_layer", False):
+            p = QPainter(self._image)
+            p.setCompositionMode(QPainter.CompositionMode.CompositionMode_Source)
+            p.drawImage(0, 0, res)
+            p.end()
+            
+        if hasattr(self, "_canvas_refresh"): self._canvas_refresh()
+        elif self.parent() and hasattr(self.parent(), "_canvas_refresh"): self.parent()._canvas_refresh()
 
     # ── Auto ──────────────────────────────────────────────────────────────────
 
@@ -616,6 +634,14 @@ class LevelsDialog(QDialog):
 
     def reject(self):
         self._timer.stop()
-        self._layer.image = self._original.copy()
-        self._canvas_refresh()
+        if getattr(self, "_is_adj_layer", False) and hasattr(self, "_layer"):
+            self._layer.adjustment_data = getattr(self, "_orig_adj_data", {})
+        else:
+            p = QPainter(self._image)
+            p.setCompositionMode(QPainter.CompositionMode.CompositionMode_Source)
+            p.drawImage(0, 0, self._original)
+            p.end()
+            
+        if hasattr(self, "_canvas_refresh"): self._canvas_refresh()
+        elif self.parent() and hasattr(self.parent(), "_canvas_refresh"): self.parent()._canvas_refresh()
         super().reject()

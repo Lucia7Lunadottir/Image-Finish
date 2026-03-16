@@ -7,13 +7,16 @@ from core.locale import tr
 
 class FillLayerDialog(QDialog):
 
-    def __init__(self, data: dict | None = None, parent=None):
+    def __init__(self, layer, canvas_refresh, parent=None):
         super().__init__(parent)
         self.setWindowTitle(tr("fill_layer.title"))
         self.setMinimumWidth(300)
 
-        self._data = dict(data) if data else {"type": "solid",
-                                              "color": QColor(128, 128, 128)}
+        self.layer = layer
+        self.canvas_refresh = canvas_refresh
+        self._original_data = dict(layer.fill_data) if layer.fill_data else {}
+        self._data = dict(self._original_data) if self._original_data else {"type": "solid",
+                                                                            "color": QColor(128, 128, 128)}
 
         lo = QVBoxLayout(self)
         lo.setSpacing(8)
@@ -106,6 +109,7 @@ class FillLayerDialog(QDialog):
         if c is not None:
             self._color = c
             self._update_color_btn()
+            self._trigger_preview()
 
     def _pick_color1(self):
         from ui.hsv_picker import ColorPickerDialog
@@ -113,6 +117,7 @@ class FillLayerDialog(QDialog):
         if c is not None:
             self._color1 = c
             self._update_c1_btn()
+            self._trigger_preview()
 
     def _pick_color2(self):
         from ui.hsv_picker import ColorPickerDialog
@@ -120,12 +125,14 @@ class FillLayerDialog(QDialog):
         if c is not None:
             self._color2 = c
             self._update_c2_btn()
+            self._trigger_preview()
 
     def _on_type_changed(self):
         t = self._type_combo.currentData()
         self._solid_widget.setVisible(t == "solid")
         self._grad_widget.setVisible(t == "gradient")
         self.adjustSize()
+        self._trigger_preview()
 
     # ── Result ────────────────────────────────────────────────────────────
 
@@ -134,3 +141,16 @@ class FillLayerDialog(QDialog):
         if t == "gradient":
             return {"type": "gradient", "color1": self._color1, "color2": self._color2}
         return {"type": "solid", "color": self._color}
+
+    def _trigger_preview(self):
+        self.layer.fill_data = self.result_data()
+        self.canvas_refresh()
+
+    def accept(self):
+        self.layer.fill_data = self.result_data()
+        super().accept()
+
+    def reject(self):
+        self.layer.fill_data = self._original_data
+        self.canvas_refresh()
+        super().reject()

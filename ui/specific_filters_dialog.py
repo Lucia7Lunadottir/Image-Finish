@@ -136,6 +136,9 @@ class SpecificFiltersDialog(QDialog):
             self.disp_y = np.broadcast_to(Y, (h, w)).astype(np.float32).copy()
             self._undo_stack = []
             
+            from PyQt6.QtGui import QShortcut, QKeySequence
+            QShortcut(QKeySequence("Ctrl+Z"), self).activated.connect(self.undo)
+            
         self._timer = QTimer(self)
         self._timer.setSingleShot(True)
         self._timer.setInterval(60)

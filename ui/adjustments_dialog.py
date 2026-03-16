@@ -231,16 +231,15 @@ class _AdjustDialog(QDialog):
 
     _DEBOUNCE_MS = 40
 
-    def __init__(self, title: str, layer, canvas_refresh, parent=None):
+    def __init__(self, title: str, image: QImage, parent=None):
         super().__init__(parent)
         self.setWindowTitle(title)
         self.setModal(True)
         self.setMinimumWidth(380)
 
-        self._layer          = layer
-        self._original       = layer.image.copy()           # premul, for restore
-        self._orig_argb32    = _to_argb32(self._original)  # ARGB32, for fast apply
-        self._canvas_refresh = canvas_refresh
+        self._image          = image
+        self._original       = image.copy()
+        self._orig_argb32    = _to_argb32(self._original)
 
         self._timer = QTimer(self)
         self._timer.setSingleShot(True)
@@ -266,16 +265,61 @@ class _AdjustDialog(QDialog):
             self._btns.addButton(reset_btn, QDialogButtonBox.ButtonRole.ResetRole)
         self._vbox.addWidget(self._btns)
 
+    def _get_auto_data(self):
+        d = {}
+        for k, v in self.__dict__.items():
+            if k == "_lut": d["lut"] = v
+            elif k == "_color": d["color"] = v
+            elif k == "_shadows": d["shadows"] = v
+            elif k == "_highlights": d["highlights"] = v
+            elif hasattr(v, "value") and callable(v.value):
+                try: d[k.lstrip('_')] = v.value()
+                except TypeError: pass
+            elif hasattr(v, "color") and callable(v.color):
+                try: d[k.lstrip('_')] = v.color()
+                except TypeError: pass
+            elif hasattr(v, "isChecked") and callable(v.isChecked):
+                try: d[k.lstrip('_')] = v.isChecked()
+                except TypeError: pass
+        
+        d["type"] = getattr(self, "_adj_type", "unknown")
+        if d["type"] in ("", "unknown"):
+            n = self.__class__.__name__.lower()
+            if "level" in n: d["type"] = "levels"
+            elif "exposure" in n: d["type"] = "exposure"
+            elif "vibrance" in n: d["type"] = "vibrance"
+            elif "black" in n: d["type"] = "black_white"
+            elif "poster" in n: d["type"] = "posterize"
+            elif "thresh" in n: d["type"] = "threshold"
+            elif "photo" in n: d["type"] = "photo_filter"
+            elif "grad" in n: d["type"] = "gradient_map"
+            elif "lookup" in n: d["type"] = "color_lookup"
+            elif "hdr" in n: d["type"] = "hdr_toning"
+            elif "brightness" in n: d["type"] = "brightness_contrast"
+            elif "hue" in n: d["type"] = "hue_saturation"
+        return d
+
     def _on_change(self):
         """Slider moved — (re)start debounce timer."""
+        if getattr(self, "_is_adj_layer", False):
+            self._layer.adjustment_data = self._get_auto_data()
         self._timer.start()
 
     def _apply_preview(self):
         raise NotImplementedError
 
+    def accept(self):
+        self._timer.stop()
+        if getattr(self, "_is_adj_layer", False):
+            self._layer.adjustment_data = self._get_auto_data()
+        super().accept()
+
     def reject(self):
         self._timer.stop()
-        self._layer.image = self._original.copy()
+        if getattr(self, "_is_adj_layer", False):
+            self._layer.adjustment_data = self._orig_adj_data
+        else:
+            self._layer.image = self._original.copy()
         self._canvas_refresh()
         super().reject()
 

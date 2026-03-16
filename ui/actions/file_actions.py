@@ -23,34 +23,72 @@ class FileActionsMixin:
             self._open_file_path(path)
             
     def _open_file_path(self, path: str):
+        if path.lower().endswith(".imfn"):
+            try:
+                self._document = Document.load_from_imfn(path)
+                self._document.history = self._history
+                self._history.clear()
+                self._canvas.set_document(self._document)
+                self._filepath = path
+                self._refresh_layers()
+                self._update_mode_menu()
+                return
+            except Exception as e:
+                QMessageBox.critical(self, tr("err.title.error"), f"Failed to load IMFN: {e}")
+                return
+                
+        if path.lower().endswith(".psd"):
+            try:
+                from psd_tools import PSDImage
+                psd = PSDImage.open(path)
+                doc = Document(psd.width, psd.height)
+                doc.layers = []
+                from core.layer import Layer
+                from PyQt6.QtGui import QImage, QPainter
+                from PyQt6.QtCore import QPoint
+                for pl in psd:
+                    if pl.is_group(): continue
+                    pil_img = pl.topil()
+                    if not pil_img: continue
+                    if pil_img.mode != "RGBA": pil_img = pil_img.convert("RGBA")
+                    data = pil_img.tobytes("raw", "RGBA")
+                    qim = QImage(data, pil_img.width, pil_img.height, QImage.Format.Format_RGBA8888).copy()
+                    qim = qim.convertToFormat(QImage.Format.Format_ARGB32_Premultiplied)
+                    layer = Layer(pl.name, doc.width, doc.height)
+                    p = QPainter(layer.image)
+                    p.drawImage(QPoint(pl.left, pl.top), qim)
+                    p.end()
+                    layer.visible = pl.visible
+                    layer.opacity = pl.opacity / 255.0
+                    doc.layers.insert(0, layer)
+                if not doc.layers: doc.add_layer("Background")
+                doc.active_layer_index = len(doc.layers) - 1
+                self._add_tab(doc, path.split("/")[-1], path)
+                return
+            except ImportError:
+                QMessageBox.warning(self, tr("err.title.error"), "Please install 'psd-tools' (pip install psd-tools) to open PSD files.")
+                return
+            except Exception as e:
+                QMessageBox.critical(self, tr("err.title.error"), f"Failed to open PSD: {e}")
+                return
+
         from PyQt6.QtGui import QImage
         img = QImage(path)
         if img.isNull():
             QMessageBox.critical(self, tr("err.title.error"), tr("err.could_not_open", path=path))
             return
         img = img.convertToFormat(QImage.Format.Format_ARGB32_Premultiplied)
-        self._document = Document.__new__(Document)
-        self._document.width  = img.width()
-        self._document.height = img.height()
-        self._document.selection = None
+        
+        doc = Document(img.width(), img.height())
+        doc.layers.clear()
+        
         from core.layer import Layer
-        from PyQt6.QtCore import QPoint
-        layer = Layer.__new__(Layer)
-        layer.name = "Background"
-        layer.visible = True
-        layer.locked  = False
-        layer.opacity = 1.0
-        layer.blend_mode = "Normal"
-        layer.text_data  = None
-        layer.offset = QPoint(0, 0)
-        layer.image  = img
-        self._document.layers = [layer]
-        self._document.active_layer_index = 0
-        self._history.clear()
-        self._canvas.set_document(self._document)
-        self._filepath = path
-        self._refresh_layers()
-        self._update_mode_menu()
+        layer = Layer("Background", img.width(), img.height())
+        layer.image = img
+        doc.layers.append(layer)
+        
+        doc.active_layer_index = 0
+        self._add_tab(doc, path.split("/")[-1], path)
 
     def _save(self):
         if hasattr(self, "_filepath") and self._filepath:
@@ -72,11 +110,15 @@ class FileActionsMixin:
             self._do_save(path, flatten=True)
 
     def _do_save(self, path: str, flatten: bool = False):
-        if flatten:
-            img = self._document.get_composite()
-        else:
-            layer = self._document.get_active_layer()
-            img = layer.image if layer else self._document.get_composite()
+        if path.lower().endswith(".imfn"):
+            try:
+                self._document.save_to_imfn(path)
+                self._status.showMessage(tr("status.saved", path=path))
+            except Exception as e:
+                QMessageBox.critical(self, tr("err.title.save_error"), tr("err.could_not_save", path=path) + f"\n{e}")
+            return
+
+        img = self._document.get_composite()
         ok = img.save(path)
         if ok:
             self._status.showMessage(tr("status.saved", path=path))

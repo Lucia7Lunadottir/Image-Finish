@@ -124,6 +124,40 @@ class MainWindow(QMainWindow,
                  AdjustmentActionsMixin,
                  FilterActionsMixin):
 
+    @property
+    def _canvas(self) -> CanvasWidget:
+        if hasattr(self, "_doc_tabs") and self._doc_tabs.count() > 0:
+            return self._doc_tabs.currentWidget()
+        return None
+
+    @property
+    def _document(self):
+        c = self._canvas
+        return c.document if c else None
+
+    @_document.setter
+    def _document(self, val): pass
+
+    @property
+    def _history(self):
+        c = self._canvas
+        return getattr(c, "history", None) if c else None
+
+    @_history.setter
+    def _history(self, val): pass
+
+    @property
+    def _filepath(self):
+        c = self._canvas
+        return getattr(c, "filepath", None) if c else None
+
+    @_filepath.setter
+    def _filepath(self, path):
+        c = self._canvas
+        if c:
+            c.filepath = path
+            self._update_title()
+
     def __init__(self):
         super().__init__()
         self.setWindowTitle(tr("title.untitled"))
@@ -131,9 +165,7 @@ class MainWindow(QMainWindow,
         self._recent_files = []
         self._load_recent_files()
 
-        self._document = Document(800, 600, QColor(255, 255, 255))
-        self._history  = HistoryManager()
-        self._document.history = self._history
+        self.setAcceptDrops(True)
         self._tools    = _build_tool_registry(self)
         self._active_tool_name = "Brush"
 
@@ -142,9 +174,12 @@ class MainWindow(QMainWindow,
         self._lang_acts: dict[str, QAction] = {}
 
         self._build_ui()
+        
+        doc = Document(800, 600, QColor(255, 255, 255))
+        self._add_tab(doc, tr("title.untitled"))
+        
         self._wire_signals()
         self._activate_tool("Brush")
-        self._refresh_layers()
         self._push_history(tr("history.new_document"))
 
     # ================================================================== UI Build
@@ -176,8 +211,13 @@ class MainWindow(QMainWindow,
         self._toolbar = ToolBar()
         body_h.addWidget(self._toolbar)
 
-        self._canvas = CanvasWidget()
-        self._canvas.set_document(self._document)
+        self._doc_tabs = QTabWidget()
+        self._doc_tabs.setTabsClosable(True)
+        self._doc_tabs.setMovable(True)
+        self._doc_tabs.tabCloseRequested.connect(self._close_tab)
+        self._doc_tabs.currentChanged.connect(self._on_tab_changed)
+        self._doc_tabs.setObjectName("docTabs")
+        self._doc_tabs.setStyleSheet("QTabBar::tab { padding: 6px 14px; background: #1e1e2e; color: #a6adc8; border-right: 1px solid #313244; } QTabBar::tab:selected { background: #313244; color: #cdd6f4; font-weight: bold; }")
 
         right = QWidget()
         right.setObjectName("panel")
@@ -203,7 +243,7 @@ class MainWindow(QMainWindow,
         right_v.addWidget(self._tabs, 1)
 
         splitter = QSplitter(Qt.Orientation.Horizontal)
-        splitter.addWidget(self._canvas)
+        splitter.addWidget(self._doc_tabs)
         splitter.addWidget(right)
         splitter.setSizes([self.width() - 260, 260])
         splitter.setStretchFactor(0, 1) # Холст будет растягиваться
@@ -343,6 +383,8 @@ class MainWindow(QMainWindow,
         self._act(layer_m, "menu.new_layer",       self._add_layer,       QKeySequence("Ctrl+Shift+N"))
         self._act(layer_m, "menu.duplicate_layer", self._duplicate_layer, QKeySequence("Ctrl+J"))
         self._act(layer_m, "menu.delete_layer",    self._delete_layer)
+        layer_m.addSeparator()
+        self._act(layer_m, "menu.export_layer_png", self._export_layer_png)
         layer_m.addSeparator()
         self._act(layer_m, "menu.create_clipping", self._toggle_clipping_mask, QKeySequence("Ctrl+Alt+G"))
 
@@ -561,16 +603,13 @@ class MainWindow(QMainWindow,
         self._refresh_layers()
 
     def _canvas_refresh(self):
-        self._canvas._cache_dirty = True
-        self._canvas.update()
+        if self._canvas:
+            self._canvas._cache_dirty = True
+            self._canvas.update()
 
     # ================================================================= Signals
     def _wire_signals(self):
         self._toolbar.tool_selected.connect(self._activate_tool)
-        self._canvas.document_changed.connect(self._on_doc_changed)
-        self._canvas.pixels_changed.connect(self._on_pixels_changed)
-        self._canvas.color_picked.connect(self._color_panel.set_fg)
-        self._canvas.tool_state_changed.connect(self._opts_bar.update_tool_state)
         self._color_panel.fg_changed.connect(self._on_fg_changed)
         self._color_panel.bg_changed.connect(self._on_bg_changed)
         self._opts_bar.option_changed.connect(self._on_opt_changed)
@@ -614,6 +653,8 @@ class MainWindow(QMainWindow,
         self._layers_panel.layer_edit.connect(self._on_edit_layer)
         self._layers_panel.layer_smart_object.connect(self._new_smart_object)
         self._layers_panel.layer_rasterize.connect(self._rasterize_layer)
+        if hasattr(self._layers_panel, "layer_export_png"):
+            self._layers_panel.layer_export_png.connect(self._export_layer_png)
         self._layers_panel.layer_styles_requested.connect(self._open_layer_styles)
         if hasattr(self._layers_panel, "layer_clear_smart_filters"):
             self._layers_panel.layer_clear_smart_filters.connect(self._clear_smart_filters)
@@ -621,6 +662,49 @@ class MainWindow(QMainWindow,
         self._channels_panel.save_requested.connect(self._save_selection)
         self._channels_panel.load_requested.connect(self._load_selection_btn)
         self._channels_panel.delete_requested.connect(self._delete_alpha_channel)
+
+    def _add_tab(self, doc, title, filepath=None):
+        canvas = CanvasWidget()
+        canvas.set_document(doc)
+        from core.history import HistoryManager
+        canvas.history = HistoryManager()
+        doc.history = canvas.history
+        canvas.filepath = filepath
+        if hasattr(self, "_doc_tabs") and self._doc_tabs.count() > 0:
+            fc = self._doc_tabs.widget(0)
+            canvas.tool_opts = dict(fc.tool_opts)
+            canvas.fg_color = fc.fg_color
+            canvas.bg_color = fc.bg_color
+        else:
+            cp = getattr(self, "_color_panel", None)
+            canvas.fg_color = getattr(cp, "_fg", QColor(0, 0, 0))
+            canvas.bg_color = getattr(cp, "_bg", QColor(255, 255, 255))
+        canvas.document_changed.connect(self._on_doc_changed)
+        canvas.pixels_changed.connect(self._on_pixels_changed)
+        canvas.color_picked.connect(self._color_panel.set_fg)
+        canvas.tool_state_changed.connect(self._opts_bar.update_tool_state)
+        tool = self._tools.get(self._active_tool_name)
+        canvas.active_tool = tool
+        idx = self._doc_tabs.addTab(canvas, title)
+        self._doc_tabs.setCurrentIndex(idx)
+        return canvas
+
+    def _close_tab(self, index: int):
+        canvas = self._doc_tabs.widget(index)
+        self._doc_tabs.removeTab(index)
+        canvas.deleteLater()
+        if self._doc_tabs.count() == 0:
+            doc = Document(800, 600, QColor(255, 255, 255))
+            self._add_tab(doc, tr("title.untitled"))
+
+    def _on_tab_changed(self, index: int):
+        if index < 0: return
+        self._refresh_layers()
+        self._update_mode_menu()
+        self._update_title()
+        self._canvas_refresh()
+        if self._canvas and self._canvas.active_tool:
+            self._canvas._emit_tool_state()
 
     # ================================================================= Tools
     def _commit_move_transform(self):
@@ -696,10 +780,12 @@ class MainWindow(QMainWindow,
         if isinstance(tool, EyedropperTool):
             tool.color_picked_callback = lambda c: (
                 self._color_panel.set_fg(c),
-                self._canvas.__setattr__("fg_color", c),
+                self._on_fg_changed(c),
             )
-        self._canvas.active_tool = tool
-        self._canvas._update_cursor()
+        for i in range(self._doc_tabs.count()):
+            c = self._doc_tabs.widget(i)
+            c.active_tool = tool
+            c._update_cursor()
         self._opts_bar.switch_to(name)
         self._toolbar.set_active(name)
         self._opts_bar.update_tool_state(None)
@@ -880,6 +966,7 @@ class MainWindow(QMainWindow,
         ))
 
     def _update_status(self, msg: str = ""):
+        if not self._document: return
         doc = self._document
         layer = doc.get_active_layer()
         layer_name = layer.name if layer else "—"
@@ -890,18 +977,25 @@ class MainWindow(QMainWindow,
         )
 
     def _update_title(self):
+        if not self._document: return
         mode = getattr(self._document, "color_mode", "RGB")
         depth = getattr(self._document, "bit_depth", 8)
         mode_str = f"{mode}/{depth}"
-        if hasattr(self, "_filepath") and self._filepath:
-            self._add_recent_file(self._filepath)
-            name = self._filepath.split("/")[-1]
+        fp = self._filepath
+        if fp:
+            self._add_recent_file(fp)
+            name = fp.split("/")[-1]
             self.setWindowTitle(tr("title.with_file", name=name, mode=mode_str))
+            if hasattr(self, "_doc_tabs") and self._doc_tabs.currentIndex() >= 0:
+                self._doc_tabs.setTabText(self._doc_tabs.currentIndex(), name)
         else:
             self.setWindowTitle(tr("title.canvas", w=self._document.width, h=self._document.height, mode=mode_str))
+            if hasattr(self, "_doc_tabs") and self._doc_tabs.currentIndex() >= 0:
+                self._doc_tabs.setTabText(self._doc_tabs.currentIndex(), tr("title.untitled"))
             
     def _update_mode_menu(self):
         if not hasattr(self, "_act_mode_rgb"): return
+        if not self._document: return
         mode = getattr(self._document, "color_mode", "RGB")
         depth = getattr(self._document, "bit_depth", 8)
         self._act_mode_bitmap.setChecked(mode == "Bitmap")
@@ -1013,10 +1107,14 @@ class MainWindow(QMainWindow,
 
     # ================================================================= Colour / Options
     def _on_fg_changed(self, c: QColor):
-        self._canvas.fg_color = c
+        if not hasattr(self, "_doc_tabs"): return
+        for i in range(self._doc_tabs.count()):
+            self._doc_tabs.widget(i).fg_color = c
 
     def _on_bg_changed(self, c: QColor):
-        self._canvas.bg_color = c
+        if not hasattr(self, "_doc_tabs"): return
+        for i in range(self._doc_tabs.count()):
+            self._doc_tabs.widget(i).bg_color = c
 
     def _on_opt_changed(self, key: str, value):
         if key == "align_layer":
@@ -1089,7 +1187,9 @@ class MainWindow(QMainWindow,
                 self._refresh_layers()
                 self._canvas_refresh()
             return
-        self._canvas.tool_opts[key] = value
+        if not hasattr(self, "_doc_tabs"): return
+        for i in range(self._doc_tabs.count()):
+            self._doc_tabs.widget(i).tool_opts[key] = value
 
     def _on_layer_blend_mode(self, mode: str):
         layer = self._document.get_active_layer()
@@ -1308,39 +1408,112 @@ class MainWindow(QMainWindow,
         self._refresh_layers()
 
     def _get_adj_dialog(self, layer, t):
+        is_adj = getattr(layer, "layer_type", "raster") == "adjustment"
+        target_img = self._document.get_composite() if is_adj else layer.image
+
+        class LayerProxy:
+            def __init__(self, real, img):
+                self.__dict__["_real"] = real
+                self.__dict__["image"] = img
+            def __getattr__(self, name):
+                return getattr(self._real, name)
+            def __setattr__(self, name, value):
+                if name == "image":
+                    self.__dict__["image"] = value
+                    if getattr(self._real, "layer_type", "raster") != "adjustment":
+                        self._real.image = value
+                elif name == "adjustment_data":
+                    self._real.adjustment_data = value
+                else:
+                    setattr(self._real, name, value)
+
+        proxy = LayerProxy(layer, target_img)
+        dlg_ref = [None]
+
+        def scrape_data():
+            d = {"type": t}
+            dlg = dlg_ref[0]
+            if not dlg: return d
+            for k, v in dlg.__dict__.items():
+                if k == "_lut": d["lut"] = v
+                elif hasattr(v, "value") and callable(v.value):
+                    try: d[k.lstrip('_')] = v.value()
+                    except TypeError: pass
+                elif hasattr(v, "color") and callable(v.color):
+                    try: d[k.lstrip('_')] = v.color()
+                    except TypeError: pass
+                elif hasattr(v, "isChecked") and callable(v.isChecked):
+                    try: d[k.lstrip('_')] = v.isChecked()
+                    except TypeError: pass
+            return d
+
+        def wrapped_refresh():
+            if is_adj:
+                layer.adjustment_data = scrape_data()
+            self._canvas_refresh()
+
+        import inspect
+        def create_dlg(DialogClass):
+            sig = inspect.signature(DialogClass.__init__)
+            params = [p for p in sig.parameters.values() if p.name != 'self']
+            if len(params) >= 3 and params[1].name in ("canvas_refresh", "cb"):
+                return DialogClass(proxy, wrapped_refresh, self)
+            else:
+                dlg_inst = DialogClass(target_img, self)
+                dlg_inst._canvas_refresh = wrapped_refresh
+                return dlg_inst
+
         if t == "levels":
             from ui.levels_dialog import LevelsDialog
-            return LevelsDialog(layer, self._canvas_refresh, self)
+            dlg = create_dlg(LevelsDialog)
         elif t == "exposure":
             from ui.more_adjustments import ExposureDialog
-            return ExposureDialog(layer, self._canvas_refresh, self)
+            dlg = create_dlg(ExposureDialog)
         elif t == "vibrance":
             from ui.more_adjustments import VibranceDialog
-            return VibranceDialog(layer, self._canvas_refresh, self)
+            dlg = create_dlg(VibranceDialog)
         elif t == "black_white":
             from ui.more_adjustments import BlackWhiteDialog
-            return BlackWhiteDialog(layer, self._canvas_refresh, self)
+            dlg = create_dlg(BlackWhiteDialog)
         elif t == "posterize":
             from ui.more_adjustments import PosterizeDialog
-            return PosterizeDialog(layer, self._canvas_refresh, self)
+            dlg = create_dlg(PosterizeDialog)
         elif t == "threshold":
             from ui.more_adjustments import ThresholdDialog
-            return ThresholdDialog(layer, self._canvas_refresh, self)
+            dlg = create_dlg(ThresholdDialog)
         elif t == "photo_filter":
             from ui.more_adjustments import PhotoFilterDialog
-            return PhotoFilterDialog(layer, self._canvas_refresh, self)
+            dlg = create_dlg(PhotoFilterDialog)
         elif t == "gradient_map":
             from ui.more_adjustments import GradientMapDialog
-            return GradientMapDialog(layer, self._canvas_refresh, self)
+            dlg = create_dlg(GradientMapDialog)
         elif t == "color_lookup":
-            from ui.more_adjustments import ColorLookupDialog
-            return ColorLookupDialog(layer, self._canvas_refresh, self)
+            from core.adjustments.color_lookup import ColorLookupDialog
+            dlg = create_dlg(ColorLookupDialog)
         elif t == "hdr_toning":
             from core.adjustments.hdr_toning import HDRToningDialog
-            return HDRToningDialog(layer, self._canvas_refresh, self)
+            dlg = create_dlg(HDRToningDialog)
         else:
             from ui.adjustment_layer_dialog import AdjustmentLayerDialog
             return AdjustmentLayerDialog(layer, self._canvas_refresh, self)
+            
+        dlg_ref[0] = dlg
+        if is_adj:
+            dlg._is_adj_layer = True
+            dlg._layer = layer
+            import copy
+            dlg._orig_adj_data = copy.deepcopy(layer.adjustment_data) if layer.adjustment_data else {}
+            dlg._adj_type = t
+            
+            layer.adjustment_data = scrape_data()
+            
+            dlg.accepted.connect(lambda: setattr(layer, "adjustment_data", scrape_data()))
+            def on_reject():
+                layer.adjustment_data = dlg._orig_adj_data
+                self._canvas_refresh()
+            dlg.rejected.connect(on_reject)
+
+        return dlg
 
     def _new_adj_layer(self, adj_type: str):
         if not self._document: return
@@ -1420,6 +1593,15 @@ class MainWindow(QMainWindow,
                 comp.copy(c).save(f"{dir_path}/slice_{i+1}.png")
                 count += 1
         self._status.showMessage(tr("status.slices_exported", count=count))
+
+    def _export_layer_png(self):
+        if not self._document: return
+        layer = self._document.get_active_layer()
+        if not layer or layer.image.isNull(): return
+        path, _ = QFileDialog.getSaveFileName(self, tr("menu.export_layer_png"), f"{layer.name}.png", "PNG (*.png)")
+        if path:
+            layer.image.save(path)
+            self._status.showMessage(tr("status.saved", path=path))
 
     def _get_define_image(self):
         doc = self._document
@@ -1523,6 +1705,36 @@ class MainWindow(QMainWindow,
                     tool.cancel_transform(self._document)
                     self._canvas_refresh()
         super().keyPressEvent(e)
+        
+    def dragEnterEvent(self, ev):
+        if ev.mimeData().hasUrls():
+            ev.acceptProposedAction()
+        else:
+            super().dragEnterEvent(ev)
+            
+    def dropEvent(self, ev):
+        shift_pressed = bool(ev.modifiers() & Qt.KeyboardModifier.ShiftModifier)
+        for url in ev.mimeData().urls():
+            path = url.toLocalFile()
+            if not path: continue
+            if shift_pressed and self._document:
+                from PyQt6.QtGui import QImage
+                import os
+                img = QImage(path)
+                if not img.isNull():
+                    self._push_history(tr("history.add_layer"))
+                    img = img.convertToFormat(QImage.Format.Format_ARGB32_Premultiplied)
+                    name = os.path.basename(path)
+                    idx = self._document.active_layer_index
+                    layer = self._document.add_layer(name, idx + 1)
+                    layer.image = img
+                    layer.offset = QPoint((self._document.width - img.width()) // 2, (self._document.height - img.height()) // 2)
+                    self._refresh_layers()
+                    self._canvas_refresh()
+                else:
+                    self._open_file_path(path)
+            else:
+                self._open_file_path(path)
 
     def _apply_text_styles(self):
         from tools.other_tools import _render_text, TextTool
