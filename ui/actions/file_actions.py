@@ -19,8 +19,10 @@ class FileActionsMixin:
     def _open_file(self):
         path, _ = QFileDialog.getOpenFileName(
             self, tr("dlg.open_image"), "", tr("dlg.open_filter"))
-        if not path:
-            return
+        if path:
+            self._open_file_path(path)
+            
+    def _open_file_path(self, path: str):
         from PyQt6.QtGui import QImage
         img = QImage(path)
         if img.isNull():

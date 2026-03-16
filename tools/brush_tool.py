@@ -90,6 +90,7 @@ class BrushTool(BaseTool):
     name     = "Brush"
     icon     = "🖌️"
     shortcut = "B"
+    modifies_canvas_on_move = True
 
     def __init__(self):
         self._last_pos: QPoint | None = None
@@ -119,6 +120,14 @@ class BrushTool(BaseTool):
         self._stroke_opacity = float(opts.get("brush_opacity", 1.0))
         sel = doc.selection
         self._stroke_clip = sel if (sel and not sel.isEmpty()) else None
+        
+        layer.active_stroke = {
+            "img": self._stroke_img,
+            "opacity": self._stroke_opacity,
+            "mode": self.stroke_composition_mode(opts),
+            "clip": self._stroke_clip
+        }
+        
         self._paint(pos, pos, doc, fg, opts, self._last_pressure, self._last_pressure)
 
     def on_move(self, pos, doc, fg, bg, opts):
@@ -135,6 +144,34 @@ class BrushTool(BaseTool):
             target = self._target_img
             lock_a = getattr(layer, "lock_alpha", False) and target is layer.image
             
+            stroke_to_draw = self._stroke_img
+            offset_style = (getattr(layer, "layer_styles", None) or {}).get("offset", {})
+            if offset_style.get("enabled") and not getattr(layer, "editing_mask", False):
+                dx_pct = offset_style.get("dx_pct", 0)
+                dy_pct = offset_style.get("dy_pct", 0)
+                edge_mode = offset_style.get("edge_mode", "wrap")
+                if dx_pct != 0 or dy_pct != 0:
+                    h, w = stroke_to_draw.height(), stroke_to_draw.width()
+                    dx = -int(w * dx_pct / 100.0)
+                    dy = -int(h * dy_pct / 100.0)
+                    import numpy as np, ctypes
+                    ptr = stroke_to_draw.constBits()
+                    buf = (ctypes.c_uint8 * stroke_to_draw.sizeInBytes()).from_address(int(ptr))
+                    arr = np.ndarray((h, stroke_to_draw.bytesPerLine() // 4, 4), dtype=np.uint8, buffer=buf)
+                    if edge_mode == "wrap":
+                        res_arr = np.roll(np.roll(arr, dy, axis=0), dx, axis=1)
+                    elif edge_mode == "repeat":
+                        Y, X = np.ogrid[:h, :w]
+                        Y = np.clip(Y - dy, 0, h - 1); X = np.clip(X - dx, 0, w - 1)
+                        res_arr = arr[Y, X]
+                    else:
+                        res_arr = np.zeros_like(arr)
+                        y1_src, y2_src = max(0, -dy), min(h, h - dy); x1_src, x2_src = max(0, -dx), min(w, w - dx)
+                        y1_dst, y2_dst = max(0, dy), min(h, h + dy); x1_dst, x2_dst = max(0, dx), min(w, w + dx)
+                        if y1_src < y2_src and x1_src < x2_src: res_arr[y1_dst:y2_dst, x1_dst:x2_dst] = arr[y1_src:y2_src, x1_src:x2_src]
+                    stroke_to_draw = QImage(res_arr.data, w, h, w*4, QImage.Format.Format_ARGB32_Premultiplied)
+                    stroke_to_draw.ndarray = res_arr
+
             if lock_a:
                 import ctypes
                 w, h = target.width(), target.height()
@@ -149,7 +186,7 @@ class BrushTool(BaseTool):
                 painter.setClipPath(self._stroke_clip.translated(-layer.offset.x(), -layer.offset.y()))
             painter.setCompositionMode(self.stroke_composition_mode(opts))
             painter.setOpacity(max(0.0, min(1.0, float(self._stroke_opacity))))
-            painter.drawImage(0, 0, self._stroke_img)
+            painter.drawImage(0, 0, stroke_to_draw)
             painter.end()
 
             if lock_a:
@@ -160,6 +197,9 @@ class BrushTool(BaseTool):
                 arr[..., 1] = np.clip(arr[..., 1] * ratio, 0, 255).astype(np.uint8)
                 arr[..., 2] = np.clip(arr[..., 2] * ratio, 0, 255).astype(np.uint8)
                 arr[..., 3] = orig_alpha
+
+        if layer and hasattr(layer, "active_stroke"):
+            del layer.active_stroke
 
         self._last_pos = None
         self._stroke_layer = None
@@ -324,7 +364,7 @@ class BrushTool(BaseTool):
             # dict.fromkeys убирает дубликаты (например, если рисуем прямо по оси), сохраняя порядок
             for target_cx, target_cy in list(dict.fromkeys(centers)):
                 painter.save()
-                painter.translate(target_cx, target_cy)
+                painter.translate(target_cx - layer.offset.x(), target_cy - layer.offset.y())
                 current_angle = random.uniform(0, 360) if angle_random else angle
                 if current_angle != 0.0:
                     painter.rotate(current_angle)
