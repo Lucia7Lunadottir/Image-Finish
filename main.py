@@ -43,7 +43,9 @@ def _load_custom_fonts():
 def main():
     app = QApplication(sys.argv)
     app.setApplicationName("ImageFinish")
-    app.setApplicationVersion("0.1.0")
+    app.setApplicationVersion("1.1.0")
+    icon_path = os.path.join(os.getcwd(), 'icon.png')
+    app.setWindowIcon(QIcon(icon_path))
 
     _load_custom_fonts()
 
