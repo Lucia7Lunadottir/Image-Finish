@@ -1,4 +1,4 @@
-# Maintainer: lucial <lucial@example.com>
+# Maintainer: lucial <bordiyan20035@gmail.com>
 pkgname=imagefinish
 pkgver=1.1.0
 pkgrel=1
@@ -8,37 +8,36 @@ url="https://github.com/7Lucia7Lokidottir7/Linux-Photoshop"
 license=('MIT')
 depends=('python' 'python-pyqt6')
 optdepends=('python-numpy: faster pixel operations')
-source=("git+https://github.com/7Lucia7Lokidottir7/Linux-Photoshop.git")
+makedepends=('git')
+source=("$pkgname::git+$url.git")
 sha256sums=('SKIP')
 
 pkgver() {
-    cd "Linux-Photoshop"
+    cd "$srcdir/$pkgname"
     git describe --tags --long 2>/dev/null | sed 's/\([^-]*-g\)/r\1/;s/-/./g' \
-        || printf "1.1.0.r%s.%s" "$(git rev-list --count HEAD)" "$(git rev-parse --short HEAD)"
+        || printf "r%s.%s" "$(git rev-list --count HEAD)" "$(git rev-parse --short HEAD)"
 }
 
 package() {
-    cd "Linux-Photoshop"
+    cd "$srcdir/$pkgname"
 
-    # App files
-    install -dm755 "${pkgdir}/usr/share/${pkgname}"
+    # Файлы приложения
+    install -dm755 "$pkgdir/usr/share/$pkgname"
     cp -r core locales tools ui utils brushes fonts patterns shapes \
-        "${pkgdir}/usr/share/${pkgname}/"
-    install -Dm644 main.py "${pkgdir}/usr/share/${pkgname}/main.py"
+        "$pkgdir/usr/share/$pkgname/"
+    install -m644 main.py         "$pkgdir/usr/share/$pkgname/"
+    install -m644 settings.json   "$pkgdir/usr/share/$pkgname/"
 
-    # Icon
-    install -Dm644 icon.png "${pkgdir}/usr/share/pixmaps/${pkgname}.png"
+    # Иконка
+    install -Dm644 icon.png "$pkgdir/usr/share/pixmaps/$pkgname.png"
 
-    # Launcher script
-    install -dm755 "${pkgdir}/usr/bin"
-    cat > "${pkgdir}/usr/bin/${pkgname}" <<'EOF'
-#!/bin/bash
-cd /usr/share/imagefinish
-exec python3 main.py "$@"
-EOF
-    chmod 755 "${pkgdir}/usr/bin/${pkgname}"
-
-    # .desktop entry
+    # .desktop
     install -Dm644 imagefinish.desktop \
-        "${pkgdir}/usr/share/applications/${pkgname}.desktop"
+        "$pkgdir/usr/share/applications/$pkgname.desktop"
+
+    # Лаунчер в /usr/bin
+    install -Dm755 /dev/stdin "$pkgdir/usr/bin/$pkgname" << 'LAUNCHER'
+#!/bin/bash
+exec python3 /usr/share/imagefinish/main.py "$@"
+LAUNCHER
 }
