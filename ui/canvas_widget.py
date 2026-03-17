@@ -21,6 +21,7 @@ class CanvasWidget(QWidget):
     pixels_changed   = pyqtSignal()
     color_picked     = pyqtSignal(QColor)
     tool_state_changed = pyqtSignal(object)
+    cursor_info      = pyqtSignal(int, int, QColor)  # doc x, doc y, pixel color
 
     def __init__(self, parent=None):
         super().__init__(parent)
@@ -1310,6 +1311,15 @@ class CanvasWidget(QWidget):
                 self.active_tool.on_hover(doc_pos, self.document, self.fg_color, self.bg_color, self.tool_opts)
                 self._update_cursor()
         self._emit_tool_state()
+
+        # Cursor info for Info panel
+        if self.document:
+            dp = self.to_doc(ev.position())
+            cx, cy = dp.x(), dp.y()
+            if 0 <= cx < self.document.width and 0 <= cy < self.document.height:
+                layer = self.document.get_active_layer()
+                color = QColor(layer.image.pixel(cx, cy)) if layer else QColor(0, 0, 0, 0)
+                self.cursor_info.emit(cx, cy, color)
 
     def mouseReleaseEvent(self, ev):
         if getattr(self, "_dragging_sym_center", False) and ev.button() == Qt.MouseButton.LeftButton:

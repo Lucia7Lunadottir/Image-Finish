@@ -5,6 +5,8 @@ from core.locale import tr
 
 class LayerActionsMixin:
     def _refresh_layers(self):
+        if not self._document:
+            return
         self._layers_panel.refresh(self._document)
         self._update_status()
 

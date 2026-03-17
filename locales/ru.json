@@ -926,5 +926,70 @@
   "gradient_editor.position": "Позиция:",
   "gradient_editor.color":    "Цвет:",
   "gradient_editor.delete":   "Удалить",
-  "gradient_editor.presets":  "Пресеты:"
+  "gradient_editor.presets":  "Пресеты:",
+
+  "welcome.new":       "Новый файл",
+  "welcome.open":      "Открыть\u2026",
+  "welcome.recent":    "Последние файлы",
+  "welcome.no_recent": "Нет последних файлов",
+
+  "panel.history":     "История",
+  "panel.navigator":   "Навигатор",
+  "panel.info":        "Инфо",
+  "panel.histogram":   "Гистограмма",
+  "panel.brushes":     "Кисти",
+  "panel.swatches_tab":"Образцы",
+  "panel.paths":       "Пути",
+  "panel.properties":  "Свойства",
+  "panel.actions":     "Операции",
+  "panel.tool_presets":"Наборы",
+  "panel.character":   "Символ",
+  "panel.paragraph":   "Абзац",
+  "panel.glyphs":      "Глифы",
+
+  "panel.history.current": "\u2605 Текущее",
+
+  "paths.make_sel":    "Сделать выделение",
+  "paths.fill":        "Залить контур",
+  "paths.stroke":      "Обвести контур",
+  "paths.delete":      "Удалить контур",
+  "paths.no_paths":    "(нет контуров)",
+  "paths.work_path":   "Рабочий контур",
+
+  "props.name":        "Имя:",
+  "props.type":        "Тип:",
+  "props.blend":       "Режим наложения:",
+  "props.opacity":     "Непрозрачность:",
+  "props.size":        "Размер:",
+  "props.visible":     "Видимость:",
+
+  "actions.play":      "\u25b6 Применить",
+  "actions.group":     "Стандартные операции",
+
+  "presets.save":      "Сохранить текущий",
+  "presets.load":      "Загрузить",
+  "presets.delete":    "Удалить",
+
+  "char.family":       "Шрифт:",
+  "char.size":         "Размер:",
+  "char.tracking":     "Трекинг:",
+  "char.leading":      "Интерлиньяж:",
+  "char.color":        "Цвет:",
+
+  "para.align":        "Выравнивание:",
+  "para.indent_l":     "Левый отступ:",
+  "para.indent_r":     "Правый отступ:",
+  "para.indent_first": "Первая строка:",
+  "para.before":       "До абзаца:",
+  "para.after":        "После абзаца:",
+
+  "glyphs.search":     "Поиск\u2026",
+  "glyphs.font":       "Шрифт:",
+  "glyphs.code":       "Код:",
+
+  "menu.window":       "Окно",
+
+  "props.transform":   "ТРАНСФОРМАЦИЯ",
+  "props.align":       "ВЫРОВНЯТЬ ПО ХОЛСТУ",
+  "props.info":        "ИНФОРМАЦИЯ О СЛОЕ"
 }

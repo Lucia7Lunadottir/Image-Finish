@@ -1,5 +1,6 @@
 from PyQt6.QtWidgets import (QMainWindow, QWidget, QHBoxLayout, QVBoxLayout,
-                             QMenu, QStatusBar, QFileDialog, QMessageBox, QSplitter, QTabWidget)
+                             QMenu, QStatusBar, QFileDialog, QMessageBox, QSplitter, QTabWidget,
+                             QStackedWidget)
 from PyQt6.QtCore import Qt, QRectF, QRect, QPoint, QPointF, QSettings
 from PyQt6.QtGui import QAction, QKeySequence, QColor, QPainterPath, QPainter, QBrush
 
@@ -174,13 +175,11 @@ class MainWindow(QMainWindow,
         self._lang_acts: dict[str, QAction] = {}
 
         self._build_ui()
-        
-        doc = Document(800, 600, QColor(255, 255, 255))
-        self._add_tab(doc, tr("title.untitled"))
-        
+
+        self._welcome_panel.refresh_recent(self._recent_files)
+
         self._wire_signals()
         self._activate_tool("Brush")
-        self._push_history(tr("history.new_document"))
 
     # ================================================================== UI Build
     def _build_ui(self):
@@ -228,22 +227,96 @@ class MainWindow(QMainWindow,
 
         self._color_panel  = ColorPanel()
         self._layers_panel = LayersPanel()
-        
+
         from ui.channels_panel import ChannelsPanel
         self._channels_panel = ChannelsPanel()
-        
+
+        from ui.history_panel      import HistoryPanel
+        from ui.navigator_panel    import NavigatorPanel
+        from ui.info_panel         import InfoPanel
+        from ui.histogram_panel    import HistogramPanel
+        from ui.brushes_panel      import BrushesPanel
+        from ui.swatches_panel     import SwatchesPanel
+        from ui.paths_panel        import PathsPanel
+        from ui.properties_panel   import PropertiesPanel
+        from ui.actions_panel      import ActionsPanel
+        from ui.tool_presets_panel import ToolPresetsPanel
+        from ui.character_panel    import CharacterPanel
+        from ui.paragraph_panel    import ParagraphPanel
+        from ui.glyphs_panel       import GlyphsPanel
+
+        self._history_panel       = HistoryPanel()
+        self._navigator_panel     = NavigatorPanel()
+        self._info_panel          = InfoPanel()
+        self._histogram_panel     = HistogramPanel()
+        self._brushes_panel       = BrushesPanel()
+        self._swatches_panel      = SwatchesPanel()
+        self._paths_panel         = PathsPanel()
+        self._properties_panel    = PropertiesPanel()
+        self._actions_panel       = ActionsPanel()
+        self._tool_presets_panel  = ToolPresetsPanel()
+        self._character_panel     = CharacterPanel()
+        self._paragraph_panel     = ParagraphPanel()
+        self._glyphs_panel        = GlyphsPanel()
+
         self._tabs = QTabWidget()
         self._tabs.setObjectName("sidebarTabs")
-        self._tabs.addTab(self._layers_panel, tr("panel.layers"))
-        self._tabs.addTab(self._channels_panel, tr("panel.channels"))
-        
+        self._tabs.tabBar().setUsesScrollButtons(True)
+        self._tabs.addTab(self._layers_panel,      tr("panel.layers"))
+        self._tabs.addTab(self._channels_panel,    tr("panel.channels"))
+        self._tabs.addTab(self._history_panel,     tr("panel.history"))
+        self._tabs.addTab(self._navigator_panel,   tr("panel.navigator"))
+        self._tabs.addTab(self._info_panel,        tr("panel.info"))
+        self._tabs.addTab(self._histogram_panel,   tr("panel.histogram"))
+        self._tabs.addTab(self._brushes_panel,     tr("panel.brushes"))
+        self._tabs.addTab(self._swatches_panel,    tr("panel.swatches_tab"))
+        self._tabs.addTab(self._paths_panel,       tr("panel.paths"))
+        self._tabs.addTab(self._properties_panel,  tr("panel.properties"))
+        self._tabs.addTab(self._actions_panel,     tr("panel.actions"))
+        self._tabs.addTab(self._tool_presets_panel,tr("panel.tool_presets"))
+        self._tabs.addTab(self._character_panel,   tr("panel.character"))
+        self._tabs.addTab(self._paragraph_panel,   tr("panel.paragraph"))
+        self._tabs.addTab(self._glyphs_panel,      tr("panel.glyphs"))
+
         self._layers_panel._title_lbl.hide()
+
+        # Connect panel signals
+        self._history_panel.jump_requested.connect(self._history_jump)
+        self._navigator_panel.zoom_changed.connect(self._on_nav_zoom)
+        self._swatches_panel.fg_color_selected.connect(self._color_panel.set_fg)
+        self._swatches_panel.bg_color_selected.connect(self._color_panel.set_bg)
+        self._swatches_panel.add_swatch_requested.connect(
+            lambda: self._swatches_panel.add_swatch(self._color_panel._fg))
+        self._character_panel.option_changed.connect(self._on_opt_changed)
+        self._paragraph_panel.option_changed.connect(self._on_opt_changed)
+        self._glyphs_panel.char_inserted.connect(self._on_glyph_inserted)
+        self._actions_panel.action_requested.connect(self._on_action_requested)
+        self._tool_presets_panel.save_requested.connect(self._on_preset_save_requested)
+        self._tool_presets_panel.preset_selected.connect(self._on_preset_selected)
+        self._brushes_panel.brush_selected.connect(self._on_brush_selected)
+        self._paths_panel.make_selection_requested.connect(self._path_make_selection)
+        self._paths_panel.fill_path_requested.connect(self._path_fill)
+        self._paths_panel.stroke_path_requested.connect(self._path_stroke)
+        self._paths_panel.delete_path_requested.connect(self._path_delete)
+        self._properties_panel.transform_changed.connect(self._on_transform_changed)
+        self._properties_panel.align_requested.connect(self._do_align_layer)
 
         right_v.addWidget(self._color_panel)
         right_v.addWidget(self._tabs, 1)
 
+        from ui.welcome_panel import WelcomePanel
+        self._welcome_panel = WelcomePanel()
+        self._center_stack = QStackedWidget()
+        self._center_stack.addWidget(self._welcome_panel)  # index 0
+        self._center_stack.addWidget(self._doc_tabs)        # index 1
+        self._center_stack.setCurrentIndex(0)
+
+        self._welcome_panel.new_requested.connect(self._new_doc)
+        self._welcome_panel.open_requested.connect(self._open_file)
+        self._welcome_panel.open_path_requested.connect(self._open_file_path)
+
         splitter = QSplitter(Qt.Orientation.Horizontal)
-        splitter.addWidget(self._doc_tabs)
+        splitter.addWidget(self._center_stack)
         splitter.addWidget(right)
         splitter.setSizes([self.width() - 260, 260])
         splitter.setStretchFactor(0, 1) # Холст будет растягиваться
@@ -552,6 +625,23 @@ class MainWindow(QMainWindow,
         view_m.addSeparator()
         self._build_language_menu(view_m)
 
+        # Window — panel visibility
+        win_m = self._menu(mb, "menu.window")
+        self._panel_tab_acts: list[tuple[str, QAction]] = []
+        _panel_keys = [
+            "panel.layers", "panel.channels", "panel.history", "panel.navigator",
+            "panel.info", "panel.histogram", "panel.brushes", "panel.swatches_tab",
+            "panel.paths", "panel.properties", "panel.actions", "panel.tool_presets",
+            "panel.character", "panel.paragraph", "panel.glyphs",
+        ]
+        for idx, key in enumerate(_panel_keys):
+            act = QAction(tr(key), self)
+            act.setCheckable(True)
+            act.setChecked(True)
+            act.toggled.connect(lambda checked, i=idx: self._tabs.tabBar().setTabVisible(i, checked))
+            win_m.addAction(act)
+            self._panel_tab_acts.append((key, act))
+
     def _act(self, menu: QMenu, key: str, slot, shortcut=None) -> QAction:
         act = QAction(tr(key), self)
         if shortcut:
@@ -598,8 +688,33 @@ class MainWindow(QMainWindow,
         self._layers_panel.retranslate()
         self._color_panel.retranslate()
         self._channels_panel.retranslate()
-        self._tabs.setTabText(0, tr("panel.layers"))
-        self._tabs.setTabText(1, tr("panel.channels"))
+        self._tabs.setTabText(0,  tr("panel.layers"))
+        self._tabs.setTabText(1,  tr("panel.channels"))
+        self._tabs.setTabText(2,  tr("panel.history"))
+        self._tabs.setTabText(3,  tr("panel.navigator"))
+        self._tabs.setTabText(4,  tr("panel.info"))
+        self._tabs.setTabText(5,  tr("panel.histogram"))
+        self._tabs.setTabText(6,  tr("panel.brushes"))
+        self._tabs.setTabText(7,  tr("panel.swatches_tab"))
+        self._tabs.setTabText(8,  tr("panel.paths"))
+        self._tabs.setTabText(9,  tr("panel.properties"))
+        self._tabs.setTabText(10, tr("panel.actions"))
+        self._tabs.setTabText(11, tr("panel.tool_presets"))
+        self._tabs.setTabText(12, tr("panel.character"))
+        self._tabs.setTabText(13, tr("panel.paragraph"))
+        self._tabs.setTabText(14, tr("panel.glyphs"))
+        for panel in (self._history_panel, self._navigator_panel, self._info_panel,
+                      self._histogram_panel, self._brushes_panel, self._swatches_panel,
+                      self._paths_panel, self._properties_panel, self._actions_panel,
+                      self._tool_presets_panel, self._character_panel,
+                      self._paragraph_panel, self._glyphs_panel):
+            if hasattr(panel, "retranslate"):
+                panel.retranslate()
+        if hasattr(self, "_welcome_panel"):
+            self._welcome_panel.retranslate()
+        if hasattr(self, "_panel_tab_acts"):
+            for key, act in self._panel_tab_acts:
+                act.setText(tr(key))
         self._refresh_layers()
 
     def _canvas_refresh(self):
@@ -683,10 +798,14 @@ class MainWindow(QMainWindow,
         canvas.pixels_changed.connect(self._on_pixels_changed)
         canvas.color_picked.connect(self._color_panel.set_fg)
         canvas.tool_state_changed.connect(self._opts_bar.update_tool_state)
+        if hasattr(self, "_info_panel"):
+            canvas.cursor_info.connect(self._info_panel.update_info)
         tool = self._tools.get(self._active_tool_name)
         canvas.active_tool = tool
         idx = self._doc_tabs.addTab(canvas, title)
         self._doc_tabs.setCurrentIndex(idx)
+        if hasattr(self, "_center_stack"):
+            self._center_stack.setCurrentIndex(1)
         return canvas
 
     def _close_tab(self, index: int):
@@ -694,8 +813,8 @@ class MainWindow(QMainWindow,
         self._doc_tabs.removeTab(index)
         canvas.deleteLater()
         if self._doc_tabs.count() == 0:
-            doc = Document(800, 600, QColor(255, 255, 255))
-            self._add_tab(doc, tr("title.untitled"))
+            self._welcome_panel.refresh_recent(self._recent_files)
+            self._center_stack.setCurrentIndex(0)
 
     def _on_tab_changed(self, index: int):
         if index < 0: return
@@ -703,8 +822,33 @@ class MainWindow(QMainWindow,
         self._update_mode_menu()
         self._update_title()
         self._canvas_refresh()
+        self._sync_view_actions()
         if self._canvas and self._canvas.active_tool:
             self._canvas._emit_tool_state()
+        self._refresh_secondary_panels()
+        if hasattr(self, "_brushes_panel"):
+            self._brushes_panel.refresh(self._canvas)
+
+    def _sync_view_actions(self):
+        """Sync View menu action checked states with the current document/canvas."""
+        doc = self._document
+        canvas = self._canvas
+        if doc:
+            self._act_guides.setChecked(getattr(doc, "show_guides", True))
+            self._act_grid.setChecked(getattr(doc, "show_grid", False))
+            self._act_slices.setChecked(getattr(doc, "show_slices", True))
+            snap = getattr(doc, "snap_enabled", True)
+            self._act_snap.setChecked(snap)
+            self._act_snap_guides.setChecked(getattr(doc, "snap_to_guides", True))
+            self._act_snap_guides.setEnabled(snap)
+            self._act_snap_grid.setChecked(getattr(doc, "snap_to_grid", False))
+            self._act_snap_grid.setEnabled(snap)
+            self._act_snap_bounds.setChecked(getattr(doc, "snap_to_bounds", True))
+            self._act_snap_bounds.setEnabled(snap)
+            self._act_snap_layers.setChecked(getattr(doc, "snap_to_layers", True))
+            self._act_snap_layers.setEnabled(snap)
+        if canvas:
+            self._act_rulers.setChecked(getattr(canvas, "show_rulers", False))
 
     # ================================================================= Tools
     def _commit_move_transform(self):
@@ -837,6 +981,8 @@ class MainWindow(QMainWindow,
             self._canvas_refresh()
 
     def _on_channel_changed(self, ch: str):
+        if not self._canvas:
+            return
         self._canvas.view_channel = ch
         self._canvas_refresh()
 
@@ -921,6 +1067,7 @@ class MainWindow(QMainWindow,
 
     def _on_pixels_changed(self):
         self._update_status()
+        self._refresh_secondary_panels()
 
     def _on_doc_changed(self):
         self._refresh_layers()
@@ -931,6 +1078,20 @@ class MainWindow(QMainWindow,
             if state.doc_width != self._document.width or state.doc_height != self._document.height:
                 self._canvas.reset_zoom()
         self._update_title()
+        self._refresh_secondary_panels()
+
+    def _refresh_secondary_panels(self):
+        canvas = self._canvas
+        if hasattr(self, "_history_panel"):
+            self._history_panel.refresh(canvas)
+        if hasattr(self, "_navigator_panel"):
+            self._navigator_panel.refresh(canvas)
+        if hasattr(self, "_histogram_panel"):
+            self._histogram_panel.refresh(canvas)
+        if hasattr(self, "_properties_panel"):
+            self._properties_panel.refresh(canvas)
+        if hasattr(self, "_paths_panel"):
+            self._paths_panel.refresh(canvas)
 
     def _undo(self):
         tool = self._canvas.active_tool
@@ -951,6 +1112,8 @@ class MainWindow(QMainWindow,
         super()._redo()
 
     def _push_history(self, description: str):
+        if not self._document or not self._history:
+            return
         from core.history import clone_work_path
         self._history.push(HistoryState(
             description=description,
@@ -1865,6 +2028,8 @@ class MainWindow(QMainWindow,
             self._recent_files = self._recent_files[:30]
         self._save_recent_files()
         self._update_recent_menu()
+        if hasattr(self, "_welcome_panel"):
+            self._welcome_panel.refresh_recent(self._recent_files)
 
     def _remove_recent_file(self, path):
         if path in self._recent_files:
@@ -2088,4 +2253,215 @@ class MainWindow(QMainWindow,
             self._canvas_refresh()
             self._refresh_layers()
         else:
+            self._canvas_refresh()
+
+    # ================================================================= Panel handlers
+
+    def _history_jump(self, steps: int):
+        """Called by HistoryPanel.jump_requested: positive=undo N, negative=redo N."""
+        if not self._canvas:
+            return
+        if steps > 0:
+            for _ in range(steps):
+                self._undo()
+        elif steps < 0:
+            for _ in range(-steps):
+                self._redo()
+
+    def _on_nav_zoom(self, zoom_factor: float):
+        if not self._canvas:
+            return
+        current = self._canvas.zoom
+        if current > 0:
+            self._canvas._apply_zoom(zoom_factor / current, self._canvas.rect().center())
+
+    def _on_glyph_inserted(self, char: str):
+        """Insert a glyph character — for now copies to clipboard."""
+        from PyQt6.QtWidgets import QApplication
+        QApplication.clipboard().setText(char)
+
+    def _on_action_requested(self, action_name: str):
+        if not self._canvas or not self._document:
+            return
+        self._push_history(f"Before {action_name}")
+        from PyQt6.QtGui import QImage
+        import numpy as np
+        doc = self._document
+        layer = doc.get_active_layer()
+
+        if action_name == "Invert":
+            from ui.adjustments_dialog import apply_invert
+            if layer:
+                layer.image = apply_invert(layer.image)
+
+        elif action_name in ("Desaturate", "Grayscale Mode"):
+            from ui.adjustments_dialog import apply_hue_saturation
+            if layer:
+                src = layer.image.convertToFormat(QImage.Format.Format_ARGB32)
+                layer.image = apply_hue_saturation(src, 0, -100, 0)
+
+        elif action_name == "Sharpen":
+            if layer:
+                img = layer.image.convertToFormat(QImage.Format.Format_ARGB32)
+                try:
+                    ptr = img.bits(); ptr.setsize(img.sizeInBytes())
+                    arr = np.frombuffer(ptr, dtype=np.uint8).copy().reshape(img.height(), img.width(), 4)
+                    kernel = np.array([[0,-1,0],[-1,5,-1],[0,-1,0]], dtype=float)
+                    from scipy.ndimage import convolve
+                    for c in range(3):
+                        arr[...,c] = np.clip(convolve(arr[...,c].astype(float), kernel), 0, 255).astype(np.uint8)
+                    out = QImage(arr.tobytes(), img.width(), img.height(), QImage.Format.Format_ARGB32)
+                    layer.image = out.convertToFormat(QImage.Format.Format_ARGB32_Premultiplied)
+                except Exception:
+                    pass
+
+        elif action_name == "Flatten Image":
+            self._flatten()
+            return
+
+        elif action_name == "Auto Levels":
+            if layer:
+                img = layer.image.convertToFormat(QImage.Format.Format_ARGB32)
+                try:
+                    ptr = img.bits(); ptr.setsize(img.sizeInBytes())
+                    arr = np.frombuffer(ptr, dtype=np.uint8).copy().reshape(img.height(), img.width(), 4)
+                    for c in range(3):
+                        ch = arr[...,c]
+                        lo, hi = int(ch.min()), int(ch.max())
+                        if hi > lo:
+                            arr[...,c] = np.clip((ch.astype(float) - lo) * 255 / (hi - lo), 0, 255).astype(np.uint8)
+                    out = QImage(arr.tobytes(), img.width(), img.height(), QImage.Format.Format_ARGB32)
+                    layer.image = out.convertToFormat(QImage.Format.Format_ARGB32_Premultiplied)
+                except Exception:
+                    pass
+
+        self._canvas_refresh()
+        self._refresh_layers()
+
+    def _on_transform_changed(self, x: int, y: int):
+        if not self._canvas:
+            return
+        self._push_history("Move Layer")
+        self._canvas_refresh()
+        self._properties_panel.refresh(self._canvas)
+
+    def _do_align_layer(self, direction: str):
+        if not self._canvas or not self._document:
+            return
+        layer = self._document.get_active_layer()
+        if not layer:
+            return
+        doc = self._document
+        off = getattr(layer, "offset", QPoint(0, 0))
+        lw = layer.image.width() if layer.image and not layer.image.isNull() else 0
+        lh = layer.image.height() if layer.image and not layer.image.isNull() else 0
+        self._push_history("Align Layer")
+        if direction == "left":
+            layer.offset = QPoint(0, off.y())
+        elif direction == "center_h":
+            layer.offset = QPoint((doc.width - lw) // 2, off.y())
+        elif direction == "right":
+            layer.offset = QPoint(doc.width - lw, off.y())
+        elif direction == "top":
+            layer.offset = QPoint(off.x(), 0)
+        elif direction == "center_v":
+            layer.offset = QPoint(off.x(), (doc.height - lh) // 2)
+        elif direction == "bottom":
+            layer.offset = QPoint(off.x(), doc.height - lh)
+        self._canvas_refresh()
+        self._properties_panel.refresh(self._canvas)
+
+    def _on_brush_selected(self, mask: str):
+        if self._canvas:
+            self._canvas.tool_opts["brush_mask"] = mask
+            self._opts_bar.update_tool_state({"brush_mask": mask})
+
+    def _on_preset_save_requested(self, name: str):
+        if self._canvas:
+            opts = dict(self._canvas.tool_opts)
+            self._tool_presets_panel.add_preset(name, self._active_tool_name, opts)
+
+    def _on_preset_selected(self, tool_name: str, opts: dict):
+        if self._canvas:
+            self._canvas.tool_opts.update(opts)
+            self._activate_tool(tool_name)
+            self._opts_bar.update_tool_state(opts)
+
+    def _path_make_selection(self):
+        if not self._document:
+            return
+        wp = getattr(self._document, "work_path", None)
+        if not wp or not wp.get("nodes"):
+            return
+        from PyQt6.QtGui import QPainterPath
+        from PyQt6.QtCore import QPointF
+        path = QPainterPath()
+        nodes = wp["nodes"]
+        if nodes:
+            path.moveTo(QPointF(nodes[0]["p"]))
+            for i in range(1, len(nodes)):
+                path.cubicTo(QPointF(nodes[i-1]["c2"]), QPointF(nodes[i]["c1"]), QPointF(nodes[i]["p"]))
+            if wp.get("closed") and len(nodes) > 1:
+                path.cubicTo(QPointF(nodes[-1]["c2"]), QPointF(nodes[0]["c1"]), QPointF(nodes[0]["p"]))
+                path.closeSubpath()
+        self._push_history("Before Make Selection")
+        self._document.selection = path
+        self._canvas_refresh()
+
+    def _path_fill(self):
+        if not self._document:
+            return
+        self._push_history("Before Fill Path")
+        layer = self._document.get_active_layer()
+        if layer:
+            from PyQt6.QtGui import QPainter, QColor
+            p = QPainter(layer.image)
+            p.setCompositionMode(QPainter.CompositionMode.CompositionMode_SourceOver)
+            p.setBrush(self._canvas.fg_color)
+            p.setPen(Qt.PenStyle.NoPen)
+            wp = getattr(self._document, "work_path", None)
+            if wp and wp.get("nodes"):
+                from PyQt6.QtGui import QPainterPath
+                from PyQt6.QtCore import QPointF
+                path = QPainterPath()
+                nodes = wp["nodes"]
+                path.moveTo(QPointF(nodes[0]["p"]))
+                for i in range(1, len(nodes)):
+                    path.cubicTo(QPointF(nodes[i-1]["c2"]), QPointF(nodes[i]["c1"]), QPointF(nodes[i]["p"]))
+                if wp.get("closed"):
+                    path.closeSubpath()
+                p.drawPath(path)
+            p.end()
+        self._canvas_refresh()
+
+    def _path_stroke(self):
+        if not self._document:
+            return
+        self._push_history("Before Stroke Path")
+        layer = self._document.get_active_layer()
+        if layer:
+            from PyQt6.QtGui import QPainter, QPen
+            p = QPainter(layer.image)
+            pen = QPen(self._canvas.fg_color, self._canvas.tool_opts.get("brush_size", 2))
+            p.setPen(pen)
+            wp = getattr(self._document, "work_path", None)
+            if wp and wp.get("nodes"):
+                from PyQt6.QtGui import QPainterPath
+                from PyQt6.QtCore import QPointF
+                path = QPainterPath()
+                nodes = wp["nodes"]
+                path.moveTo(QPointF(nodes[0]["p"]))
+                for i in range(1, len(nodes)):
+                    path.cubicTo(QPointF(nodes[i-1]["c2"]), QPointF(nodes[i]["c1"]), QPointF(nodes[i]["p"]))
+                if wp.get("closed"):
+                    path.closeSubpath()
+                p.drawPath(path)
+            p.end()
+        self._canvas_refresh()
+
+    def _path_delete(self):
+        if self._document:
+            self._push_history("Before Delete Path")
+            self._document.work_path = {"nodes": [], "closed": False}
+            self._paths_panel.refresh(self._canvas)
             self._canvas_refresh()

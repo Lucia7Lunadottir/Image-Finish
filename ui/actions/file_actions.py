@@ -8,13 +8,9 @@ class FileActionsMixin:
         from utils.new_document_dialog import NewDocumentDialog
         dlg = NewDocumentDialog(self)
         if dlg.exec():
-            self._document = Document(dlg.get_width(), dlg.get_height(), dlg.get_bg_color())
-            self._history.clear()
-            self._canvas.set_document(self._document)
-            self._refresh_layers()
+            doc = Document(dlg.get_width(), dlg.get_height(), dlg.get_bg_color())
+            self._add_tab(doc, tr("title.untitled"))
             self._push_history(tr("history.new_document"))
-            self._update_mode_menu()
-            self._filepath = None
 
     def _open_file(self):
         path, _ = QFileDialog.getOpenFileName(
@@ -25,13 +21,8 @@ class FileActionsMixin:
     def _open_file_path(self, path: str):
         if path.lower().endswith(".imfn"):
             try:
-                self._document = Document.load_from_imfn(path)
-                self._document.history = self._history
-                self._history.clear()
-                self._canvas.set_document(self._document)
-                self._filepath = path
-                self._refresh_layers()
-                self._update_mode_menu()
+                doc = Document.load_from_imfn(path)
+                self._add_tab(doc, path.split("/")[-1], path)
                 return
             except Exception as e:
                 QMessageBox.critical(self, tr("err.title.error"), f"Failed to load IMFN: {e}")
