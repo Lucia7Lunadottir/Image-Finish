@@ -1,6 +1,6 @@
 # Maintainer: lucial <bordiyan20035@gmail.com>
 pkgname=imagefinish
-pkgver=1.1.0
+pkgver=r36.0287678
 pkgrel=1
 pkgdesc="A PyQt6 image editor inspired by Photoshop"
 arch=('any')
@@ -14,7 +14,9 @@ sha256sums=('SKIP')
 
 pkgver() {
     cd "$srcdir/$pkgname"
-    git describe --tags --long 2>/dev/null | sed 's/\([^-]*-g\)/r\1/;s/-/./g' \
+    git describe --tags --long 2>/dev/null \
+        | sed 's/\([^-]*-g\)/r\1/;s/-/./g' \
+        | grep . \
         || printf "r%s.%s" "$(git rev-list --count HEAD)" "$(git rev-parse --short HEAD)"
 }
 
@@ -23,8 +25,11 @@ package() {
 
     # Файлы приложения
     install -dm755 "$pkgdir/usr/share/$pkgname"
-    cp -r core locales tools ui utils brushes fonts patterns shapes \
+    cp -r core locales tools ui utils brushes shapes \
         "$pkgdir/usr/share/$pkgname/"
+    # fonts и patterns пустые — создаём директории для пользовательского контента
+    install -dm755 "$pkgdir/usr/share/$pkgname/fonts"
+    install -dm755 "$pkgdir/usr/share/$pkgname/patterns"
     install -m644 main.py         "$pkgdir/usr/share/$pkgname/"
     install -m644 settings.json   "$pkgdir/usr/share/$pkgname/"
 
