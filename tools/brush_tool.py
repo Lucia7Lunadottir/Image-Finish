@@ -96,6 +96,7 @@ class BrushTool(BaseTool):
         self._last_pos: QPoint | None = None
         self._last_pressure: float = 1.0
         self._stamp_cache: dict = {}  # key: (size, hardness, mask), val: QImage
+        self._colored_stamp_cache: dict = {}  # key: (stamp_id, r, g, b, a), val: QImage
         self._stroke_layer = None
         self._target_img: QImage | None = None
         self._stroke_img: QImage | None = None
@@ -109,7 +110,8 @@ class BrushTool(BaseTool):
             return
         self._last_pressure = float(opts.get("_pressure", 1.0))
         self._stroke_layer = layer
-        
+        self._colored_stamp_cache.clear()
+
         if getattr(layer, "editing_mask", False) and getattr(layer, "mask", None) is not None:
             self._target_img = layer.mask
         else:
@@ -370,9 +372,8 @@ class BrushTool(BaseTool):
                     painter.rotate(current_angle)
                 painter.translate(-cur_size / 2.0, -cur_size / 2.0)
                 # Применяем alpha-маску штампа
-                colored = QImage(stamp.size(), QImage.Format.Format_ARGB32)
-                
                 if pattern_pixmap and not pattern_pixmap.isNull():
+                    colored = QImage(stamp.size(), QImage.Format.Format_ARGB32)
                     colored.fill(Qt.GlobalColor.transparent)
                     ppat = QPainter(colored)
                     b = QBrush(pattern_pixmap)
@@ -380,26 +381,35 @@ class BrushTool(BaseTool):
                     xform.translate(target_cx, target_cy)
                     if current_angle != 0.0: xform.rotate(current_angle)
                     xform.translate(-cur_size / 2.0, -cur_size / 2.0)
-                    
+
                     brush_xform = QTransform()
                     brush_xform.scale(pattern_scale, pattern_scale)
                     brush_xform *= xform.inverted()[0]
                     b.setTransform(brush_xform)
-                    
+
                     ppat.fillRect(colored.rect(), b)
                     if op_dyn:
                         ppat.setCompositionMode(QPainter.CompositionMode.CompositionMode_DestinationIn)
                         ppat.fillRect(colored.rect(), QColor(0, 0, 0, int(255 * cur_press)))
                     ppat.end()
+                    cp = QPainter(colored)
+                    cp.setCompositionMode(QPainter.CompositionMode.CompositionMode_DestinationIn)
+                    cp.drawImage(0, 0, stamp)
+                    cp.end()
                 else:
-                    stamp_color = QColor(c)
-                    if op_dyn: stamp_color.setAlpha(int(255 * cur_press))
-                    colored.fill(stamp_color)
-                
-                cp = QPainter(colored)
-                cp.setCompositionMode(QPainter.CompositionMode.CompositionMode_DestinationIn)
-                cp.drawImage(0, 0, stamp)
-                cp.end()
+                    alpha_val = int(255 * cur_press) if op_dyn else 255
+                    colored_key = (id(stamp), c.red(), c.green(), c.blue(), alpha_val)
+                    if colored_key not in self._colored_stamp_cache:
+                        img = QImage(stamp.size(), QImage.Format.Format_ARGB32)
+                        img.fill(QColor(c.red(), c.green(), c.blue(), alpha_val))
+                        cp = QPainter(img)
+                        cp.setCompositionMode(QPainter.CompositionMode.CompositionMode_DestinationIn)
+                        cp.drawImage(0, 0, stamp)
+                        cp.end()
+                        if len(self._colored_stamp_cache) > 100:
+                            self._colored_stamp_cache.clear()
+                        self._colored_stamp_cache[colored_key] = img
+                    colored = self._colored_stamp_cache[colored_key]
                 painter.drawImage(0, 0, colored)
                 painter.restore()
 
@@ -590,7 +600,13 @@ class PencilTool(BrushTool):
     shortcut = "B"
 
     def _get_stamp(self, size: int, hardness: float, mask) -> QImage:
-        # Карандаш всегда имеет 100% жесткость и бинарный альфа-канал
+        # Карандаш всегда имеет 100% жёсткость и бинарный альфа-канал.
+        # Кэшируем бинаризованный штамп отдельно, чтобы не копировать+модифицировать каждый раз.
+        cache_key_inner = id(mask) if isinstance(mask, QImage) else mask
+        pencil_key = ("pencil", size, cache_key_inner)
+        if pencil_key in self._stamp_cache:
+            return self._stamp_cache[pencil_key]
+
         stamp = super()._get_stamp(size, 1.0, mask).copy()
         import ctypes
         ptr = stamp.bits()
@@ -598,6 +614,10 @@ class PencilTool(BrushTool):
         arr = np.ndarray((stamp.height(), stamp.bytesPerLine() // 4, 4), dtype=np.uint8, buffer=buf)
         arr[arr[..., 3] < 128, 3] = 0
         arr[arr[..., 3] >= 128, 3] = 255
+
+        if len(self._stamp_cache) > 50:
+            self._stamp_cache.clear()
+        self._stamp_cache[pencil_key] = stamp
         return stamp
 
 

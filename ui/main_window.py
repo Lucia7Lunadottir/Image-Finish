@@ -1066,8 +1066,10 @@ class MainWindow(QMainWindow,
         self._canvas.update()
 
     def _on_pixels_changed(self):
+        # Не обновляем тяжёлые панели (гистограмма, навигатор) на каждое
+        # движение мыши — они вызывают get_composite() и убивают FPS.
+        # Панели обновятся в _on_doc_changed() при завершении мазка.
         self._update_status()
-        self._refresh_secondary_panels()
 
     def _on_doc_changed(self):
         self._refresh_layers()

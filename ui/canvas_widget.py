@@ -89,6 +89,11 @@ class CanvasWidget(QWidget):
         self._display_cache: QImage | None = None
         self._last_view_channel: str = "RGB"
 
+        # Оптимизация для эффект-инструментов (Blur/Sharpen/Smudge/Dodge/Burn/Sponge):
+        # Вместо get_composite() на каждый кадр — кэшируем фон без активного слоя.
+        self._effect_bg_cache: QImage | None = None  # фон без активного слоя
+        self._in_effect_stroke: bool = False          # True во время мазка эффект-инструмента
+
         self.show_rulers: bool = False
         self._dragging_guide = None
 
@@ -124,6 +129,38 @@ class CanvasWidget(QWidget):
         self._cache_dirty = True
         self._display_cache = None
         self.update()
+
+    def _start_effect_stroke(self):
+        """
+        Вычисляет фоновый композит (без активного слоя) для эффект-инструментов.
+        Вызывается ДО on_press, пока слой ещё не тронут.
+
+        Оптимизация активна только для слоёв с Normal blend mode:
+        - _in_effect_stroke = True + _effect_bg_cache заполнен → быстрый путь
+        - _in_effect_stroke = False                             → старый путь (get_composite каждый кадр)
+        """
+        doc = self.document
+        active = doc.get_active_layer() if doc else None
+
+        # Нет активного слоя или non-Normal blend mode → оптимизация невозможна.
+        if (active is None or
+                getattr(active, "blend_mode", "Normal") not in ("Normal", "SourceOver", "") or
+                getattr(active, "clipping", False)):
+            self._effect_bg_cache = None
+            self._in_effect_stroke = False
+            # stroke_preview() инструмента возвращает None → canvas делает get_composite()
+            return
+
+        # Временно скрываем активный слой, считаем фоновый композит.
+        was_visible = active.visible
+        active.visible = False
+        self._effect_bg_cache = doc.get_composite()
+        active.visible = was_visible
+
+        self._in_effect_stroke = True
+        # Разрешаем инструменту возвращать активный слой через stroke_preview().
+        if hasattr(self.active_tool, "_stroke_preview_active"):
+            self.active_tool._stroke_preview_active = True
 
     def reset_zoom(self):
         self._fit_to_window()
@@ -330,7 +367,11 @@ class CanvasWidget(QWidget):
 
         # 2. Композит (кэш)
         if self._cache_dirty or self._composite_cache is None:
-            self._composite_cache = self.document.get_composite()
+            if self._in_effect_stroke and self._effect_bg_cache is not None:
+                # Быстрый путь: фон уже кэширован, активный слой отрисуется через stroke_preview.
+                self._composite_cache = self._effect_bg_cache
+            else:
+                self._composite_cache = self.document.get_composite()
             self._cache_dirty = False
             self._display_cache = None
             
@@ -889,6 +930,29 @@ class CanvasWidget(QWidget):
                     painter.restore()
         except ImportError: pass
 
+    def _update_brush_region(self, pos: QPointF):
+        """update() только вокруг кисти (текущая + предыдущая позиция)."""
+        mirror_x = bool(self.tool_opts.get("brush_mirror_x", False))
+        mirror_y = bool(self.tool_opts.get("brush_mirror_y", False))
+        if mirror_x or mirror_y:
+            # При симметрии зеркальный курсор далеко — проще полный апдейт
+            self._prev_brush_wp = QPointF(pos)
+            self.update()
+            return
+
+        brush_sz = int(self.tool_opts.get("brush_size", 10))
+        w_size   = max(4, int(brush_sz * self.zoom))
+        margin   = w_size // 2 + 6
+
+        prv = getattr(self, "_prev_brush_wp", None) or pos
+        self._prev_brush_wp = QPointF(pos)
+
+        x1 = int(min(pos.x(), prv.x())) - margin
+        y1 = int(min(pos.y(), prv.y())) - margin
+        x2 = int(max(pos.x(), prv.x())) + margin
+        y2 = int(max(pos.y(), prv.y())) + margin
+        self.update(QRect(x1, y1, x2 - x1, y2 - y1))
+
     def _draw_brush_cursor(self, painter: QPainter):
         """Рисует кружок размером с кисть вместо системного курсора."""
         size   = int(self.tool_opts.get("brush_size", 10))
@@ -1189,9 +1253,14 @@ class CanvasWidget(QWidget):
 
             old_layer_idx = self.document.active_layer_index if self.document else -1
             doc_pos = self.to_doc(ev.position())
-            
+
+            # Для эффект-инструментов (Blur/Sharpen и т.п.) — вычисляем фоновый
+            # композит ДО on_press, пока слой ещё не изменён.
+            if getattr(self.active_tool, "needs_background_composite", False):
+                self._start_effect_stroke()
+
             old_transforming = getattr(self.active_tool, "is_transforming", False)
-            
+
             self.active_tool.on_press(doc_pos, self.document,
                                       self.fg_color, self.bg_color, self.tool_opts)
                                       
@@ -1238,6 +1307,11 @@ class CanvasWidget(QWidget):
             if self.active_tool:
                 self.active_tool.on_release(doc_pos, self.document, self.fg_color, self.bg_color, self.tool_opts)
             self._stroke_in_progress = False
+            self._prev_brush_wp = None
+            if self._in_effect_stroke and self.active_tool and hasattr(self.active_tool, "_stroke_preview_active"):
+                self.active_tool._stroke_preview_active = False
+            self._in_effect_stroke = False
+            self._effect_bg_cache = None
             self._cache_dirty = True
             self.update()
             self.document_changed.emit()
@@ -1282,7 +1356,7 @@ class CanvasWidget(QWidget):
 
         # Перерисовываем курсор / overlay
         if self._show_brush_cursor:
-            self.update()
+            self._update_brush_region(ev.position())
         elif isinstance(self.active_tool, (SelectTool, ShapesTool, RotateViewTool, GradientTool)) or (
                 self.active_tool and hasattr(self.active_tool, "sub_drag_path")):
             self.update()
@@ -1297,8 +1371,26 @@ class CanvasWidget(QWidget):
             self.active_tool.on_move(doc_pos, self.document,
                                      self.fg_color, self.bg_color, self.tool_opts)
             if getattr(self.active_tool, "modifies_canvas_on_move", False):
-                self._cache_dirty = True
-            self.update()
+                # Не помечаем композит «грязным» если:
+                # 1. Кисть (BrushTool): composite не меняется до on_release,
+                #    мазок показывается через stroke_preview overlay.
+                # 2. Эффект-инструмент с активной оптимизацией (_in_effect_stroke):
+                #    composite = фоновый кэш, активный слой показывается через stroke_preview.
+                is_brush_preview = (
+                    self._stroke_in_progress and
+                    hasattr(self.active_tool, "stroke_preview") and
+                    not getattr(self.active_tool, "needs_background_composite", False)
+                )
+                is_effect_optimized = self._stroke_in_progress and self._in_effect_stroke
+                if not is_brush_preview and not is_effect_optimized:
+                    self._cache_dirty = True
+
+            # Для кистей и эффект-инструментов перерисовываем только вокруг кисти.
+            # Qt объединит этот rect с аналогичным от _update_brush_region выше.
+            if self._stroke_in_progress and hasattr(self.active_tool, "stroke_preview"):
+                self._update_brush_region(ev.position())
+            else:
+                self.update()
             self.pixels_changed.emit()
             
             # Сборка "молодого" мусора (Gen 0) прямо во время рисования каждые 10 кадров
@@ -1360,10 +1452,16 @@ class CanvasWidget(QWidget):
                 self.active_tool.on_release(doc_pos, self.document,
                                             self.fg_color, self.bg_color, self.tool_opts)
             self._stroke_in_progress = False
+            self._prev_brush_wp = None
+            # Сбрасываем режим эффект-инструмента и кэш фона
+            if self._in_effect_stroke and self.active_tool and hasattr(self.active_tool, "_stroke_preview_active"):
+                self.active_tool._stroke_preview_active = False
+            self._in_effect_stroke = False
+            self._effect_bg_cache = None
             self._cache_dirty = True
             self.update()
             self.document_changed.emit()
-            
+
             # Принудительно очищаем мусор после каждого мазка для защиты от утечек памяти PyQt/NumPy
             import gc
             gc.collect()

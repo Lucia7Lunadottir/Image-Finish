@@ -484,10 +484,7 @@ class Document:
                             m_arr = np.ndarray((current_mask.height(), current_mask.bytesPerLine() // 4, 4), dtype=np.uint8, buffer=m_buf)[:, :img_to_draw.width(), :]
                             
                             mask_f = m_arr[..., 1].astype(np.float32) / 255.0
-                            arr[..., 0] = (arr[..., 0] * mask_f).astype(np.uint8)
-                            arr[..., 1] = (arr[..., 1] * mask_f).astype(np.uint8)
-                            arr[..., 2] = (arr[..., 2] * mask_f).astype(np.uint8)
-                            arr[..., 3] = (arr[..., 3] * mask_f).astype(np.uint8)
+                            arr[:] = (arr.astype(np.float32) * mask_f[..., np.newaxis]).astype(np.uint8)
                             
                         if is_clipping:
                             ox, oy = layer.offset.x(), layer.offset.y()
@@ -501,10 +498,7 @@ class Document:
                                 sx2, sy2 = sx1 + (dx2 - dx1), sy1 + (dy2 - dy1)
                                 clip_mask[sy1:sy2, sx1:sx2] = state['clip_alpha'][dy1:dy2, dx1:dx2]
                                 
-                            arr[..., 0] = (arr[..., 0] * clip_mask).astype(np.uint8)
-                            arr[..., 1] = (arr[..., 1] * clip_mask).astype(np.uint8)
-                            arr[..., 2] = (arr[..., 2] * clip_mask).astype(np.uint8)
-                            arr[..., 3] = (arr[..., 3] * clip_mask).astype(np.uint8)
+                            arr[:] = (arr.astype(np.float32) * clip_mask[..., np.newaxis]).astype(np.uint8)
                             
 
                     if not is_clipping and next_clipping:
@@ -598,10 +592,7 @@ class Document:
         m_arr_full = np.ndarray((h, m_bpl // 4, 4), dtype=np.uint8, buffer=m_buf)
         m_arr = m_arr_full[:, :w, :]
         mask_f = m_arr[..., 1].astype(np.float32) / 255.0
-        arr[..., 0] = (arr[..., 0] * mask_f).astype(np.uint8)
-        arr[..., 1] = (arr[..., 1] * mask_f).astype(np.uint8)
-        arr[..., 2] = (arr[..., 2] * mask_f).astype(np.uint8)
-        arr[..., 3] = (arr[..., 3] * mask_f).astype(np.uint8)
+        arr[:] = (arr.astype(np.float32) * mask_f[..., np.newaxis]).astype(np.uint8)
         layer.mask = None
         layer.editing_mask = False
 
