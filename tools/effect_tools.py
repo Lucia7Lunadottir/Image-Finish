@@ -10,6 +10,51 @@ from PyQt6.QtGui import QPainter, QColor, QImage, QPen
 from PyQt6.QtCore import QPoint, QRect, Qt
 from tools.base_tool import BaseTool
 
+
+class _EffectStrokeMixin:
+    """
+    Mixin для эффект-инструментов (Blur, Sharpen, Smudge и т.п.).
+
+    Включает оптимизацию в canvas_widget:
+    - needs_background_composite = True → canvas заранее кэширует фон без активного слоя
+    - stroke_preview() → canvas показывает текущий слой поверх фона без get_composite()
+    - Результат: один get_composite() на старте мазка вместо одного на каждое движение.
+    """
+
+    needs_background_composite: bool = True
+
+    # ---------- вызывать из __init__ каждого инструмента ----------
+    def _init_effect_stroke(self):
+        self._eff_layer_ref = None
+        # True только когда canvas включил оптимизацию (bg-cache активен).
+        # canvas_widget устанавливает это поле в _start_effect_stroke().
+        self._stroke_preview_active = False
+
+    # ---------- вызывать из on_press ----------
+    def _begin_effect_stroke(self, doc):
+        self._eff_layer_ref = doc.get_active_layer()
+        # Не сбрасываем _stroke_preview_active — canvas устанавливает его ДО on_press
+        # через _start_effect_stroke(), и оно уже правильное к этому моменту.
+
+    # ---------- вызывать из on_release ----------
+    def _end_effect_stroke(self):
+        self._eff_layer_ref = None
+        self._stroke_preview_active = False
+
+    # ---------- canvas обращается сюда на каждый paintEvent ----------
+    def stroke_preview(self):
+        """
+        Возвращает (QImage, offset, opacity) текущего активного слоя.
+        Работает ТОЛЬКО когда canvas включил оптимизацию (_stroke_preview_active=True).
+        Иначе возвращает None → canvas вызывает полный get_composite() как обычно.
+        """
+        if not self._stroke_preview_active:
+            return None
+        layer = self._eff_layer_ref
+        if layer is None:
+            return None
+        return (layer.image, layer.offset, layer.opacity)
+
 try:
     import numpy as np
     _HAS_NUMPY = True
@@ -115,7 +160,7 @@ def _apply_qt_blur(image: QImage, cx: int, cy: int, radius: int, passes: int = 2
 
 
 # ═══════════════════════════════════════════════════════════════ BlurTool
-class BlurTool(BaseTool):
+class BlurTool(_EffectStrokeMixin, BaseTool):
     """
     Размытие кистью. Зажал — размываешь всё под курсором.
     Использует numpy если доступен, иначе Qt fallback.
@@ -126,9 +171,11 @@ class BlurTool(BaseTool):
     modifies_canvas_on_move = True
 
     def __init__(self):
+        self._init_effect_stroke()
         self._last: QPoint | None = None
 
     def on_press(self, pos, doc, fg, bg, opts):
+        self._begin_effect_stroke(doc)
         self._last = pos
         self._apply(pos, doc, opts)
 
@@ -138,6 +185,7 @@ class BlurTool(BaseTool):
         self._last = pos
 
     def on_release(self, pos, doc, fg, bg, opts):
+        self._end_effect_stroke()
         self._last = None
 
     def _apply(self, pos: QPoint, doc, opts: dict):
@@ -177,7 +225,7 @@ class BlurTool(BaseTool):
 
 
 # ═══════════════════════════════════════════════════════════════ SharpenTool
-class SharpenTool(BaseTool):
+class SharpenTool(_EffectStrokeMixin, BaseTool):
     """Резкость — противоположность размытию."""
     name     = "Sharpen"
     icon     = "🔺"
@@ -185,9 +233,11 @@ class SharpenTool(BaseTool):
     modifies_canvas_on_move = True
 
     def __init__(self):
+        self._init_effect_stroke()
         self._last: QPoint | None = None
 
     def on_press(self, pos, doc, fg, bg, opts):
+        self._begin_effect_stroke(doc)
         self._last = pos
         self._apply(pos, doc, opts)
 
@@ -197,6 +247,7 @@ class SharpenTool(BaseTool):
         self._last = pos
 
     def on_release(self, pos, doc, fg, bg, opts):
+        self._end_effect_stroke()
         self._last = None
 
     def _apply(self, pos: QPoint, doc, opts: dict):
@@ -233,7 +284,7 @@ class SharpenTool(BaseTool):
 
 
 # ═══════════════════════════════════════════════════════════════ SmudgeTool
-class SmudgeTool(BaseTool):
+class SmudgeTool(_EffectStrokeMixin, BaseTool):
     """
     Палец — размазывает цвет по направлению движения.
     Тащит «каплю» пикселей за кистью.
@@ -244,10 +295,12 @@ class SmudgeTool(BaseTool):
     modifies_canvas_on_move = True
 
     def __init__(self):
+        self._init_effect_stroke()
         self._last:  QPoint | None = None
         self._color: QColor | None = None   # цвет под кистью в начале мазка
 
     def on_press(self, pos, doc, fg, bg, opts):
+        self._begin_effect_stroke(doc)
         self._last = pos
         layer = doc.get_active_layer()
         if layer:
@@ -323,21 +376,24 @@ class SmudgeTool(BaseTool):
         self._last = pos
 
     def on_release(self, pos, doc, fg, bg, opts):
+        self._end_effect_stroke()
         self._last  = None
         self._color = None
 
 
 # ═══════════════════════════════════════════════════════════════ DodgeTool
-class DodgeTool(BaseTool):
+class DodgeTool(_EffectStrokeMixin, BaseTool):
     name     = "Dodge"
     icon     = "🌔"
     shortcut = "O"
     modifies_canvas_on_move = True
 
     def __init__(self):
+        self._init_effect_stroke()
         self._last: QPoint | None = None
 
     def on_press(self, pos, doc, fg, bg, opts):
+        self._begin_effect_stroke(doc)
         self._last = pos
         self._apply(pos, doc, opts)
 
@@ -346,6 +402,7 @@ class DodgeTool(BaseTool):
         self._last = pos
 
     def on_release(self, pos, doc, fg, bg, opts):
+        self._end_effect_stroke()
         self._last = None
 
     def _apply(self, pos: QPoint, doc, opts: dict):
@@ -379,16 +436,18 @@ class DodgeTool(BaseTool):
 
 
 # ═══════════════════════════════════════════════════════════════ BurnTool
-class BurnTool(BaseTool):
+class BurnTool(_EffectStrokeMixin, BaseTool):
     name     = "Burn"
     icon     = "🌒"
     shortcut = "O"
     modifies_canvas_on_move = True
 
     def __init__(self):
+        self._init_effect_stroke()
         self._last: QPoint | None = None
 
     def on_press(self, pos, doc, fg, bg, opts):
+        self._begin_effect_stroke(doc)
         self._last = pos
         self._apply(pos, doc, opts)
 
@@ -397,6 +456,7 @@ class BurnTool(BaseTool):
         self._last = pos
 
     def on_release(self, pos, doc, fg, bg, opts):
+        self._end_effect_stroke()
         self._last = None
 
     def _apply(self, pos: QPoint, doc, opts: dict):
@@ -430,16 +490,18 @@ class BurnTool(BaseTool):
 
 
 # ═══════════════════════════════════════════════════════════════ SpongeTool
-class SpongeTool(BaseTool):
+class SpongeTool(_EffectStrokeMixin, BaseTool):
     name     = "Sponge"
     icon     = "🧽"
     shortcut = "O"
     modifies_canvas_on_move = True
 
     def __init__(self):
+        self._init_effect_stroke()
         self._last: QPoint | None = None
 
     def on_press(self, pos, doc, fg, bg, opts):
+        self._begin_effect_stroke(doc)
         self._last = pos
         self._apply(pos, doc, opts)
 
@@ -448,6 +510,7 @@ class SpongeTool(BaseTool):
         self._last = pos
 
     def on_release(self, pos, doc, fg, bg, opts):
+        self._end_effect_stroke()
         self._last = None
 
     def _apply(self, pos: QPoint, doc, opts: dict):
