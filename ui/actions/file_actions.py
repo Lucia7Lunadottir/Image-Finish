@@ -105,6 +105,9 @@ class FileActionsMixin:
             try:
                 self._document.save_to_imfn(path)
                 self._status.showMessage(tr("status.saved", path=path))
+                c = self._canvas
+                if c:
+                    c.is_modified = False
             except Exception as e:
                 QMessageBox.critical(self, tr("err.title.save_error"), tr("err.could_not_save", path=path) + f"\n{e}")
             return
@@ -113,5 +116,8 @@ class FileActionsMixin:
         ok = img.save(path)
         if ok:
             self._status.showMessage(tr("status.saved", path=path))
+            c = self._canvas
+            if c:
+                c.is_modified = False
         else:
             QMessageBox.critical(self, tr("err.title.save_error"), tr("err.could_not_save", path=path))

@@ -326,6 +326,8 @@
   "dlg.define_pattern_title":"Pattern Name",
   "dlg.define_shape_title": "Shape Name",
   "dlg.resize_canvas": "Resize Canvas",
+  "dlg.unsaved_title": "Unsaved Changes",
+  "dlg.unsaved_msg":   "'{name}' has unsaved changes.\nSave before closing?",
 
   "image_size.title":    "Image Size",
   "image_size.current":  "Current: {w} \u00d7 {h} px",

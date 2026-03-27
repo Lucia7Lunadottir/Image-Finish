@@ -1379,7 +1379,8 @@ class CanvasWidget(QWidget):
                 is_brush_preview = (
                     self._stroke_in_progress and
                     hasattr(self.active_tool, "stroke_preview") and
-                    not getattr(self.active_tool, "needs_background_composite", False)
+                    not getattr(self.active_tool, "needs_background_composite", False) and
+                    not getattr(self.active_tool, "needs_composite_refresh", False)
                 )
                 is_effect_optimized = self._stroke_in_progress and self._in_effect_stroke
                 if not is_brush_preview and not is_effect_optimized:

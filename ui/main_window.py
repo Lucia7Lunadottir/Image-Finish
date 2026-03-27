@@ -794,8 +794,10 @@ class MainWindow(QMainWindow,
             cp = getattr(self, "_color_panel", None)
             canvas.fg_color = getattr(cp, "_fg", QColor(0, 0, 0))
             canvas.bg_color = getattr(cp, "_bg", QColor(255, 255, 255))
+        canvas.is_modified = False
         canvas.document_changed.connect(self._on_doc_changed)
         canvas.pixels_changed.connect(self._on_pixels_changed)
+        canvas.pixels_changed.connect(lambda: setattr(canvas, "is_modified", True))
         canvas.color_picked.connect(self._color_panel.set_fg)
         canvas.tool_state_changed.connect(self._opts_bar.update_tool_state)
         if hasattr(self, "_info_panel"):
@@ -810,11 +812,47 @@ class MainWindow(QMainWindow,
 
     def _close_tab(self, index: int):
         canvas = self._doc_tabs.widget(index)
+        if getattr(canvas, "is_modified", False):
+            title = self._doc_tabs.tabText(index)
+            reply = QMessageBox.question(
+                self, tr("dlg.unsaved_title"),
+                tr("dlg.unsaved_msg", name=title),
+                QMessageBox.StandardButton.Save |
+                QMessageBox.StandardButton.Discard |
+                QMessageBox.StandardButton.Cancel,
+                QMessageBox.StandardButton.Save,
+            )
+            if reply == QMessageBox.StandardButton.Cancel:
+                return
+            if reply == QMessageBox.StandardButton.Save:
+                self._doc_tabs.setCurrentIndex(index)
+                self._save()
         self._doc_tabs.removeTab(index)
         canvas.deleteLater()
         if self._doc_tabs.count() == 0:
             self._welcome_panel.refresh_recent(self._recent_files)
             self._center_stack.setCurrentIndex(0)
+
+    def closeEvent(self, event):
+        for i in range(self._doc_tabs.count()):
+            canvas = self._doc_tabs.widget(i)
+            if getattr(canvas, "is_modified", False):
+                title = self._doc_tabs.tabText(i)
+                reply = QMessageBox.question(
+                    self, tr("dlg.unsaved_title"),
+                    tr("dlg.unsaved_msg", name=title),
+                    QMessageBox.StandardButton.Save |
+                    QMessageBox.StandardButton.Discard |
+                    QMessageBox.StandardButton.Cancel,
+                    QMessageBox.StandardButton.Save,
+                )
+                if reply == QMessageBox.StandardButton.Cancel:
+                    event.ignore()
+                    return
+                if reply == QMessageBox.StandardButton.Save:
+                    self._doc_tabs.setCurrentIndex(i)
+                    self._save()
+        event.accept()
 
     def _on_tab_changed(self, index: int):
         if index < 0: return

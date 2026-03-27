@@ -454,9 +454,29 @@ class EraserTool(BrushTool):
     name     = "Eraser"
     icon     = "🧽"
     shortcut = "E"
+    # Tell the canvas to mark _cache_dirty on every move so get_composite()
+    # is called each frame and active_stroke DestinationOut shows in preview.
+    # Unlike needs_background_composite, this does NOT trigger _start_effect_stroke().
+    needs_composite_refresh = True
 
     def stroke_composition_mode(self, opts=None):
         return QPainter.CompositionMode.CompositionMode_DestinationOut
+
+    def stroke_preview(self):
+        # The erasure preview is already handled via active_stroke inside
+        # get_composite(). Returning the stroke buffer here would cause a
+        # second DestinationOut pass on the canvas painter, making erased
+        # areas appear as opaque black instead of the checkerboard.
+        return None
+
+    def _paint(self, p1, p2, doc, color, opts, press1=1.0, press2=1.0):
+        # For DestinationOut, only the alpha of the stroke matters.
+        # Use opaque white so the mask is purely alpha-driven and the
+        # stored pixels are fully transparent (not residual color).
+        super()._paint(p1, p2, doc, QColor(255, 255, 255, 255), opts, press1, press2)
+
+    def _paint_fast(self, p1, p2, layer, color, size, doc, opts):
+        super()._paint_fast(p1, p2, layer, QColor(255, 255, 255, 255), size, doc, opts)
 
 
 class CloneStampTool(BrushTool):

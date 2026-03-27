@@ -325,6 +325,8 @@
   "dlg.define_pattern_title":"Имя узора",
   "dlg.define_shape_title": "Имя фигуры",
   "dlg.resize_canvas": "Изменить размер холста",
+  "dlg.unsaved_title": "Несохранённые изменения",
+  "dlg.unsaved_msg":   "'{name}' содержит несохранённые изменения.\nСохранить перед закрытием?",
 
   "image_size.title":     "Размер изображения",
   "image_size.current":   "Текущий: {w} × {h} пк",
