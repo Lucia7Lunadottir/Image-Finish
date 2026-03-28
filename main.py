@@ -44,7 +44,7 @@ def main():
     app = QApplication(sys.argv)
     app.setApplicationName("ImageFinish")
     app.setApplicationVersion("1.1.0")
-    icon_path = os.path.join(os.path.dirname(os.path.abspath(__file__)), 'icon.png')
+    icon_path = os.path.join(os.path.dirname(os.path.abspath(__file__)), 'imagefinish.png')
     app.setWindowIcon(QIcon(icon_path))
 
     _load_custom_fonts()
