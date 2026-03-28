@@ -44,6 +44,7 @@ def main():
     app = QApplication(sys.argv)
     app.setApplicationName("ImageFinish")
     app.setApplicationVersion("1.1.0")
+    app.setDesktopFileName("imagefinish")
     icon_path = os.path.join(os.path.dirname(os.path.abspath(__file__)), 'imagefinish.png')
     app.setWindowIcon(QIcon(icon_path))
 

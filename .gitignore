@@ -3,6 +3,7 @@
 # makepkg
 pkg/
 src/
+imagefinish/
 *.pkg.tar.zst
 *.pkg.tar.xz
 *.pkg.tar.gz
