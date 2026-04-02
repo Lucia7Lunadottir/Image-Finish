@@ -53,6 +53,9 @@ def main():
     window = MainWindow()
     window.show()
 
+    if len(sys.argv) > 1:
+        window._open_file_path(sys.argv[1])
+
     sys.exit(app.exec())
 
 
