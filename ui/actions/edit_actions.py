@@ -92,7 +92,7 @@ class EditActionsMixin:
         self._canvas_refresh()
 
     def _clear_layer(self):
-        layer = self._document.get_active_layer()
+        layer = self._document and self._document.get_active_layer()
         if not layer:
             return
             
@@ -167,7 +167,7 @@ class EditActionsMixin:
             self._canvas_refresh()
 
     def _color_range(self):
-        layer = self._document.get_active_layer()
+        layer = self._document and self._document.get_active_layer()
         if not layer or layer.image.isNull():
             return
         
@@ -229,7 +229,7 @@ class EditActionsMixin:
         self._canvas_refresh()
 
     def _select_subject(self):
-        layer = self._document.get_active_layer()
+        layer = self._document and self._document.get_active_layer()
         if not layer or layer.image.isNull(): return
         img = layer.image
         w, h = img.width(), img.height()
@@ -259,7 +259,7 @@ class EditActionsMixin:
         self._apply_np_mask(mask, tr("history.select_subject"), layer.offset)
 
     def _select_sky(self):
-        layer = self._document.get_active_layer()
+        layer = self._document and self._document.get_active_layer()
         if not layer or layer.image.isNull(): return
         img = layer.image
         w, h = img.width(), img.height()
@@ -284,7 +284,7 @@ class EditActionsMixin:
         self._apply_np_mask(mask, tr("history.select_sky"), layer.offset)
 
     def _focus_area(self):
-        layer = self._document.get_active_layer()
+        layer = self._document and self._document.get_active_layer()
         if not layer or layer.image.isNull(): return
         img = layer.image
         w, h = img.width(), img.height()
@@ -307,7 +307,7 @@ class EditActionsMixin:
         self._apply_np_mask(mask, tr("history.focus_area"), layer.offset)
 
     def _select_and_mask(self):
-        layer = self._document.get_active_layer()
+        layer = self._document and self._document.get_active_layer()
         if not layer or layer.image.isNull(): return
         
         from ui.select_and_mask_dialog import SelectAndMaskDialog
@@ -449,7 +449,7 @@ class EditActionsMixin:
         if hasattr(self, "_commit_move_transform"):
             self._commit_move_transform()
         self._copy()
-        layer = self._document.get_active_layer()
+        layer = self._document and self._document.get_active_layer()
         if not layer:
             return
         sel = self._document.selection
@@ -466,7 +466,7 @@ class EditActionsMixin:
     def _copy(self):
         if hasattr(self, "_commit_move_transform"):
             self._commit_move_transform()
-        layer = self._document.get_active_layer()
+        layer = self._document and self._document.get_active_layer()
         if not layer:
             return
         sel = self._document.selection
@@ -486,7 +486,7 @@ class EditActionsMixin:
             return
         self._push_history(tr("history.paste"))
         
-        layer = self._document.get_active_layer()
+        layer = self._document and self._document.get_active_layer()
         if layer and getattr(layer, "layer_type", "") == "frame":
             fd = getattr(layer, "frame_data", {})
             f_rect = fd.get("rect", QRectF(0,0,100,100))
@@ -526,7 +526,7 @@ class EditActionsMixin:
         self._fill_with(self._canvas.bg_color)
 
     def _fill_with(self, color: QColor):
-        layer = self._document.get_active_layer()
+        layer = self._document and self._document.get_active_layer()
         if not layer:
             return
         self._push_history(tr("history.fill"))

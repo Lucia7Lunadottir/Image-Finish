@@ -56,7 +56,7 @@ def apply_motion_blur(src: QImage, angle_deg: float, strength: int) -> QImage:
         k           = np.roll(np.roll(k, -pad, axis=0), -pad, axis=1)
         K_fft       = rfft2(k)  # compute kernel FFT once
 
-        for c in range(3):  # BGR only — preserve alpha
+        for c in range(4):
             ch     = arr[:, :, c].astype(np.float32)
             padded = np.pad(ch, pad, mode='edge')
             blurred = irfft2(rfft2(padded) * K_fft, s=padded.shape)

@@ -207,9 +207,10 @@ class BlurTool(BrushEffectTool):
         safe        = np.maximum(blurred_a, 1e-6)
         blurred_rgb = blurred_pre / safe                 # unpremultiplied [0, 255]
 
+        t = mask * strength
         result = patch_f.copy()
-        result[..., :3] = (patch_f[..., :3] * (1.0 - mask * strength) +
-                           blurred_rgb       * (mask * strength)).clip(0, 255)
+        result[..., :3]  = (patch_f[..., :3]  * (1.0 - t) + blurred_rgb       * t).clip(0, 255)
+        result[..., 3:4] = (patch_f[..., 3:4] * (1.0 - t) + blurred_a * 255.0 * t).clip(0, 255)
         return result
 
     def _apply_qt_fallback(self, layer, cx, cy, size, clip, opts):
@@ -268,17 +269,25 @@ class SmudgeTool(BrushEffectTool):
         if self._color is None:
             return patch_f
 
-        # «Капля» — BGRA (порядок каналов QImage: B=0, G=1, R=2, A=3)
+        # «Капля» — BGRA; alpha капли убывает когда она проходит через прозрачные пиксели,
+        # но никогда не растёт — иначе капля «красит» прозрачный фон своим цветом.
+        drop_a = self._color.alpha()
         smudge = np.array([self._color.blue(), self._color.green(),
-                           self._color.red(),  self._color.alpha()],
+                           self._color.red(),  drop_a],
                           dtype=np.float32)
 
-        result = (patch_f * (1.0 - strength * mask) +
-                  smudge  * (strength * mask)).clip(0, 255)
+        t = strength * mask
+        blended = (patch_f * (1.0 - t) + smudge * t).clip(0, 255)
 
-        # Обновляем «каплю» — берём среднее оригинального патча
+        result = patch_f.copy()
+        result[..., :3] = blended[..., :3]
+        # Alpha: берём минимум — капля может убывать, но не создаёт новую непрозрачность
+        result[..., 3:4] = np.minimum(patch_f[..., 3:4], blended[..., 3:4])
+
+        # Обновляем каплю: RGB из патча, alpha — min(текущей, средней по патчу)
         avg = patch_f.mean(axis=(0, 1))
-        self._color = QColor(int(avg[2]), int(avg[1]), int(avg[0]), int(avg[3]))
+        new_a = min(drop_a, int(avg[3]))
+        self._color = QColor(int(avg[2]), int(avg[1]), int(avg[0]), new_a)
         return result
 
     def _apply_qt_fallback(self, layer, cx: int, cy: int, size: int, clip, opts: dict):

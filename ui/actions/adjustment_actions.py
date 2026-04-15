@@ -3,7 +3,7 @@ from core.locale import tr
 
 class AdjustmentActionsMixin:
     def _show_adj_dialog(self, DialogClass, history_desc: str):
-        layer = self._document.get_active_layer()
+        layer = self._document and self._document.get_active_layer()
         if not layer or layer.image.isNull(): return
         self._push_history(tr(history_desc))
         import inspect
@@ -29,7 +29,7 @@ class AdjustmentActionsMixin:
         self._show_adj_dialog(HueSaturationDialog, "history.before_hs")
 
     def _invert(self):
-        layer = self._document.get_active_layer()
+        layer = self._document and self._document.get_active_layer()
         if not layer:
             return
         from ui.adjustments_dialog import apply_invert
@@ -66,7 +66,7 @@ class AdjustmentActionsMixin:
         self._show_adj_dialog(SelectiveColorDialog, "history.before_sel_color")
 
     def _match_color(self):
-        layer = self._document.get_active_layer()
+        layer = self._document and self._document.get_active_layer()
         if not layer:
             return
         from ui.more_adjustments import MatchColorDialog
@@ -108,7 +108,7 @@ class AdjustmentActionsMixin:
         self._show_adj_dialog(ColorLookupDialog, "history.before_lookup")
 
     def _equalize(self):
-        layer = self._document.get_active_layer()
+        layer = self._document and self._document.get_active_layer()
         if not layer:
             return
         from ui.more_adjustments import apply_equalize

@@ -178,8 +178,8 @@ def apply_color_lookup(src: QImage, lut: dict, intensity: int) -> QImage:
 # ── dialog ────────────────────────────────────────────────────────────────────
 
 class ColorLookupDialog(_AdjustDialog):
-    def __init__(self, image: QImage, parent=None):
-        super().__init__(tr("adj.color_lookup.title"), image, parent)
+    def __init__(self, layer, canvas_refresh, parent=None):
+        super().__init__(tr("adj.color_lookup.title"), layer, canvas_refresh, parent)
         self.setMinimumWidth(400)
         self._lut: dict | None = None
 
