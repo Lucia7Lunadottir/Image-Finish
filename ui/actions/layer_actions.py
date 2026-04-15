@@ -100,7 +100,7 @@ class LayerActionsMixin:
         self._canvas_refresh()
 
     def _edit_adj_layer(self):
-        layer = self._document.get_active_layer()
+        layer = self._document and self._document.get_active_layer()
         if not layer or layer.layer_type != "adjustment":
             return
         from ui.adjustment_layer_dialog import AdjustmentLayerDialog
@@ -132,7 +132,7 @@ class LayerActionsMixin:
         self._canvas_refresh()
 
     def _edit_fill_layer(self):
-        layer = self._document.get_active_layer()
+        layer = self._document and self._document.get_active_layer()
         if not layer or layer.layer_type != "fill":
             return
         from ui.fill_layer_dialog import FillLayerDialog
@@ -144,7 +144,7 @@ class LayerActionsMixin:
         self._canvas_refresh()
 
     def _on_edit_layer(self):
-        layer = self._document.get_active_layer()
+        layer = self._document and self._document.get_active_layer()
         if not layer:
             return
         if layer.layer_type == "adjustment":
@@ -155,7 +155,7 @@ class LayerActionsMixin:
     # ── Smart objects ─────────────────────────────────────────────────────
 
     def _new_smart_object(self):
-        layer = self._document.get_active_layer()
+        layer = self._document and self._document.get_active_layer()
         if not layer or layer.layer_type == "smart_object":
             return
         self._push_history(tr("history.new_smart_object"))
@@ -164,7 +164,7 @@ class LayerActionsMixin:
         self._refresh_layers()
 
     def _rasterize_layer(self):
-        layer = self._document.get_active_layer()
+        layer = self._document and self._document.get_active_layer()
         if not layer or layer.layer_type == "raster":
             return
         self._push_history(tr("history.rasterize_layer"))

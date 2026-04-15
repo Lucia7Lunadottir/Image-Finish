@@ -3,7 +3,7 @@ from core.locale import tr
 
 class FilterActionsMixin:
     def _blur_average(self):
-        layer = self._document.get_active_layer()
+        layer = self._document and self._document.get_active_layer()
         if not layer:
             return
         from core.filters.blur_filters import apply_average
@@ -12,7 +12,7 @@ class FilterActionsMixin:
         self._canvas_refresh()
 
     def _blur_simple(self):
-        layer = self._document.get_active_layer()
+        layer = self._document and self._document.get_active_layer()
         if not layer:
             return
         from core.filters.blur_filters import apply_blur
@@ -21,7 +21,7 @@ class FilterActionsMixin:
         self._canvas_refresh()
 
     def _blur_more(self):
-        layer = self._document.get_active_layer()
+        layer = self._document and self._document.get_active_layer()
         if not layer:
             return
         from core.filters.blur_filters import apply_blur_more
@@ -30,7 +30,7 @@ class FilterActionsMixin:
         self._canvas_refresh()
 
     def _box_blur(self):
-        layer = self._document.get_active_layer()
+        layer = self._document and self._document.get_active_layer()
         if not layer:
             return
         from core.filters.blur_filters import BoxBlurDialog
@@ -38,7 +38,7 @@ class FilterActionsMixin:
         BoxBlurDialog(layer, self._canvas_refresh, self).exec()
 
     def _gaussian_blur(self):
-        layer = self._document.get_active_layer()
+        layer = self._document and self._document.get_active_layer()
         if not layer:
             return
         from core.filters.blur_filters import GaussianBlurDialog
@@ -46,7 +46,7 @@ class FilterActionsMixin:
         GaussianBlurDialog(layer, self._canvas_refresh, self).exec()
 
     def _motion_blur(self):
-        layer = self._document.get_active_layer()
+        layer = self._document and self._document.get_active_layer()
         if not layer:
             return
         from core.filters.motion_blur import MotionBlurDialog
@@ -54,7 +54,7 @@ class FilterActionsMixin:
         MotionBlurDialog(layer, self._canvas_refresh, self).exec()
 
     def _radial_blur(self):
-        layer = self._document.get_active_layer()
+        layer = self._document and self._document.get_active_layer()
         if not layer:
             return
         from core.filters.radial_blur import RadialBlurDialog
@@ -62,7 +62,7 @@ class FilterActionsMixin:
         RadialBlurDialog(layer, self._canvas_refresh, self).exec()
 
     def _smart_blur(self):
-        layer = self._document.get_active_layer()
+        layer = self._document and self._document.get_active_layer()
         if not layer:
             return
         from core.filters.blur_filters import SmartBlurDialog
@@ -70,7 +70,7 @@ class FilterActionsMixin:
         SmartBlurDialog(layer, self._canvas_refresh, self).exec()
 
     def _surface_blur(self):
-        layer = self._document.get_active_layer()
+        layer = self._document and self._document.get_active_layer()
         if not layer:
             return
         from core.filters.blur_filters import SurfaceBlurDialog
@@ -78,7 +78,7 @@ class FilterActionsMixin:
         SurfaceBlurDialog(layer, self._canvas_refresh, self).exec()
 
     def _shape_blur(self):
-        layer = self._document.get_active_layer()
+        layer = self._document and self._document.get_active_layer()
         if not layer:
             return
         from core.filters.blur_filters import ShapeBlurDialog
@@ -86,7 +86,7 @@ class FilterActionsMixin:
         ShapeBlurDialog(layer, self._canvas_refresh, self).exec()
 
     def _lens_blur(self):
-        layer = self._document.get_active_layer()
+        layer = self._document and self._document.get_active_layer()
         if not layer:
             return
         from core.filters.blur_filters import LensBlurDialog

@@ -12,8 +12,8 @@ from ui.adjustments_dialog import _AdjustDialog, _SliderRow, _to_argb32, _from_b
 # ── bilinear sampler ──────────────────────────────────────────────────────────
 
 def _bilinear_sample_all(all_chs, rows, cols, h, w):
-    """Bilinear interpolation for all 3 channels at once.
-    all_chs: (3, H, W) float32  →  returns (H, W, 3) float32."""
+    """Bilinear interpolation for all channels at once.
+    all_chs: (C, H, W) float32  →  returns (H, W, C) float32."""
     import numpy as np
     r0 = np.clip(np.floor(rows).astype(np.int32), 0, h - 1)
     c0 = np.clip(np.floor(cols).astype(np.int32), 0, w - 1)
@@ -41,9 +41,9 @@ def _apply_spin_np(arr, amount: int):
     y_g, x_g = np.mgrid[0:h, 0:w]
     rx = x_g.astype(np.float32) - cx
     ry = y_g.astype(np.float32) - cy
-    all_chs = np.stack([arr[:, :, c].astype(np.float32) for c in range(3)])  # (3,H,W) once
+    all_chs = np.stack([arr[:, :, c].astype(np.float32) for c in range(4)])  # (4,H,W) once
 
-    acc = np.zeros((h, w, 3), dtype=np.float32)
+    acc = np.zeros((h, w, 4), dtype=np.float32)
     for theta in thetas:
         cos_t, sin_t = math.cos(theta), math.sin(theta)
         sx = np.clip(cos_t * rx - sin_t * ry + cx, 0, w - 1)
@@ -90,7 +90,7 @@ def apply_radial_blur(src: QImage, mode: str, amount: int) -> QImage:
         ba, arr = _bits_ba(img)
 
         blurred = _apply_spin_np(arr, amount) if mode == "Spin" else _apply_zoom_np(arr, amount)
-        arr[:, :, :3] = blurred
+        arr[:, :, :4] = blurred
         return _from_ba(ba, img)
 
     except ImportError:

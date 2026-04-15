@@ -30,7 +30,7 @@ class ImageActionsMixin:
         self._refresh_layers()
 
     def _flip_h(self):
-        layer = self._document.get_active_layer()
+        layer = self._document and self._document.get_active_layer()
         if not layer:
             return
         self._push_history(tr("history.flip_h"))
@@ -38,7 +38,7 @@ class ImageActionsMixin:
         self._canvas_refresh()
 
     def _flip_v(self):
-        layer = self._document.get_active_layer()
+        layer = self._document and self._document.get_active_layer()
         if not layer:
             return
         self._push_history(tr("history.flip_v"))

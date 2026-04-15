@@ -53,7 +53,7 @@ def _approx_gaussian_np(ch, sigma: float):
 # ── apply function ────────────────────────────────────────────────────────────
 
 def apply_gaussian_blur(src: QImage, radius: float) -> QImage:
-    """Gaussian blur. radius in [0.1, 250] pixels. Alpha channel preserved."""
+    """Gaussian blur. radius in [0.1, 250] pixels. All channels including alpha."""
     if radius < 0.1:
         return src.copy()
     img   = _to_argb32(src)
@@ -65,12 +65,12 @@ def apply_gaussian_blur(src: QImage, radius: float) -> QImage:
 
         try:
             from scipy.ndimage import gaussian_filter
-            for c in range(3):  # BGR only — preserve alpha
+            for c in range(4):
                 arr[:, :, c] = np.clip(
                     gaussian_filter(arr[:, :, c].astype(np.float32), sigma), 0, 255
                 ).astype(np.uint8)
         except ImportError:
-            for c in range(3):
+            for c in range(4):
                 arr[:, :, c] = np.clip(
                     _approx_gaussian_np(arr[:, :, c], sigma), 0, 255
                 ).astype(np.uint8)
@@ -83,16 +83,16 @@ def apply_gaussian_blur(src: QImage, radius: float) -> QImage:
         for _ in range(passes):
             for y in range(1, img.height() - 1):
                 for x in range(1, img.width() - 1):
-                    r = g = b = 0
+                    r = g = b = a = 0
                     for dy in (-1, 0, 1):
                         for dx in (-1, 0, 1):
                             px = img.pixel(x + dx, y + dy)
+                            a += (px >> 24) & 0xFF
                             r += (px >> 16) & 0xFF
                             g += (px >>  8) & 0xFF
                             b +=  px        & 0xFF
-                    a = (img.pixel(x, y) >> 24) & 0xFF
                     img.setPixel(x, y,
-                        (a << 24) | ((r // 9) << 16) | ((g // 9) << 8) | (b // 9))
+                        ((a // 9) << 24) | ((r // 9) << 16) | ((g // 9) << 8) | (b // 9))
         return img.convertToFormat(QImage.Format.Format_ARGB32_Premultiplied)
 
 
@@ -131,7 +131,7 @@ def apply_average(src: QImage) -> QImage:
     try:
         import numpy as np
         ba, arr = _bits_ba(img)
-        for c in range(3):
+        for c in range(4):
             arr[:, :, c] = int(arr[:, :, c].mean())
         return _from_ba(ba, img)
     except ImportError:
@@ -162,7 +162,7 @@ def apply_box_blur(src: QImage, radius: int) -> QImage:
     try:
         import numpy as np
         ba, arr = _bits_ba(img)
-        for c in range(3):
+        for c in range(4):
             arr[:, :, c] = np.clip(_box_blur_channel(arr[:, :, c], r), 0, 255).astype(np.uint8)
         return _from_ba(ba, img)
     except ImportError:
@@ -206,7 +206,7 @@ def apply_smart_blur(src: QImage, radius: int, threshold: int) -> QImage:
         # threshold slider 0-100 → pixel std_dev 0-127
         smooth = std < (threshold * 1.27)
 
-        for c in range(3):
+        for c in range(4):
             ch = arr[:, :, c].astype(np.float32)
             blurred = _box_blur_channel(ch, r)
             arr[:, :, c] = np.where(smooth, np.clip(blurred, 0, 255), ch).astype(np.uint8)
@@ -233,7 +233,7 @@ def apply_surface_blur(src: QImage, radius: int, threshold: int) -> QImage:
         t_px  = max(1.0, threshold * 1.27)
         alpha = 1.0 / (1.0 + (std / t_px) ** 2)   # Cauchy: 1 on flat, 0 on edge
 
-        for c in range(3):
+        for c in range(4):
             ch = arr[:, :, c].astype(np.float32)
             blurred = _box_blur_channel(ch, r)
             arr[:, :, c] = np.clip(alpha * blurred + (1.0 - alpha) * ch, 0, 255).astype(np.uint8)
@@ -332,7 +332,7 @@ def apply_shape_blur(src: QImage, radius: int, shape: str) -> QImage:
         k            = np.roll(np.roll(k, -pad, axis=0), -pad, axis=1)
         K_fft        = rfft2(k)
 
-        for c in range(3):
+        for c in range(4):
             padded  = np.pad(arr[:, :, c].astype(np.float32), pad, mode='edge')
             blurred = irfft2(rfft2(padded) * K_fft, s=padded.shape)
             arr[:, :, c] = np.clip(blurred[pad:pad + h, pad:pad + w], 0, 255).astype(np.uint8)
@@ -416,7 +416,7 @@ def apply_lens_blur(src: QImage, radius: int, curvature: int) -> QImage:
         k            = np.roll(np.roll(k, -pad, axis=0), -pad, axis=1)
         K_fft        = rfft2(k)
 
-        for c in range(3):
+        for c in range(4):
             padded  = np.pad(arr[:, :, c].astype(np.float32), pad, mode='edge')
             blurred = irfft2(rfft2(padded) * K_fft, s=padded.shape)
             arr[:, :, c] = np.clip(blurred[pad:pad + h, pad:pad + w], 0, 255).astype(np.uint8)

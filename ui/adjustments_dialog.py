@@ -248,13 +248,15 @@ class _AdjustDialog(QDialog):
 
     _DEBOUNCE_MS = 40
 
-    def __init__(self, title: str, image: QImage, parent=None):
+    def __init__(self, title: str, layer, canvas_refresh, parent=None):
         super().__init__(parent)
         self.setWindowTitle(title)
         self.setModal(True)
         self.setMinimumWidth(380)
 
-        self._image          = image
+        self._layer          = layer
+        self._canvas_refresh = canvas_refresh
+        image                = layer.image
         self._original       = image.copy()
         self._orig_argb32    = _to_argb32(self._original)
 
