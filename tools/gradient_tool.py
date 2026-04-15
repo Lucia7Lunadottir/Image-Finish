@@ -35,7 +35,7 @@ class GradientTool(BaseTool):
         if self._start is None:
             return
         layer = doc.get_active_layer()
-        if not layer or layer.locked:
+        if not layer or layer.locked or getattr(layer, "lock_pixels", False):
             self._start = None
             return
 
@@ -65,10 +65,12 @@ class GradientTool(BaseTool):
             lock_a = getattr(layer, "lock_alpha", False)
             
         if lock_a:
+            import ctypes
             w, h = target_img.width(), target_img.height()
+            bpl = target_img.bytesPerLine()
             ptr = target_img.bits()
-            ptr.setsize(target_img.sizeInBytes())
-            arr = np.ndarray((h, w, 4), dtype=np.uint8, buffer=ptr)
+            _buf_la = (ctypes.c_uint8 * target_img.sizeInBytes()).from_address(int(ptr))
+            arr = np.ndarray((h, bpl // 4, 4), dtype=np.uint8, buffer=_buf_la)[:, :w, :]
             orig_alpha = arr[..., 3].copy()
 
         painter = QPainter(target_img)
@@ -80,10 +82,10 @@ class GradientTool(BaseTool):
                              target_img.width(), target_img.height(),
                              sx, sy, ex, ey, stops)
         painter.end()
-        
+
         if lock_a:
             new_alpha = arr[..., 3].astype(np.float32)
-            new_alpha[new_alpha == 0] = 1.0 
+            new_alpha[new_alpha == 0] = 1.0
             ratio = orig_alpha.astype(np.float32) / new_alpha
             arr[..., 0] = np.clip(arr[..., 0] * ratio, 0, 255).astype(np.uint8)
             arr[..., 1] = np.clip(arr[..., 1] * ratio, 0, 255).astype(np.uint8)

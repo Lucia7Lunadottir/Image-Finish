@@ -16,10 +16,11 @@ def _hslider(minimum: int, maximum: int, value: int):
 
 
 class EffectOptions(BaseOptions):
-    def __init__(self, effect_key: str, parent=None):
+    def __init__(self, effect_key: str, show_hardness: bool = False, parent=None):
         super().__init__(parent)
         self.layout.setSpacing(14)
 
+        # --- Размер ---
         sl_size = _hslider(4, 200, 20)
         sp_size = QSpinBox()
         sp_size.setRange(4, 200)
@@ -28,6 +29,26 @@ class EffectOptions(BaseOptions):
         sp_size.valueChanged.connect(sl_size.setValue)
         sp_size.valueChanged.connect(lambda v: self.option_changed.emit("brush_size", v))
 
+        self.layout.addWidget(self._lbl("opts.size"))
+        self.layout.addWidget(sl_size)
+        self.layout.addWidget(sp_size)
+
+        # --- Жёсткость (опционально) ---
+        if show_hardness:
+            sl_hard = _hslider(0, 100, 100)
+            sp_hard = QSpinBox()
+            sp_hard.setRange(0, 100)
+            sp_hard.setValue(100)
+            sp_hard.setSuffix("%")
+            sl_hard.valueChanged.connect(sp_hard.setValue)
+            sp_hard.valueChanged.connect(sl_hard.setValue)
+            sp_hard.valueChanged.connect(
+                lambda v: self.option_changed.emit("brush_hardness", v / 100.0))
+            self.layout.addWidget(self._lbl("opts.hardness"))
+            self.layout.addWidget(sl_hard)
+            self.layout.addWidget(sp_hard)
+
+        # --- Сила эффекта ---
         sl_str = _hslider(1, 100, 50)
         sp_str = QSpinBox()
         sp_str.setRange(1, 100)
@@ -38,9 +59,6 @@ class EffectOptions(BaseOptions):
         sp_str.valueChanged.connect(
             lambda v: self.option_changed.emit("effect_strength", v / 100))
 
-        self.layout.addWidget(self._lbl("opts.size"))
-        self.layout.addWidget(sl_size)
-        self.layout.addWidget(sp_size)
         self.layout.addWidget(self._lbl(effect_key))
         self.layout.addWidget(sl_str)
         self.layout.addWidget(sp_str)

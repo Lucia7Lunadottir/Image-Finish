@@ -34,6 +34,23 @@ def _const_arr(img: QImage):
     buf = (ctypes.c_uint8 * img.sizeInBytes()).from_address(int(ptr))
     return np.ndarray((img.height(), img.bytesPerLine() // 4, 4), dtype=np.uint8, buffer=buf)
 
+
+def _bits_ba(img: QImage):
+    """Returns (buffer, array) for in-place pixel modification of QImage.
+    Keep the returned buffer alive until _from_ba is called."""
+    import numpy as np
+    import ctypes
+    ptr = img.bits()
+    buf = (ctypes.c_uint8 * img.sizeInBytes()).from_address(int(ptr))
+    arr = np.ndarray((img.height(), img.bytesPerLine() // 4, 4), dtype=np.uint8, buffer=buf)
+    return buf, arr[:, :img.width(), :]
+
+
+def _from_ba(ba, img: QImage) -> QImage:
+    """Finalize in-place edit and return premultiplied ARGB32 QImage.
+    ba must be passed to prevent GC of the ctypes buffer before conversion."""
+    return img.convertToFormat(QImage.Format.Format_ARGB32_Premultiplied)
+
 # Memory layout of Format_ARGB32 on little-endian x86:
 #   4-channel axis indices:  0=B  1=G  2=R  3=A
 

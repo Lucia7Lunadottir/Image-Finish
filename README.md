@@ -1,4 +1,4 @@
-# LinuxShop 🎨
+# ImageFinish 🎨
 
 A modular PyQt6 image editor for Linux, inspired by Photoshop.
 

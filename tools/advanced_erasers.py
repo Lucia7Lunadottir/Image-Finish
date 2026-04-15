@@ -15,14 +15,13 @@ class MagicEraserTool(BaseTool):
         layer = doc.get_active_layer()
         if not layer or layer.locked or layer.image.isNull() or getattr(layer, "lock_pixels", False):
             return
-            
-        if getattr(layer, "lock_alpha", False):
-            return
-            
-        if getattr(layer, "editing_mask", False):
-            return
 
-        img = layer.image
+        if getattr(layer, "editing_mask", False) and getattr(layer, "mask", None) is not None:
+            img = layer.mask
+        else:
+            if getattr(layer, "lock_alpha", False):
+                return
+            img = layer.image
         w, h = img.width(), img.height()
         sx, sy = pos.x() - layer.offset.x(), pos.y() - layer.offset.y()
 
@@ -100,20 +99,25 @@ class BackgroundEraserTool(BaseTool):
         super().__init__()
         self.sample_color = None
         self.last_paint_pos = None
+        self._target_img = None
 
     def on_press(self, pos: QPoint, doc, fg, bg, opts):
         layer = doc.get_active_layer()
         if not layer or layer.locked or layer.image.isNull() or getattr(layer, "lock_pixels", False):
             self.sample_color = None
-            return
-            
-        if getattr(layer, "lock_alpha", False):
-            return
-            
-        if getattr(layer, "editing_mask", False):
+            self._target_img = None
             return
 
-        img = layer.image
+        if getattr(layer, "editing_mask", False) and getattr(layer, "mask", None) is not None:
+            self._target_img = layer.mask
+        else:
+            if getattr(layer, "lock_alpha", False):
+                self.sample_color = None
+                self._target_img = None
+                return
+            self._target_img = layer.image
+
+        img = self._target_img
         cx, cy = pos.x() - layer.offset.x(), pos.y() - layer.offset.y()
 
         if 0 <= cx < img.width() and 0 <= cy < img.height():
@@ -157,10 +161,13 @@ class BackgroundEraserTool(BaseTool):
     def on_release(self, pos, doc, fg, bg, opts):
         self.sample_color = None
         self.last_paint_pos = None
+        self._target_img = None
 
     def _erase_background(self, pos: QPoint, doc, opts):
         layer = doc.get_active_layer()
-        img = layer.image
+        img = self._target_img
+        if img is None:
+            return
         w, h = img.width(), img.height()
         cx, cy = pos.x() - layer.offset.x(), pos.y() - layer.offset.y()
 

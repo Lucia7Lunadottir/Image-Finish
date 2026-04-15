@@ -7,25 +7,7 @@ from PyQt6.QtGui import QImage, QPainter, QColor
 
 from core.locale import tr
 from ui.adjustments_dialog import _JumpSlider
-
-def fast_box_blur_np(arr, radius):
-    r = int(radius)
-    if r <= 0: return arr.copy()
-    h, w, c = arr.shape
-    r = min(r, max(1, min(h, w) // 2))
-    pad_h = np.pad(arr, ((0,0), (r, r), (0,0)), mode='edge').astype(np.int32)
-    cs_h = np.cumsum(pad_h, axis=1)
-    res_h = np.empty_like(arr, dtype=np.int32)
-    res_h[:, 0, :] = cs_h[:, 2*r, :]
-    if w > 1: res_h[:, 1:, :] = cs_h[:, 2*r+1:, :] - cs_h[:, :-2*r-1, :]
-    res_h //= (2*r + 1)
-    pad_v = np.pad(res_h, ((r, r), (0,0), (0,0)), mode='edge')
-    cs_v = np.cumsum(pad_v, axis=0)
-    res_v = np.empty_like(res_h)
-    res_v[0, :, :] = cs_v[2*r, :, :]
-    if h > 1: res_v[1:, :, :] = cs_v[2*r+1:, :, :] - cs_v[:-2*r-1, :, :]
-    res_v //= (2*r + 1)
-    return res_v.astype(np.uint8)
+from tools.tool_utils import fast_box_blur_np
 
 def apply_kuwahara(arr, r):
     """Мощный математический фильтр Кувахары через интегральные изображения."""

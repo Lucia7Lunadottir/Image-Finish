@@ -1,53 +1,64 @@
 """
-effect_tools.py — Blur, Sharpen, Smudge (палец).
+effect_tools.py — Blur, Sharpen, Smudge, Dodge, Burn, Sponge.
 
-Все три работают как кисть: зажал и тянешь.
-Используют локальные операции над QImage через numpy (если есть)
-или через pure-Qt fallback.
+Архитектура:
+- BrushEffectTool  — базовый класс: весь бойлерплейт один раз
+  * layer.locked / lock_pixels → early return
+  * layer.lock_alpha           → восстанавливаем alpha после эффекта
+  * layer.offset               → правильная система координат
+  * doc.selection (clip)       → ограничение по выделению
+  * CompositionMode_Source     → запись без артефактов прозрачности
+  * _make_mask()               → маска кисти (переопределяется подклассом)
+
+- Каждый инструмент реализует только _compute_effect(patch_f, mask, strength, opts)
+  и при необходимости _apply_qt_fallback() для работы без numpy.
+
+- _SoftMaskMixin — для Dodge/Burn/Sponge: всегда мягкий smoothstep-градиент,
+  независимо от brush_hardness (у этих инструментов нет слайдера hardness).
 """
 
-from PyQt6.QtGui import QPainter, QColor, QImage, QPen
-from PyQt6.QtCore import QPoint, QRect, Qt
+from PyQt6.QtGui import QPainter, QColor, QImage
+from PyQt6.QtCore import QPoint, QRect
 from tools.base_tool import BaseTool
+from tools.tool_utils import (
+    _HAS_NUMPY,
+    _clamp_rect, _qimage_to_np, _np_to_qimage,
+    _circle_mask, _soft_circle_mask, _brush_mask,
+    _box_blur_rgb, _box_blur_np, _sharpen_np, _apply_qt_blur,
+)
 
+if _HAS_NUMPY:
+    import numpy as np
+
+
+# ═══════════════════════════════════════════════════════════════ _EffectStrokeMixin
 
 class _EffectStrokeMixin:
     """
     Mixin для эффект-инструментов (Blur, Sharpen, Smudge и т.п.).
 
-    Включает оптимизацию в canvas_widget:
-    - needs_background_composite = True → canvas заранее кэширует фон без активного слоя
-    - stroke_preview() → canvas показывает текущий слой поверх фона без get_composite()
-    - Результат: один get_composite() на старте мазка вместо одного на каждое движение.
+    Оптимизация canvas_widget:
+    - needs_background_composite = True → canvas кэширует фон без активного слоя
+    - stroke_preview() → canvas рисует активный слой поверх кэша (без get_composite())
+    - Итог: один get_composite() на старте мазка вместо одного на каждое движение.
     """
 
     needs_background_composite: bool = True
 
-    # ---------- вызывать из __init__ каждого инструмента ----------
     def _init_effect_stroke(self):
         self._eff_layer_ref = None
-        # True только когда canvas включил оптимизацию (bg-cache активен).
-        # canvas_widget устанавливает это поле в _start_effect_stroke().
+        # True только когда canvas включил оптимизацию (_start_effect_stroke).
         self._stroke_preview_active = False
 
-    # ---------- вызывать из on_press ----------
     def _begin_effect_stroke(self, doc):
         self._eff_layer_ref = doc.get_active_layer()
-        # Не сбрасываем _stroke_preview_active — canvas устанавливает его ДО on_press
-        # через _start_effect_stroke(), и оно уже правильное к этому моменту.
 
-    # ---------- вызывать из on_release ----------
     def _end_effect_stroke(self):
         self._eff_layer_ref = None
         self._stroke_preview_active = False
 
-    # ---------- canvas обращается сюда на каждый paintEvent ----------
     def stroke_preview(self):
-        """
-        Возвращает (QImage, offset, opacity) текущего активного слоя.
-        Работает ТОЛЬКО когда canvas включил оптимизацию (_stroke_preview_active=True).
-        Иначе возвращает None → canvas вызывает полный get_composite() как обычно.
-        """
+        """Возвращает (QImage, offset, opacity) или None — вызывается canvas на каждый кадр."""
         if not self._stroke_preview_active:
             return None
         layer = self._eff_layer_ref
@@ -55,124 +66,24 @@ class _EffectStrokeMixin:
             return None
         return (layer.image, layer.offset, layer.opacity)
 
-try:
-    import numpy as np
-    _HAS_NUMPY = True
-except ImportError:
-    _HAS_NUMPY = False
 
+# ═══════════════════════════════════════════════════════════════ BrushEffectTool
 
-# ── helpers ───────────────────────────────────────────────────────────────────
-
-def _clamp_rect(rect: QRect, w: int, h: int) -> QRect:
-    x1 = max(0, rect.left())
-    y1 = max(0, rect.top())
-    x2 = min(w, rect.right() + 1)
-    y2 = min(h, rect.bottom() + 1)
-    return QRect(x1, y1, x2 - x1, y2 - y1)
-
-
-def _qimage_to_np(img: QImage):
-    """QImage ARGB32 → numpy (H, W, 4) uint8."""
-    img = img.convertToFormat(QImage.Format.Format_ARGB32)
-    w, h = img.width(), img.height()
-    import ctypes, numpy as np
-    arr = np.empty((h, img.bytesPerLine() // 4, 4), dtype=np.uint8)
-    ctypes.memmove(arr.ctypes.data, int(img.constBits()), img.sizeInBytes())
-    return arr[:, :w, :]
-
-
-def _np_to_qimage(arr) -> QImage:
-    h, w = arr.shape[:2]
-    import ctypes, numpy as np
-    arr_c = np.ascontiguousarray(arr)
-    img = QImage(w, h, QImage.Format.Format_ARGB32)
-    ctypes.memmove(int(img.bits()), arr_c.ctypes.data, min(img.sizeInBytes(), arr_c.nbytes))
-    return img
-
-
-def _circle_mask(src_rect: QRect, cx: int, cy: int, r: int):
-    """Float32 numpy mask (H, W, 1): 1.0 внутри круга, 0.0 снаружи."""
-    pw, ph = src_rect.width(), src_rect.height()
-    xs = np.arange(pw) + src_rect.left() - cx
-    ys = np.arange(ph) + src_rect.top() - cy
-    xx, yy = np.meshgrid(xs, ys)
-    return (xx**2 + yy**2 <= r**2).astype(np.float32)[:, :, np.newaxis]
-
-
-def _soft_circle_mask(src_rect: QRect, cx: int, cy: int, r: int):
-    """Плавная радиальная маска (0.0 - 1.0) для мягкой кисти тонирования."""
-    pw, ph = src_rect.width(), src_rect.height()
-    xs = np.arange(pw) + src_rect.left() - cx
-    ys = np.arange(ph) + src_rect.top() - cy
-    xx, yy = np.meshgrid(xs, ys)
-    dist = np.sqrt(xx**2 + yy**2)
-    mask = np.clip(1.0 - (dist / max(1, r)), 0.0, 1.0)
-    mask = mask * mask * (3.0 - 2.0 * mask) # Smoothstep
-    return mask[:, :, np.newaxis].astype(np.float32)
-
-def _box_blur_np(arr, radius: int):
-    """Fast separable box blur на numpy."""
-    from numpy import pad, cumsum
-    r = max(1, radius)
-    # horizontal pass
-    padded = pad(arr.astype(np.float32), ((0,0),(r,r),(0,0)), mode='edge')
-    cs = cumsum(padded, axis=1)
-    blurred = (cs[:, 2*r:, :] - cs[:, :-2*r, :]) / (2*r)
-    # vertical pass
-    padded2 = pad(blurred, ((r,r),(0,0),(0,0)), mode='edge')
-    cs2 = cumsum(padded2, axis=0)
-    result = (cs2[2*r:, :, :] - cs2[:-2*r, :, :]) / (2*r)
-    return result.clip(0, 255).astype(np.uint8)
-
-
-def _sharpen_np(arr, strength: float = 1.0):
-    """Unsharp mask: result = orig + strength*(orig - blurred)."""
-    blurred = _box_blur_np(arr, 2)
-    detail = arr.astype(np.float32) - blurred.astype(np.float32)
-    result = arr.astype(np.float32) + strength * detail
-    return result.clip(0, 255).astype(np.uint8)
-
-
-# ── Qt-only fallback (без numpy): просто усредняем пиксели в радиусе ──────────
-
-def _apply_qt_blur(image: QImage, cx: int, cy: int, radius: int, passes: int = 2):
-    """Размываем круговую область вокруг (cx, cy) простым box blur."""
-    r = radius
-    rect = _clamp_rect(QRect(cx - r, cy - r, 2*r, 2*r), image.width(), image.height())
-    if rect.isEmpty():
-        return
-    for _ in range(passes):
-        for y in range(rect.top(), rect.bottom()):
-            for x in range(rect.left(), rect.right()):
-                # усредняем 3x3
-                rs = gs = bs = als = n = 0
-                for dy in range(-1, 2):
-                    for dx in range(-1, 2):
-                        nx_, ny_ = x + dx, y + dy
-                        if 0 <= nx_ < image.width() and 0 <= ny_ < image.height():
-                            c = QColor(image.pixel(nx_, ny_))
-                            rs += c.red(); gs += c.green()
-                            bs += c.blue(); als += c.alpha()
-                            n += 1
-                if n:
-                    image.setPixel(x, y, QColor(rs//n, gs//n, bs//n, als//n).rgba())
-
-
-# ═══════════════════════════════════════════════════════════════ BlurTool
-class BlurTool(_EffectStrokeMixin, BaseTool):
+class BrushEffectTool(_EffectStrokeMixin, BaseTool):
     """
-    Размытие кистью. Зажал — размываешь всё под курсором.
-    Использует numpy если доступен, иначе Qt fallback.
+    Базовый класс для всех кисть-like инструментов-эффектов.
+
+    Подкласс должен реализовать _compute_effect().
+    Опционально: _make_mask() и _apply_qt_fallback().
     """
-    name     = "Blur"
-    icon     = "💧"
-    shortcut = "R"
+
     modifies_canvas_on_move = True
 
     def __init__(self):
         self._init_effect_stroke()
         self._last: QPoint | None = None
+
+    # ── жизненный цикл ────────────────────────────────────────────────────────
 
     def on_press(self, pos, doc, fg, bg, opts):
         self._begin_effect_stroke(doc)
@@ -188,363 +99,268 @@ class BlurTool(_EffectStrokeMixin, BaseTool):
         self._end_effect_stroke()
         self._last = None
 
+    # ── ядро ──────────────────────────────────────────────────────────────────
+
     def _apply(self, pos: QPoint, doc, opts: dict):
+        """Применяет эффект к патчу под кистью. Весь бойлерплейт здесь."""
         layer = doc.get_active_layer()
-        if not layer or layer.locked:
+        if not layer or layer.locked or getattr(layer, "lock_pixels", False):
             return
+
         size     = max(4, int(opts.get("brush_size", 20)))
+        hardness = float(opts.get("brush_hardness", 1.0))
         strength = float(opts.get("effect_strength", 0.5))
-        radius   = max(1, int(size * strength * 0.5))
 
-        cx, cy = pos.x() - layer.offset.x(), pos.y() - layer.offset.y()
+        cx   = pos.x() - layer.offset.x()
+        cy   = pos.y() - layer.offset.y()
         clip = doc.selection if (doc.selection and not doc.selection.isEmpty()) else None
 
-        if _HAS_NUMPY:
-            r = size // 2
-            src_rect = _clamp_rect(
-                QRect(cx - r, cy - r, size, size),
-                layer.image.width(), layer.image.height())
-            if clip:
-                src_rect = src_rect.intersected(clip.boundingRect().toRect().translated(-layer.offset))
-            if src_rect.isEmpty():
-                return
-            patch = _qimage_to_np(layer.image.copy(src_rect))
-            blurred = _box_blur_np(patch, radius)
-            # blend с оригиналом по strength, только внутри круга
-            circle = _circle_mask(src_rect, cx, cy, r)
-            blended = (patch.astype(float) * (1 - strength * circle) +
-                       blurred.astype(float) * (strength * circle)).clip(0, 255).astype('uint8')
-            result_img = _np_to_qimage(blended)
-            p = QPainter(layer.image)
-            if clip:
-                p.setClipPath(clip.translated(-layer.offset.x(), -layer.offset.y()))
-            p.drawImage(src_rect.topLeft(), result_img)
-            p.end()
-        else:
-            _apply_qt_blur(layer.image, cx, cy, size // 2)
-
-
-# ═══════════════════════════════════════════════════════════════ SharpenTool
-class SharpenTool(_EffectStrokeMixin, BaseTool):
-    """Резкость — противоположность размытию."""
-    name     = "Sharpen"
-    icon     = "🔺"
-    shortcut = "Y"
-    modifies_canvas_on_move = True
-
-    def __init__(self):
-        self._init_effect_stroke()
-        self._last: QPoint | None = None
-
-    def on_press(self, pos, doc, fg, bg, opts):
-        self._begin_effect_stroke(doc)
-        self._last = pos
-        self._apply(pos, doc, opts)
-
-    def on_move(self, pos, doc, fg, bg, opts):
-        if self._last:
-            self._apply(pos, doc, opts)
-        self._last = pos
-
-    def on_release(self, pos, doc, fg, bg, opts):
-        self._end_effect_stroke()
-        self._last = None
-
-    def _apply(self, pos: QPoint, doc, opts: dict):
         if not _HAS_NUMPY:
-            return  # резкость без numpy не делаем
-        layer = doc.get_active_layer()
-        if not layer or layer.locked:
+            self._apply_qt_fallback(layer, cx, cy, size, clip, opts)
             return
-        size     = max(4, int(opts.get("brush_size", 20)))
-        strength = float(opts.get("effect_strength", 1.0))
-
-        cx, cy = pos.x() - layer.offset.x(), pos.y() - layer.offset.y()
-        clip = doc.selection if (doc.selection and not doc.selection.isEmpty()) else None
 
         r = size // 2
         src_rect = _clamp_rect(
             QRect(cx - r, cy - r, size, size),
             layer.image.width(), layer.image.height())
         if clip:
-                src_rect = src_rect.intersected(clip.boundingRect().toRect().translated(-layer.offset))
+            src_rect = src_rect.intersected(
+                clip.boundingRect().toRect().translated(-layer.offset))
         if src_rect.isEmpty():
             return
-        patch = _qimage_to_np(layer.image.copy(src_rect))
-        sharpened = _sharpen_np(patch, strength)
-        circle = _circle_mask(src_rect, cx, cy, r)
-        blended = (patch.astype(float) * (1 - circle) +
-                   sharpened.astype(float) * circle).clip(0, 255).astype('uint8')
-        result_img = _np_to_qimage(blended)
+
+        patch_f = _qimage_to_np(layer.image.copy(src_rect)).astype(np.float32)
+        mask    = self._make_mask(src_rect, cx, cy, r, hardness)
+
+        result_f = self._compute_effect(patch_f, mask, strength, opts)
+
+        # lock_alpha: эффект не должен менять прозрачность
+        if getattr(layer, "lock_alpha", False):
+            result_f[..., 3:4] = patch_f[..., 3:4]
+
+        result_img = _np_to_qimage(result_f.clip(0, 255).astype(np.uint8))
         p = QPainter(layer.image)
+        # Source: пишем пиксели напрямую, без SourceOver-композитинга →
+        # прозрачные пиксели на границах остаются прозрачными
+        p.setCompositionMode(QPainter.CompositionMode.CompositionMode_Source)
         if clip:
             p.setClipPath(clip.translated(-layer.offset.x(), -layer.offset.y()))
         p.drawImage(src_rect.topLeft(), result_img)
         p.end()
 
+    # ── переопределяемые методы ───────────────────────────────────────────────
+
+    def _make_mask(self, src_rect, cx, cy, r, hardness):
+        """Маска кисти. По умолчанию: hardness-aware smoothstep.
+        Dodge/Burn/Sponge переопределяют на всегда-мягкую через _SoftMaskMixin."""
+        return _brush_mask(src_rect, cx, cy, r, hardness)
+
+    def _compute_effect(self, patch_f, mask, strength, opts) -> "np.ndarray":
+        """
+        Логика эффекта. Переопределить в подклассе.
+
+        Args:
+            patch_f: float32 (H, W, 4) BGRA — оригинальный патч
+            mask:    float32 (H, W, 1)  — маска кисти [0.0–1.0]
+            strength: float             — сила эффекта [0.0–1.0]
+            opts:    dict               — все параметры инструмента
+
+        Returns:
+            float32 (H, W, 4) — результат (alpha канал копируется из patch_f,
+            если включён lock_alpha — base class восстановит его автоматически)
+        """
+        return patch_f
+
+    def _apply_qt_fallback(self, layer, cx: int, cy: int, size: int, clip, opts: dict):
+        """Qt-fallback (без numpy). Переопределить при необходимости."""
+        pass
+
+
+# ═══════════════════════════════════════════════════════════════ _SoftMaskMixin
+
+class _SoftMaskMixin:
+    """
+    Переопределяет маску кисти на всегда-мягкую (smoothstep без hardness).
+    Используется Dodge, Burn, Sponge — у них нет слайдера hardness в UI.
+    """
+
+    def _make_mask(self, src_rect, cx, cy, r, hardness):
+        return _soft_circle_mask(src_rect, cx, cy, r)
+
+
+# ═══════════════════════════════════════════════════════════════ BlurTool
+
+class BlurTool(BrushEffectTool):
+    """Размытие кистью.
+    RGB размывается в premultiplied alpha пространстве → нет тёмных краёв на прозрачности."""
+    name     = "Blur"
+    icon     = "💧"
+    shortcut = "R"
+
+    def _compute_effect(self, patch_f, mask, strength, opts):
+        radius = max(1, int(opts.get("brush_size", 20) * strength * 0.5))
+
+        alpha       = patch_f[..., 3:4] / 255.0        # [0, 1]
+        rgb_pre     = patch_f[..., :3] * alpha           # premultiplied [0, 255]
+        blurred_pre = _box_blur_rgb(rgb_pre, radius)     # blur(RGB × α)
+        blurred_a   = _box_blur_rgb(alpha,   radius)     # blur(α)
+        safe        = np.maximum(blurred_a, 1e-6)
+        blurred_rgb = blurred_pre / safe                 # unpremultiplied [0, 255]
+
+        result = patch_f.copy()
+        result[..., :3] = (patch_f[..., :3] * (1.0 - mask * strength) +
+                           blurred_rgb       * (mask * strength)).clip(0, 255)
+        return result
+
+    def _apply_qt_fallback(self, layer, cx, cy, size, clip, opts):
+        _apply_qt_blur(layer.image, cx, cy, size // 2)
+
+
+# ═══════════════════════════════════════════════════════════════ SharpenTool
+
+class SharpenTool(BrushEffectTool):
+    """Резкость — unsharp mask внутри круга кисти."""
+    name     = "Sharpen"
+    icon     = "🔺"
+    shortcut = "Y"
+
+    def _compute_effect(self, patch_f, mask, strength, opts):
+        patch_u8  = patch_f.clip(0, 255).astype(np.uint8)
+        sharpened = _sharpen_np(patch_u8, strength).astype(np.float32)
+        result    = patch_f.copy()
+        result[...] = (patch_f * (1.0 - mask * strength) +
+                       sharpened * (mask * strength)).clip(0, 255)
+        return result
+
+    # Без numpy ничего не делаем (sharpen без float-арифметики бессмысленен)
+
 
 # ═══════════════════════════════════════════════════════════════ SmudgeTool
-class SmudgeTool(_EffectStrokeMixin, BaseTool):
-    """
-    Палец — размазывает цвет по направлению движения.
-    Тащит «каплю» пикселей за кистью.
-    """
+
+class SmudgeTool(BrushEffectTool):
+    """Палец — тащит «каплю» цвета в направлении движения кисти."""
     name     = "Smudge"
     icon     = "👆"
     shortcut = "W"
-    modifies_canvas_on_move = True
 
     def __init__(self):
-        self._init_effect_stroke()
-        self._last:  QPoint | None = None
-        self._color: QColor | None = None   # цвет под кистью в начале мазка
+        super().__init__()
+        self._color: QColor | None = None
 
     def on_press(self, pos, doc, fg, bg, opts):
+        """Запоминаем начальный цвет под кистью, но НЕ применяем эффект."""
         self._begin_effect_stroke(doc)
         self._last = pos
         layer = doc.get_active_layer()
         if layer:
-            x, y = pos.x(), pos.y()
+            x = pos.x() - layer.offset.x()
+            y = pos.y() - layer.offset.y()
             if 0 <= x < layer.width() and 0 <= y < layer.height():
                 self._color = QColor(layer.image.pixel(x, y))
             else:
                 self._color = QColor(0, 0, 0, 0)
 
-    def on_move(self, pos, doc, fg, bg, opts):
-        if not self._last or not self._color:
-            return
-        layer = doc.get_active_layer()
-        if not layer or layer.locked:
-            self._last = pos
-            return
-
-        size     = max(2, int(opts.get("brush_size", 16)))
-        strength = float(opts.get("effect_strength", 0.7))
-        clip = doc.selection if (doc.selection and not doc.selection.isEmpty()) else None
-
-        cx, cy = pos.x() - layer.offset.x(), pos.y() - layer.offset.y()
-
-        if _HAS_NUMPY:
-            r = size // 2
-            src_rect = _clamp_rect(
-                QRect(cx - r, cy - r, size, size),
-                layer.image.width(), layer.image.height())
-            if clip:
-                src_rect = src_rect.intersected(clip.boundingRect().toRect().translated(-layer.offset))
-            if not src_rect.isEmpty():
-                patch = _qimage_to_np(layer.image.copy(src_rect))
-                # Смешиваем пиксели патча с «каплей» цвета, только внутри круга
-                smudge = np.array([self._color.blue(), self._color.green(),
-                                   self._color.red(), self._color.alpha()],
-                                  dtype=np.float32)
-                circle = _circle_mask(src_rect, cx, cy, r)
-                blended = (patch.astype(float) * (1 - strength * circle) +
-                           smudge * (strength * circle)).clip(0, 255).astype('uint8')
-                result_img = _np_to_qimage(blended)
-                p = QPainter(layer.image)
-                if clip:
-                    p.setClipPath(clip.translated(-layer.offset.x(), -layer.offset.y()))
-                p.drawImage(src_rect.topLeft(), result_img)
-                p.end()
-                # Обновляем «каплю» — берём усреднённый цвет патча
-                avg = patch.mean(axis=(0, 1))
-                self._color = QColor(int(avg[2]), int(avg[1]),
-                                     int(avg[0]), int(avg[3]))
-        else:
-            # Qt fallback: рисуем кружок с цветом «капли»
-            p = QPainter(layer.image)
-            p.setRenderHint(QPainter.RenderHint.Antialiasing)
-            if clip:
-                p.setClipPath(clip.translated(-layer.offset.x(), -layer.offset.y()))
-            c = QColor(self._color)
-            c.setAlphaF(strength * 0.6)
-            pen = QPen(c, size, Qt.PenStyle.SolidLine,
-                       Qt.PenCapStyle.RoundCap, Qt.PenJoinStyle.RoundJoin)
-            p.setPen(pen)
-            p.drawLine(self._last - layer.offset, pos - layer.offset)
-            p.end()
-            # обновляем каплю
-            x, y = pos.x(), pos.y()
-            if 0 <= x < layer.width() and 0 <= y < layer.height():
-                orig = QColor(layer.image.pixel(x, y))
-                self._color = QColor(
-                    int(orig.red()   * (1-strength) + self._color.red()   * strength),
-                    int(orig.green() * (1-strength) + self._color.green() * strength),
-                    int(orig.blue()  * (1-strength) + self._color.blue()  * strength),
-                )
-
-        self._last = pos
-
     def on_release(self, pos, doc, fg, bg, opts):
-        self._end_effect_stroke()
-        self._last  = None
+        super().on_release(pos, doc, fg, bg, opts)
         self._color = None
+
+    def _compute_effect(self, patch_f, mask, strength, opts):
+        if self._color is None:
+            return patch_f
+
+        # «Капля» — BGRA (порядок каналов QImage: B=0, G=1, R=2, A=3)
+        smudge = np.array([self._color.blue(), self._color.green(),
+                           self._color.red(),  self._color.alpha()],
+                          dtype=np.float32)
+
+        result = (patch_f * (1.0 - strength * mask) +
+                  smudge  * (strength * mask)).clip(0, 255)
+
+        # Обновляем «каплю» — берём среднее оригинального патча
+        avg = patch_f.mean(axis=(0, 1))
+        self._color = QColor(int(avg[2]), int(avg[1]), int(avg[0]), int(avg[3]))
+        return result
+
+    def _apply_qt_fallback(self, layer, cx: int, cy: int, size: int, clip, opts: dict):
+        if not self._color or not self._last:
+            return
+        from PyQt6.QtGui import QPen
+        from PyQt6.QtCore import Qt
+        strength = float(opts.get("effect_strength", 0.7))
+        c = QColor(self._color)
+        c.setAlphaF(strength * 0.6)
+        pen = QPen(c, size, Qt.PenStyle.SolidLine,
+                   Qt.PenCapStyle.RoundCap, Qt.PenJoinStyle.RoundJoin)
+        p = QPainter(layer.image)
+        p.setRenderHint(QPainter.RenderHint.Antialiasing)
+        if clip:
+            p.setClipPath(clip.translated(-layer.offset.x(), -layer.offset.y()))
+        p.setPen(pen)
+        start = QPoint(self._last.x() - layer.offset.x(),
+                       self._last.y() - layer.offset.y())
+        p.drawLine(start, QPoint(cx, cy))
+        p.end()
+        if 0 <= cx < layer.width() and 0 <= cy < layer.height():
+            orig = QColor(layer.image.pixel(cx, cy))
+            self._color = QColor(
+                int(orig.red()   * (1-strength) + self._color.red()   * strength),
+                int(orig.green() * (1-strength) + self._color.green() * strength),
+                int(orig.blue()  * (1-strength) + self._color.blue()  * strength),
+            )
 
 
 # ═══════════════════════════════════════════════════════════════ DodgeTool
-class DodgeTool(_EffectStrokeMixin, BaseTool):
+
+class DodgeTool(_SoftMaskMixin, BrushEffectTool):
+    """Осветление — сдвигает RGB к белому."""
     name     = "Dodge"
     icon     = "🌔"
     shortcut = "O"
-    modifies_canvas_on_move = True
 
-    def __init__(self):
-        self._init_effect_stroke()
-        self._last: QPoint | None = None
-
-    def on_press(self, pos, doc, fg, bg, opts):
-        self._begin_effect_stroke(doc)
-        self._last = pos
-        self._apply(pos, doc, opts)
-
-    def on_move(self, pos, doc, fg, bg, opts):
-        if self._last: self._apply(pos, doc, opts)
-        self._last = pos
-
-    def on_release(self, pos, doc, fg, bg, opts):
-        self._end_effect_stroke()
-        self._last = None
-
-    def _apply(self, pos: QPoint, doc, opts: dict):
-        if not _HAS_NUMPY: return
-        layer = doc.get_active_layer()
-        if not layer or layer.locked: return
-        
-        size = max(4, int(opts.get("brush_size", 20)))
-        strength = float(opts.get("effect_strength", 0.5))
-        cx, cy = pos.x() - layer.offset.x(), pos.y() - layer.offset.y()
-        clip = doc.selection if (doc.selection and not doc.selection.isEmpty()) else None
-
-        r = size // 2
-        src_rect = _clamp_rect(QRect(cx - r, cy - r, size, size), layer.image.width(), layer.image.height())
-        if clip: src_rect = src_rect.intersected(clip.boundingRect().toRect().translated(-layer.offset))
-        if src_rect.isEmpty(): return
-
-        patch = _qimage_to_np(layer.image.copy(src_rect))
-        circle = _soft_circle_mask(src_rect, cx, cy, r)
-        
-        rgb = patch[..., :3].astype(np.float32)
-        factor = strength * 0.2 * circle
-        res_rgb = rgb + (255.0 - rgb) * factor
-        patch[..., :3] = np.clip(res_rgb, 0, 255).astype(np.uint8)
-        
-        result_img = _np_to_qimage(patch)
-        p = QPainter(layer.image)
-        if clip: p.setClipPath(clip.translated(-layer.offset.x(), -layer.offset.y()))
-        p.drawImage(src_rect.topLeft(), result_img)
-        p.end()
+    def _compute_effect(self, patch_f, mask, strength, opts):
+        rgb    = patch_f[..., :3]
+        factor = strength * 0.2 * mask
+        result = patch_f.copy()
+        result[..., :3] = (rgb + (255.0 - rgb) * factor).clip(0, 255)
+        return result
 
 
 # ═══════════════════════════════════════════════════════════════ BurnTool
-class BurnTool(_EffectStrokeMixin, BaseTool):
+
+class BurnTool(_SoftMaskMixin, BrushEffectTool):
+    """Затемнение — сдвигает RGB к чёрному."""
     name     = "Burn"
     icon     = "🌒"
     shortcut = "O"
-    modifies_canvas_on_move = True
 
-    def __init__(self):
-        self._init_effect_stroke()
-        self._last: QPoint | None = None
-
-    def on_press(self, pos, doc, fg, bg, opts):
-        self._begin_effect_stroke(doc)
-        self._last = pos
-        self._apply(pos, doc, opts)
-
-    def on_move(self, pos, doc, fg, bg, opts):
-        if self._last: self._apply(pos, doc, opts)
-        self._last = pos
-
-    def on_release(self, pos, doc, fg, bg, opts):
-        self._end_effect_stroke()
-        self._last = None
-
-    def _apply(self, pos: QPoint, doc, opts: dict):
-        if not _HAS_NUMPY: return
-        layer = doc.get_active_layer()
-        if not layer or layer.locked: return
-        
-        size = max(4, int(opts.get("brush_size", 20)))
-        strength = float(opts.get("effect_strength", 0.5))
-        cx, cy = pos.x() - layer.offset.x(), pos.y() - layer.offset.y()
-        r = size // 2
-        clip = doc.selection if (doc.selection and not doc.selection.isEmpty()) else None
-
-        src_rect = _clamp_rect(QRect(cx - r, cy - r, size, size), layer.image.width(), layer.image.height())
-        if clip: src_rect = src_rect.intersected(clip.boundingRect().toRect().translated(-layer.offset))
-        if src_rect.isEmpty(): return
-
-        patch = _qimage_to_np(layer.image.copy(src_rect))
-        circle = _soft_circle_mask(src_rect, cx, cy, r)
-        
-        rgb = patch[..., :3].astype(np.float32)
-        factor = strength * 0.2 * circle
-        res_rgb = rgb * (1.0 - factor)
-        patch[..., :3] = np.clip(res_rgb, 0, 255).astype(np.uint8)
-        
-        result_img = _np_to_qimage(patch)
-        p = QPainter(layer.image)
-        if clip: p.setClipPath(clip.translated(-layer.offset.x(), -layer.offset.y()))
-        p.drawImage(src_rect.topLeft(), result_img)
-        p.end()
+    def _compute_effect(self, patch_f, mask, strength, opts):
+        rgb    = patch_f[..., :3]
+        factor = strength * 0.2 * mask
+        result = patch_f.copy()
+        result[..., :3] = (rgb * (1.0 - factor)).clip(0, 255)
+        return result
 
 
 # ═══════════════════════════════════════════════════════════════ SpongeTool
-class SpongeTool(_EffectStrokeMixin, BaseTool):
+
+class SpongeTool(_SoftMaskMixin, BrushEffectTool):
+    """Губка — насыщение или десатурация."""
     name     = "Sponge"
     icon     = "🧽"
     shortcut = "O"
-    modifies_canvas_on_move = True
 
-    def __init__(self):
-        self._init_effect_stroke()
-        self._last: QPoint | None = None
-
-    def on_press(self, pos, doc, fg, bg, opts):
-        self._begin_effect_stroke(doc)
-        self._last = pos
-        self._apply(pos, doc, opts)
-
-    def on_move(self, pos, doc, fg, bg, opts):
-        if self._last: self._apply(pos, doc, opts)
-        self._last = pos
-
-    def on_release(self, pos, doc, fg, bg, opts):
-        self._end_effect_stroke()
-        self._last = None
-
-    def _apply(self, pos: QPoint, doc, opts: dict):
-        if not _HAS_NUMPY: return
-        layer = doc.get_active_layer()
-        if not layer or layer.locked: return
-        
-        size = max(4, int(opts.get("brush_size", 20)))
-        strength = float(opts.get("effect_strength", 0.5))
+    def _compute_effect(self, patch_f, mask, strength, opts):
+        rgb  = patch_f[..., :3]
+        # Яркость (BGRA: ch0=Blue, ch1=Green, ch2=Red)
+        gray = (0.114 * rgb[..., 0:1] +
+                0.587 * rgb[..., 1:2] +
+                0.299 * rgb[..., 2:3])
+        factor = strength * 0.2 * mask
         mode = opts.get("sponge_mode", "desaturate")
-        cx, cy = pos.x() - layer.offset.x(), pos.y() - layer.offset.y()
-        r = size // 2
-        clip = doc.selection if (doc.selection and not doc.selection.isEmpty()) else None
-
-        src_rect = _clamp_rect(QRect(cx - r, cy - r, size, size), layer.image.width(), layer.image.height())
-        if clip: src_rect = src_rect.intersected(clip.boundingRect().toRect().translated(-layer.offset))
-        if src_rect.isEmpty(): return
-
-        patch = _qimage_to_np(layer.image.copy(src_rect))
-        circle = _soft_circle_mask(src_rect, cx, cy, r)
-        
-        rgb = patch[..., :3].astype(np.float32)
-        gray = (0.114 * rgb[..., 0] + 0.587 * rgb[..., 1] + 0.299 * rgb[..., 2])[..., np.newaxis]
-        factor = strength * 0.2 * circle
-        
         if mode == "desaturate":
             res_rgb = rgb * (1.0 - factor) + gray * factor
         else:
             res_rgb = rgb + (rgb - gray) * factor
-            
-        patch[..., :3] = np.clip(res_rgb, 0, 255).astype(np.uint8)
-        
-        result_img = _np_to_qimage(patch)
-        p = QPainter(layer.image)
-        if clip: p.setClipPath(clip.translated(-layer.offset.x(), -layer.offset.y()))
-        p.drawImage(src_rect.topLeft(), result_img)
-        p.end()
+        result = patch_f.copy()
+        result[..., :3] = res_rgb.clip(0, 255)
+        return result

@@ -1,9 +1,22 @@
 from dataclasses import dataclass
 
 from PyQt6.QtWidgets import QWidget, QVBoxLayout, QPushButton, QSizePolicy, QToolButton, QMenu
-from PyQt6.QtCore import pyqtSignal, Qt
+from PyQt6.QtCore import pyqtSignal, Qt, QSize
+from PyQt6.QtGui import QIcon
 
 from core.locale import tr
+from ui.tool_icons import get_tool_icon
+
+
+def _apply_icon(btn, tool_name: str, fallback_text: str, size: int = 22) -> None:
+    """Set SVG icon on a button; fall back to text if icon not available."""
+    ico = get_tool_icon(tool_name, size)
+    if ico.isNull():
+        btn.setText(fallback_text)
+    else:
+        btn.setIcon(ico)
+        btn.setIconSize(QSize(size, size))
+        btn.setText("")
 
 
 @dataclass(frozen=True)
@@ -130,7 +143,8 @@ class ToolBar(QWidget):
 
             tool_name = item
             td = self._TOOL_DEFS[tool_name]
-            btn = QPushButton(td.icon)
+            btn = QPushButton()
+            _apply_icon(btn, tool_name, td.icon)
             btn.setObjectName("toolBtn")
             btn.setToolTip(self._make_tip(td.tr_key, td.shortcut))
             btn.setCheckable(False)
@@ -167,7 +181,11 @@ class ToolBar(QWidget):
                 menu.clear()
                 for tname in self._group_tools.get(gid, []):
                     tdef = self._TOOL_DEFS[tname]
-                    act = menu.addAction(tdef.icon + "  " + tr(tdef.tr_key))
+                    ico = get_tool_icon(tname)
+                    if ico.isNull():
+                        act = menu.addAction(tdef.icon + "  " + tr(tdef.tr_key))
+                    else:
+                        act = menu.addAction(ico, tr(tdef.tr_key))
                     act.setData(tname)
                     act.triggered.connect(lambda checked=False, n=tname: self._on_click(n))
 
@@ -190,7 +208,7 @@ class ToolBar(QWidget):
             self._group_active_tool[gid] = tool_name
             td = self._TOOL_DEFS.get(tool_name)
             if td:
-                self._groups[gid].setText(td.icon)
+                _apply_icon(self._groups[gid], tool_name, td.icon)
                 self._groups[gid].setToolTip(self._make_tip(td.tr_key, td.shortcut))
 
     def _on_click(self, name: str):
@@ -208,7 +226,7 @@ class ToolBar(QWidget):
         td = self._TOOL_DEFS[default_tool]
         btn = QToolButton()
         btn.setObjectName("toolBtn")
-        btn.setText(td.icon)
+        _apply_icon(btn, default_tool, td.icon)
         btn.setToolTip(self._make_tip(td.tr_key, td.shortcut))
         btn.setPopupMode(QToolButton.ToolButtonPopupMode.DelayedPopup)
         btn.setFixedSize(46, 38)
@@ -220,7 +238,11 @@ class ToolBar(QWidget):
         menu = QMenu(btn)
         for tname in tool_names:
             tdef = self._TOOL_DEFS[tname]
-            act = menu.addAction(tdef.icon + "  " + tr(tdef.tr_key))
+            ico = get_tool_icon(tname)
+            if ico.isNull():
+                act = menu.addAction(tdef.icon + "  " + tr(tdef.tr_key))
+            else:
+                act = menu.addAction(ico, tr(tdef.tr_key))
             act.setData(tname)
             act.triggered.connect(lambda checked=False, n=tname: self._on_click(n))
         btn.setMenu(menu)
