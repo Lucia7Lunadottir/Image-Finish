@@ -10,10 +10,76 @@ from tools.other_tools import (SelectTool, CropTool, ShapesTool,
 
 # Инструменты с кистью — для них показываем кружок-курсор
 _BRUSH_TOOLS = {"Brush", "Eraser", "BackgroundEraser", "Blur", "Sharpen", "Smudge", "CloneStamp", "PatternStamp",
-                "Pencil", "ColorReplacement", "MixerBrush", 
+                "Pencil", "ColorReplacement", "MixerBrush",
                 "SpotHealing", "HealingBrush", "HistoryBrush",
                 "Dodge", "Burn", "Sponge",
                 "QuickSelection"}
+
+_SELECTION_TOOLS = {
+    "Select", "EllipseSelect",
+    "Lasso", "PolygonalLasso", "MagneticLasso",
+    "MagicWand", "ObjectSelection",
+}
+
+_sel_cursor_cache: dict = {}
+
+def _make_sel_cursor(mode: str) -> QCursor:
+    """Crosshair cursor with mode indicator: '' / '+' / '−' / '×'."""
+    if mode in _sel_cursor_cache:
+        return _sel_cursor_cache[mode]
+
+    SIZE = 24
+    HOT  = SIZE // 2  # hotspot = centre
+    px = QPixmap(SIZE, SIZE)
+    px.fill(Qt.GlobalColor.transparent)
+    p = QPainter(px)
+    p.setRenderHint(QPainter.RenderHint.Antialiasing, False)
+
+    mid = HOT
+    gap = 4  # gap around hotspot
+
+    def _line(pen, x1, y1, x2, y2):
+        p.setPen(pen)
+        p.drawLine(x1, y1, x2, y2)
+
+    white = QPen(Qt.GlobalColor.white, 2)
+    black = QPen(Qt.GlobalColor.black, 1)
+
+    # Crosshair arms
+    for arm in [(mid, 0, mid, mid - gap),
+                (mid, mid + gap, mid, SIZE - 1),
+                (0, mid, mid - gap, mid),
+                (mid + gap, mid, SIZE - 1, mid)]:
+        _line(black, *arm)
+        _line(white, *arm)
+
+    # Mode badge (bottom-right corner, 8×8 area at offset 15,15)
+    bx, by = 15, 15   # top-left of badge area
+    bw = 7            # badge width
+
+    if mode == "add":
+        # "+" — horizontal + vertical
+        cx, cy = bx + bw // 2, by + bw // 2
+        for coords in [(cx, by, cx, by + bw), (bx, cy, bx + bw, cy)]:
+            _line(black, *coords)
+            _line(white, *coords)
+
+    elif mode == "sub":
+        # "−" — horizontal only
+        cy = by + bw // 2
+        _line(black, bx, cy, bx + bw, cy)
+        _line(white, bx, cy, bx + bw, cy)
+
+    elif mode == "intersect":
+        # "×" — two diagonals
+        for coords in [(bx, by, bx + bw, by + bw), (bx + bw, by, bx, by + bw)]:
+            _line(black, *coords)
+            _line(white, *coords)
+
+    p.end()
+    cur = QCursor(px, HOT, HOT)
+    _sel_cursor_cache[mode] = cur
+    return cur
 
 
 class CanvasWidget(QWidget):
@@ -533,9 +599,6 @@ class CanvasWidget(QWidget):
             painter.save()
             painter.translate(self._pan)
             painter.scale(self.zoom, self.zoom)
-            painter.setClipPath(sel)
-            painter.fillRect(sel.boundingRect().toRect(), QColor(100, 160, 255, 40))
-            painter.setClipping(False)
             pw = max(1.0, 1.0 / self.zoom)
             painter.setBrush(Qt.BrushStyle.NoBrush)
             pen = QPen(QColor(0, 0, 0, 160), pw * 1.5)
@@ -549,16 +612,13 @@ class CanvasWidget(QWidget):
             painter.drawPath(sel)
             painter.restore()
 
-        # 4.5. Превью subtract-drag
+        # 4.5. Превью subtract-drag (только контур, без заливки)
         if self.active_tool and hasattr(self.active_tool, "sub_drag_path"):
             sub_p = self.active_tool.sub_drag_path()
             if sub_p:
                 painter.save()
                 painter.translate(self._pan)
                 painter.scale(self.zoom, self.zoom)
-                painter.setClipPath(sub_p)
-                painter.fillRect(sub_p.boundingRect().toRect(), QColor(255, 80, 80, 50))
-                painter.setClipping(False)
                 pw = max(1.0, 1.0 / self.zoom)
                 pen = QPen(QColor(220, 60, 60), pw)
                 pen.setStyle(Qt.PenStyle.DashLine)
@@ -572,7 +632,6 @@ class CanvasWidget(QWidget):
                 painter.save()
                 painter.translate(self._pan)
                 painter.scale(self.zoom, self.zoom)
-                painter.fillRect(sub_r, QColor(255, 80, 80, 50))
                 pw = max(1.0, 1.0 / self.zoom)
                 pen = QPen(QColor(220, 60, 60), pw)
                 pen.setStyle(Qt.PenStyle.DashLine)
@@ -1264,17 +1323,6 @@ class CanvasWidget(QWidget):
             self.active_tool.on_press(doc_pos, self.document,
                                       self.fg_color, self.bg_color, self.tool_opts)
                                       
-            if layer and getattr(layer, "layer_type", "raster") == "text" and tool_name == "Move":
-                new_transforming = getattr(self.active_tool, "is_transforming", False)
-                if new_transforming and not old_transforming:
-                    if hasattr(self.active_tool, "cancel_transform"):
-                        self.active_tool.cancel_transform(self.document)
-                    self._stroke_in_progress = False
-                    if hasattr(self.window(), "_status"):
-                        from core.locale import tr
-                        self.window()._status.showMessage(tr("err.text_layer_no_transform"), 3000)
-                    self.update()
-                    return
 
             self._cache_dirty = True
             self.update()
@@ -1411,7 +1459,10 @@ class CanvasWidget(QWidget):
             cx, cy = dp.x(), dp.y()
             if 0 <= cx < self.document.width and 0 <= cy < self.document.height:
                 layer = self.document.get_active_layer()
-                color = QColor(layer.image.pixel(cx, cy)) if layer else QColor(0, 0, 0, 0)
+                if layer and 0 <= cx < layer.image.width() and 0 <= cy < layer.image.height():
+                    color = QColor(layer.image.pixel(cx, cy))
+                else:
+                    color = QColor(0, 0, 0, 0)
                 self.cursor_info.emit(cx, cy, color)
 
     def mouseReleaseEvent(self, ev):
@@ -1589,6 +1640,19 @@ class CanvasWidget(QWidget):
             else:
                 self._show_brush_cursor = True
                 self.setCursor(Qt.CursorShape.BlankCursor)
+        elif tool_name in _SELECTION_TOOLS:
+            self._show_brush_cursor = False
+            ctrl = bool(self.tool_opts.get("_ctrl", False))
+            alt  = bool(self.tool_opts.get("_alt",  False))
+            if ctrl and alt:
+                mode = "intersect"
+            elif ctrl:
+                mode = "add"
+            elif alt:
+                mode = "sub"
+            else:
+                mode = "new"
+            self.setCursor(_make_sel_cursor(mode))
         else:
             self._show_brush_cursor = False
             if self.active_tool:

@@ -970,6 +970,12 @@ class MainWindow(QMainWindow,
             c._update_cursor()
         self._opts_bar.switch_to(name)
         self._toolbar.set_active(name)
+        if hasattr(self, "_doc_tabs") and self._doc_tabs.count() > 0:
+            canvas = self._doc_tabs.currentWidget()
+            if canvas and hasattr(canvas, "tool_opts"):
+                page = self._opts_bar._pages.get(name)
+                if page and hasattr(page, "update_from_opts"):
+                    page.update_from_opts(canvas.tool_opts)
         self._opts_bar.update_tool_state(None)
 
     def _on_layer_selected_wrap(self, index: int):
