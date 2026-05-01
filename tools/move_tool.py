@@ -31,6 +31,7 @@ class MoveTool(BaseTool):
         self._base_transform = QTransform()
         self._bounds = QRectF()
         self._is_floating = False
+        self._is_text_layer = False
         self._linked_children = []
         self._start_poly = []
         self._smart_guides = []
@@ -63,8 +64,8 @@ class MoveTool(BaseTool):
                 best_h = name
                 
         if min_d <= hit_dist: return best_h
-        if min_d <= rot_dist: return 'rotate'
         if poly.containsPoint(pos, Qt.FillRule.OddEvenFill): return 'move'
+        if min_d <= rot_dist: return 'rotate'
         return 'move'
 
     def on_press(self, pos, doc, fg, bg, opts):
@@ -79,6 +80,14 @@ class MoveTool(BaseTool):
                         break
                 elif getattr(l, "layer_type", "raster") == "group":
                     continue
+                elif getattr(l, "layer_type", "raster") == "text":
+                    if l.image.isNull(): continue
+                    br = Document._nontransparent_bounds(l.image)
+                    if not br.isEmpty():
+                        check = br.adjusted(-4, -4, 4, 4).translated(l.offset)
+                        if check.contains(pos):
+                            doc.active_layer_index = i
+                            break
                 else:
                     if l.image.isNull(): continue
                     lx, ly = int(pos.x() - l.offset.x()), int(pos.y() - l.offset.y())
@@ -206,20 +215,39 @@ class MoveTool(BaseTool):
                 
             else:
                 self._is_floating = False
-                if getattr(layer, "layer_type", "raster") == "frame":
+                self._is_text_layer = False
+                if getattr(layer, "layer_type", "raster") == "text":
+                    self._is_text_layer = True
+                    br = Document._nontransparent_bounds(layer.image)
+                    if br.isEmpty():
+                        self._bounds = QRectF(layer.offset.x(), layer.offset.y(),
+                                              layer.width(), layer.height())
+                    else:
+                        self._bounds = QRectF(br).translated(QPointF(layer.offset))
+                    self._original_img = layer.image.copy()
+                    self._original_offset = layer.offset
+                    self._sel_origin = None
+                    layer.image = QImage(1, 1, QImage.Format.Format_ARGB32)
+                    layer.image.fill(Qt.GlobalColor.transparent)
+                elif getattr(layer, "layer_type", "raster") == "frame":
                     self._bounds = QRectF(getattr(layer, "frame_data", {}).get("rect", QRectF(0,0,100,100)))
                     self._original_rect = self._bounds.toRect()
+                    self._original_img = layer.image.copy()
+                    self._original_offset = layer.offset
+                    self._sel_origin = None
+                    layer.image = QImage(1, 1, QImage.Format.Format_ARGB32)
+                    layer.image.fill(Qt.GlobalColor.transparent)
                 else:
                     br = Document._nontransparent_bounds(layer.image)
                     if br.isEmpty():
                         self._bounds = QRectF(layer.offset.x(), layer.offset.y(), layer.width(), layer.height())
                     else:
                         self._bounds = QRectF(br).translated(QPointF(layer.offset))
-                self._original_img = layer.image.copy()
-                self._original_offset = layer.offset
-                self._sel_origin = None
-                layer.image = QImage(1, 1, QImage.Format.Format_ARGB32)
-                layer.image.fill(Qt.GlobalColor.transparent)
+                    self._original_img = layer.image.copy()
+                    self._original_offset = layer.offset
+                    self._sel_origin = None
+                    layer.image = QImage(1, 1, QImage.Format.Format_ARGB32)
+                    layer.image.fill(Qt.GlobalColor.transparent)
 
         self._base_transform = QTransform(self._total_transform)
         self._start_pos = QPointF(pos)
@@ -516,7 +544,29 @@ class MoveTool(BaseTool):
         elif getattr(layer, "layer_type", "raster") == "group":
             self._reset_state()
             return
-            
+        elif getattr(layer, "layer_type", "raster") == "text":
+            td = getattr(layer, "text_data", None)
+            if td:
+                orig_pt = QPointF(td.get("x", 0), td.get("y", 0))
+                new_pt = final_t.map(orig_pt)
+                m11, m12 = final_t.m11(), final_t.m12()
+                delta_angle = math.degrees(math.atan2(m12, m11))
+                new_angle = float(td.get("text_angle", 0.0)) + delta_angle
+                new_td = dict(td)
+                new_td["x"] = new_pt.x()
+                new_td["y"] = new_pt.y()
+                new_td["text_angle"] = new_angle
+                w, h = self._original_img.width(), self._original_img.height()
+                new_img = QImage(w, h, QImage.Format.Format_ARGB32_Premultiplied)
+                new_img.fill(Qt.GlobalColor.transparent)
+                from tools.text_tool import _render_text
+                _render_text(new_img, int(new_pt.x()), int(new_pt.y()),
+                             new_td.get("text", ""), new_td, None)
+                layer.image = new_img
+                layer.text_data = new_td
+            self._reset_state()
+            return
+
         if not final_t.isIdentity():
             src_rect = QRectF(0, 0, self._original_img.width(), self._original_img.height())
             doc_transform = QTransform().translate(self._original_offset.x(), self._original_offset.y()) * final_t
@@ -619,6 +669,7 @@ class MoveTool(BaseTool):
         self._mode = None
         self._start_poly = []
         self._smart_guides = []
+        self._is_text_layer = False
 
     def needs_history_push(self): return False
 

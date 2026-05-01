@@ -1,4 +1,4 @@
-from PyQt6.QtCore import Qt
+from PyQt6.QtCore import Qt, QPoint, QPointF
 from PyQt6.QtGui import (QColor, QPainter, QImage, QPainterPath,
                          QFont, QFontMetrics, QBrush, QPen as _QPen, QPixmap)
 from PyQt6.QtWidgets import (QDialog, QVBoxLayout, QPlainTextEdit,
@@ -19,7 +19,24 @@ def _build_font(opts: dict) -> QFont:
     return font
 
 
-def _render_text(image, x: int, y: int, text: str, opts: dict, clip_path=None):
+def _text_bounding_rect(td: dict, padding: int = 4):
+    """Возвращает QRect bounding box текста по данным text_data (в координатах слоя)."""
+    from PyQt6.QtCore import QRect
+    text = td.get("text", "")
+    if not text:
+        return None
+    font = _build_font(td)
+    metrics = QFontMetrics(font)
+    lines = text.split("\n")
+    max_w = max((metrics.horizontalAdvance(line) for line in lines if line), default=0)
+    line_h = metrics.lineSpacing()
+    total_h = metrics.ascent() + metrics.descent() + line_h * (len(lines) - 1)
+    x, y = int(td.get("x", 0)), int(td.get("y", 0))
+    return QRect(x - padding, y - metrics.ascent() - padding,
+                 max_w + padding * 2, total_h + padding * 2)
+
+
+def _render_text(image, x: int, y: int, text: str, opts: dict, clip_path=None, angle: float = 0.0):
     font        = _build_font(opts)
     metrics     = QFontMetrics(font)
     line_h      = metrics.lineSpacing()
@@ -31,6 +48,7 @@ def _render_text(image, x: int, y: int, text: str, opts: dict, clip_path=None):
     shadow_color = opts.get("text_shadow_color", QColor(0, 0, 0, 160))
     sdx          = int(opts.get("text_shadow_dx", 3))
     sdy          = int(opts.get("text_shadow_dy", 3))
+    render_angle = angle or float(opts.get("text_angle", 0.0))
 
     def make_path(dx=0, dy=0) -> QPainterPath:
         path = QPainterPath()
@@ -44,6 +62,10 @@ def _render_text(image, x: int, y: int, text: str, opts: dict, clip_path=None):
     painter.setRenderHint(QPainter.RenderHint.Antialiasing)
     if clip_path and not clip_path.isEmpty():
         painter.setClipPath(clip_path)
+    if render_angle:
+        painter.translate(x, y)
+        painter.rotate(render_angle)
+        painter.translate(-x, -y)
     if shadow:
         painter.fillPath(make_path(sdx, sdy), QBrush(shadow_color))
     main_path = make_path()
@@ -251,8 +273,26 @@ class TextTool(BaseTool):
         self._parent_widget = None
 
     def on_press(self, pos, doc, fg, bg, opts):
-        layer      = doc.get_active_layer()
-        re_edit    = layer and getattr(layer, "text_data", None) is not None
+        layer = doc.get_active_layer()
+        re_edit = False
+
+        # Hit-test: найти текстовый слой под курсором по фактическим пикселям
+        from core.document import Document as _Document
+        pos_pt = pos if isinstance(pos, QPoint) else pos.toPoint()
+        for i in range(len(doc.layers) - 1, -1, -1):
+            l = doc.layers[i]
+            if not l.visible or l.locked: continue
+            if getattr(l, "layer_type", "raster") != "text": continue
+            if l.image.isNull(): continue
+            br = _Document._nontransparent_bounds(l.image)
+            if not br.isEmpty():
+                check = br.adjusted(-4, -4, 4, 4).translated(l.offset)
+                if check.contains(pos_pt):
+                    doc.active_layer_index = i
+                    layer = l
+                    re_edit = True
+                    break
+
         layer_name = layer.name if re_edit else None
         initial    = layer.text_data.get("text", "") if re_edit else ""
 
@@ -290,6 +330,7 @@ class TextTool(BaseTool):
             "font_underline", "font_strikeout",
             "text_color", "text_stroke_w", "text_stroke_color",
             "text_shadow", "text_shadow_color", "text_shadow_dx", "text_shadow_dy",
+            "text_angle",
         ) if k in opts}
 
     def needs_history_push(self) -> bool:
@@ -309,9 +350,28 @@ class VerticalTypeTool(BaseTool):
         self._parent_widget = None
 
     def on_press(self, pos, doc, fg, bg, opts):
-        layer      = doc.get_active_layer()
-        re_edit    = (layer and getattr(layer, "text_data", None) is not None
-                      and layer.text_data.get("vertical", False))
+        layer = doc.get_active_layer()
+        re_edit = False
+
+        # Hit-test: найти вертикальный текстовый слой под курсором по фактическим пикселям
+        from core.document import Document as _Document
+        pos_pt = pos if isinstance(pos, QPoint) else pos.toPoint()
+        for i in range(len(doc.layers) - 1, -1, -1):
+            l = doc.layers[i]
+            if not l.visible or l.locked: continue
+            if getattr(l, "layer_type", "raster") != "text": continue
+            td = getattr(l, "text_data", None)
+            if not td or not td.get("vertical", False): continue
+            if l.image.isNull(): continue
+            br = _Document._nontransparent_bounds(l.image)
+            if not br.isEmpty():
+                check = br.adjusted(-4, -4, 4, 4).translated(l.offset)
+                if check.contains(pos_pt):
+                    doc.active_layer_index = i
+                    layer = l
+                    re_edit = True
+                    break
+
         layer_name = layer.name if re_edit else None
         initial    = layer.text_data.get("text", "") if re_edit else ""
 
