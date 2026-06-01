@@ -1,86 +1,131 @@
 import numpy as np
-import ctypes
+import traceback
 from PyQt6.QtCore import QPoint, Qt, QRect, QRectF
-from PyQt6.QtGui import QImage, QBitmap, QRegion, QPainterPath, QColor
-from tools.base_tool import BaseTool
+from PyQt6.QtGui import QImage, QBitmap, QRegion, QPainterPath
+from tools.base_tool import BaseTool, AbstractAsyncTool
 from tools.lasso_tools import LassoMixin
 
+class AbstractSelectionTool(AbstractAsyncTool, LassoMixin):
+    """
+    Промежуточный родительский класс для инструментов выделения.
+    Содержит методы безопасного копирования памяти и векторизации масок.
+    """
+    def _get_safe_layer_snapshot(self, layer) -> tuple[QImage, np.ndarray] | None:
+        """Создает изолированную копию пикселей слоя, исключая утечки и падения ядра C++."""
+        try:
+            img = layer.mask if (getattr(layer, "editing_mask", False) and getattr(layer, "mask", None) is not None) else layer.image
+            if img.isNull():
+                return None
 
-def qimage_to_channels(img: QImage):
-    """
-    Безопасно извлекает R, G, B, A каналы из QImage в виде NumPy массивов,
-    учитывая возможное выравнивание строк (bytesPerLine) и формат цвета.
-    """
-    h, w = img.height(), img.width()
-    ptr = img.constBits()
-    buf = (ctypes.c_uint8 * img.sizeInBytes()).from_address(int(ptr))
-    bpl = img.bytesPerLine()
-    
-    # Создаем массив с учетом реального шага строки в памяти
-    arr = np.ndarray((h, bpl // 4, 4), dtype=np.uint8, buffer=buf)[:, :w, :]
-    
-    fmt = img.format()
-    # Обрабатываем порядок байтов в зависимости от формата Qt
-    if fmt in (QImage.Format.Format_ARGB32, QImage.Format.Format_ARGB32_Premultiplied, QImage.Format.Format_RGB32):
-        # В системе Little-Endian форматы ARGB/RGB32 хранятся как BGRA/BGRX
-        b = arr[..., 0].astype(np.int32)
-        g = arr[..., 1].astype(np.int32)
-        r = arr[..., 2].astype(np.int32)
-    else:
-        # Для Format_RGBA8888 байты лежат прямо: RGBA
-        r = arr[..., 0].astype(np.int32)
-        g = arr[..., 1].astype(np.int32)
-        b = arr[..., 2].astype(np.int32)
+            img_rgba = img.convertToFormat(QImage.Format.Format_RGBA8888)
+            w, h = img_rgba.width(), img_rgba.height()
+            
+            ptr = img_rgba.bits()
+            ptr.setsize(img_rgba.sizeInBytes())
+            
+            # .copy() обязателен — он физически дублирует массив в изолированную память Python
+            np_data = np.frombuffer(ptr, dtype=np.uint8).reshape((h, img_rgba.bytesPerLine() // 4, 4))[:, :w, :].copy()
+            return img, np_data
+        except Exception as e:
+            print(f"Ошибка создания безопасного снимка памяти: {e}")
+            return None
+
+    def _convert_mask_to_path(self, mask: np.ndarray, layer_offset: QPoint) -> QPainterPath:
+        """Переводит матрицу пикселей NumPy в оптимизированный векторный контур QPainterPath."""
+        h, w = mask.shape
+        mask_img = QImage(w, h, QImage.Format.Format_RGBA8888)
+        mask_img.fill(0)
+
+        m_ptr = mask_img.bits()
+        m_ptr.setsize(mask_img.sizeInBytes())
+        mask_arr = np.ndarray((h, mask_img.bytesPerLine() // 4, 4), dtype=np.uint8, buffer=m_ptr)
+        mask_arr[:, :w, 3][mask] = 255
+
+        bitmap = QBitmap.fromImage(mask_img.createAlphaMask())
+        region = QRegion(bitmap)
+        path = QPainterPath()
+        path.addRegion(region)
         
-    a = arr[..., 3]
-    return r, g, b, a
+        path = path.simplified()
+        path.translate(layer_offset.x(), layer_offset.y())
+        return path
+
+    def cursor(self):
+        return Qt.CursorShape.CrossCursor
+
+    def needs_history_push(self) -> bool:
+        return True
 
 
-class MagicWandTool(BaseTool, LassoMixin):
-    """Инструмент 'Волшебная палочка': выделяет смежные или глобальные области близких цветов"""
+class MagicWandTool(AbstractSelectionTool):
+    """Инструмент 'Волшебная палочка' — полностью асинхронный и отказоустойчивый."""
     name = "MagicWand"
-    icon = "🪄"
+    icon_name = "wand.svg"
     shortcut = "W"
 
-    def __init__(self):
-        super().__init__()
-
     def on_press(self, pos: QPoint, doc, fg, bg, opts):
-        layer = doc.get_active_layer()
-        if not layer or layer.locked or layer.image.isNull():
-            return
+        try:
+            layer = doc.get_active_layer()
+            if not layer or layer.locked:
+                return
 
-        # Работаем либо с маской слоя, либо с самим изображением
-        img = layer.mask if (getattr(layer, "editing_mask", False) and getattr(layer, "mask", None) is not None) else layer.image
-            
-        w, h = img.width(), img.height()
-        cx, cy = pos.x() - layer.offset.x(), pos.y() - layer.offset.y()
+            snapshot = self._get_safe_layer_snapshot(layer)
+            if not snapshot:
+                return
+            img, np_data = snapshot
 
-        if not (0 <= cx < w and 0 <= cy < h):
-            return
+            w, h = img.width(), img.height()
+            cx, cy = pos.x() - layer.offset.x(), pos.y() - layer.offset.y()
 
-        target_px = img.pixel(cx, cy)
-        tr = (target_px >> 16) & 0xFF
-        tg = (target_px >> 8) & 0xFF
-        tb = target_px & 0xFF
+            if not (0 <= cx < w and 0 <= cy < h):
+                return
 
-        tolerance_pct = opts.get("fill_tolerance", 32)
+            target_px = img.pixel(cx, cy)
+            tr = (target_px >> 16) & 0xFF
+            tg = (target_px >> 8) & 0xFF
+            tb = target_px & 0xFF
+
+            # Отправляем тяжелый расчет FloodFill в фоновый поток через execute_async
+            self.execute_async(
+                self._background_flood_fill,
+                self._on_calculation_finished,
+                doc,
+                opts,
+                np_data=np_data,
+                start_pos=(cx, cy),
+                target_color=(tr, tg, tb),
+                tolerance_pct=opts.get("fill_tolerance", 32),
+                contiguous=bool(opts.get("fill_contiguous", True)),
+                layer_offset=layer.offset
+            )
+        except Exception:
+            print(f"Предохранитель MagicWand: {traceback.format_exc()}")
+
+    @staticmethod
+    def _background_flood_fill(*args, **kwargs):
+        """Этот метод выполняется строго в фоновом потоке ОС."""
+        np_data = kwargs.get('np_data')
+        cx, cy = kwargs.get('start_pos')
+        tr, tg, tb = kwargs.get('target_color')
+        tolerance_pct = kwargs.get('tolerance_pct')
+        contiguous = kwargs.get('contiguous')
+
+        h, w, _ = np_data.shape
+        R = np_data[..., 0].astype(np.int32)
+        G = np_data[..., 1].astype(np.int32)
+        B = np_data[..., 2].astype(np.int32)
+        A = np_data[..., 3]
+
         max_dist_sq = 255**2 * 3
         tolerance_sq = (tolerance_pct / 100.0)**2 * max_dist_sq
-        contiguous = bool(opts.get("fill_contiguous", True))
-
-        # Безопасно читаем каналы исходного изображения
-        R, G, B, A = qimage_to_channels(img)
-
-        # Считаем квадратичную дистанцию цветов
+        
         dist_sq = (R - tr)**2 + (G - tg)**2 + (B - tb)**2
         color_mask = (dist_sq <= tolerance_sq) & (A > 0)
 
         if not color_mask[cy, cx]:
-            return
+            return np.zeros((h, w), dtype=bool)
 
         if contiguous:
-            # Алгоритм Flood Fill (Смежные пиксели) через быстрый стек NumPy/Python
             visited = np.zeros((h, w), dtype=bool)
             stack = [(cy, cx)]
             visited[cy, cx] = True
@@ -88,7 +133,6 @@ class MagicWandTool(BaseTool, LassoMixin):
 
             while stack:
                 y, x = stack.pop()
-                # Проверка 4 соседних направлений
                 if y > 0 and color_mask[y - 1, x]:
                     visited[y - 1, x] = True; color_mask[y - 1, x] = False; stack.append((y - 1, x))
                 if y < h - 1 and color_mask[y + 1, x]:
@@ -97,163 +141,122 @@ class MagicWandTool(BaseTool, LassoMixin):
                     visited[y, x - 1] = True; color_mask[y, x - 1] = False; stack.append((y, x - 1))
                 if x < w - 1 and color_mask[y, x + 1]:
                     visited[y, x + 1] = True; color_mask[y, x + 1] = False; stack.append((y, x + 1))
+            return visited
         else:
-            # Глобальное выделение цвета по всему холсту
             visited = color_mask.copy()
             visited[cy, cx] = True
+            return visited
 
-        # Создаем маску выделения
-        mask_img = QImage(w, h, QImage.Format.Format_RGBA8888)
-        mask_img.fill(0)
-        
-        m_ptr = mask_img.bits()
-        m_buf = (ctypes.c_uint8 * mask_img.sizeInBytes()).from_address(int(m_ptr))
-        m_bpl = mask_img.bytesPerLine()
-        
-        # ВАЖНО: оборачиваем с учетом выравнивания строк во избежание сдвигов памяти
-        mask_arr = np.ndarray((h, m_bpl // 4, 4), dtype=np.uint8, buffer=m_buf)
-        mask_arr[:, :w, 3][visited] = 255
-
-        # Строим Битмап строго по Альфа-каналу
-        bitmap = QBitmap.fromImage(mask_img.createAlphaMask())
-        region = QRegion(bitmap)
-        path = QPainterPath()
-        path.addRegion(region)
-
-        # Сливаем тысячи прямоугольников в один аккуратный векторный контур
-        path = path.simplified()
-        path.translate(layer.offset.x(), layer.offset.y())
-
+    def _on_calculation_finished(self, mask_result, doc, opts):
+        """Этот метод вызывается автоматически в GUI-потоке, когда вычисления завершены."""
+        layer = doc.get_active_layer()
+        if not layer or mask_result is None or not np.any(mask_result):
+            return
+        path = self._convert_mask_to_path(mask_result, layer.offset)
         self._apply_path(doc, path, opts)
 
     def on_move(self, pos, doc, fg, bg, opts): pass
     def on_release(self, pos, doc, fg, bg, opts): pass
-    def needs_history_push(self) -> bool: return True
-    def cursor(self): return Qt.CursorShape.CrossCursor
 
 
-class QuickSelectionTool(BaseTool, LassoMixin):
-    """Инструмент 'Быстрое выделение': работает как кисть, расширяя область по схожести цветов"""
+class QuickSelectionTool(AbstractSelectionTool):
+    """Инструмент 'Быстрое выделение' (Интеллектуальная кисть)."""
     name = "QuickSelection"
-    icon = "🖌️✨"
+    icon_name = "brush-selection.svg"
     shortcut = "W"
 
     def __init__(self):
         super().__init__()
         self._dragging = False
-        self._mask = None
-        self._target_img = None
-        self._target_layer = None
+        self._live_mask = None
+        self._active_layer = None
 
     def on_press(self, pos: QPoint, doc, fg, bg, opts):
-        layer = doc.get_active_layer()
-        if not layer or layer.locked or layer.image.isNull():
-            return
-        
-        self._dragging = True
-        self._target_layer = layer # ИСПРАВЛЕНО: Сохраняем ссылку на активный слой!
-        
-        if getattr(layer, "editing_mask", False) and getattr(layer, "mask", None) is not None:
-            self._target_img = layer.mask
-        else:
-            self._target_img = layer.image
+        try:
+            layer = doc.get_active_layer()
+            if not layer or layer.locked:
+                return
 
-        w, h = self._target_img.width(), self._target_img.height()
-        self._mask = np.zeros((h, w), dtype=bool)
-        self._process_brush(pos, opts)
+            snapshot = self._get_safe_layer_snapshot(layer)
+            if not snapshot:
+                return
+            _, np_data = snapshot
+
+            self._dragging = True
+            self._active_layer = layer
+            self._live_mask = np.zeros((np_data.shape[0], np_data.shape[1]), dtype=bool)
+            
+            self._process_brush_step(pos, np_data, opts)
+        except Exception:
+            print(f"Сбой QuickSelection: {traceback.format_exc()}")
+            self._dragging = False
 
     def on_move(self, pos: QPoint, doc, fg, bg, opts):
-        if self._dragging:
-            self._process_brush(pos, opts)
+        if self._dragging and self._live_mask is not None and self._active_layer:
+            snapshot = self._get_safe_layer_snapshot(self._active_layer)
+            if snapshot:
+                self._process_brush_step(pos, snapshot[1], opts)
 
     def on_release(self, pos: QPoint, doc, fg, bg, opts):
-        if not self._dragging: 
+        if not self._dragging:
             return
         self._dragging = False
 
-        if self._mask is not None and np.any(self._mask) and self._target_layer:
-            h, w = self._mask.shape
-            mask_img = QImage(w, h, QImage.Format.Format_RGBA8888)
-            mask_img.fill(0)
-            
-            m_ptr = mask_img.bits()
-            m_buf = (ctypes.c_uint8 * mask_img.sizeInBytes()).from_address(int(m_ptr))
-            m_bpl = mask_img.bytesPerLine()
-            
-            mask_arr = np.ndarray((h, m_bpl // 4, 4), dtype=np.uint8, buffer=m_buf)
-            mask_arr[:, :w, 3][self._mask] = 255
-            
-            path = QPainterPath()
-            path.addRegion(QRegion(QBitmap.fromImage(mask_img.createAlphaMask())))
-            path.translate(self._target_layer.offset.x(), self._target_layer.offset.y())
-            self._apply_path(doc, path.simplified(), opts)
+        try:
+            if self._live_mask is not None and np.any(self._live_mask) and self._active_layer:
+                path = self._convert_mask_to_path(self._live_mask, self._active_layer.offset)
+                self._apply_path(doc, path, opts)
+        except Exception:
+            print(f"Сбой финализации QuickSelection: {traceback.format_exc()}")
+        finally:
+            self._live_mask = None
+            self._active_layer = None
 
-        self._mask = None
-        self._target_img = None
-        self._target_layer = None
+    def _process_brush_step(self, pos, np_data, opts):
+        cx = pos.x() - self._active_layer.offset.x()
+        cy = pos.y() - self._active_layer.offset.y()
+        h, w, _ = np_data.shape
 
-    def _process_brush(self, pos, opts):
-        if self._target_img is None or self._mask is None or self._target_layer is None: 
+        if not (0 <= cx < w and 0 <= cy < h):
             return
 
-        cx, cy = pos.x() - self._target_layer.offset.x(), pos.y() - self._target_layer.offset.y()
-        w, h = self._target_img.width(), self._target_img.height()
-        if not (0 <= cx < w and 0 <= cy < h): 
-            return
-
-        target_px = self._target_img.pixel(cx, cy)
-        tr, tg, tb = (target_px >> 16) & 0xFF, (target_px >> 8) & 0xFF, target_px & 0xFF
-
+        target_color = np_data[cy, cx, :3].astype(np.int32)
         brush_size = max(1, opts.get("brush_size", 20))
         radius = int(brush_size * 1.5)
         tolerance = opts.get("fill_tolerance", 32)
         tol_sq = (tolerance / 100.0 * 255)**2 * 3
 
-        min_x, max_x = max(0, cx - radius), min(w, cx + radius + 1)
-        min_y, max_y = max(0, cy - radius), min(h, cy + radius + 1)
+        x1, x2 = max(0, cx - radius), min(w, cx + radius + 1)
+        y1, y2 = max(0, cy - radius), min(h, cy + radius + 1)
 
-        # Попиксельный разбор региона интереса (ROI) с правильным определением каналов
-        R, G, B, A = qimage_to_channels(self._target_img)
+        roi = np_data[y1:y2, x1:x2]
+        dist_sq = (roi[..., 0] - target_color[0])**2 + (roi[..., 1] - target_color[1])**2 + (roi[..., 2] - target_color[2])**2
         
-        roi_R = R[min_y:max_y, min_x:max_x]
-        roi_G = G[min_y:max_y, min_x:max_x]
-        roi_B = B[min_y:max_y, min_x:max_x]
-        roi_A = A[min_y:max_y, min_x:max_x]
-
-        dist_sq = (roi_R - tr)**2 + (roi_G - tg)**2 + (roi_B - tb)**2
-        local_mask = (dist_sq <= tol_sq) & (roi_A > 0)
+        local_mask = (dist_sq <= tol_sq) & (roi[..., 3] > 0)
         
-        # Ограничиваем маску формой круглой кисти
-        Y, X = np.ogrid[min_y - cy : max_y - cy, min_x - cx : max_x - cx]
+        Y, X = np.ogrid[y1 - cy : y2 - cy, x1 - cx : x2 - cx]
         local_mask &= ((X**2 + Y**2) <= radius**2)
 
-        self._mask[min_y:max_y, min_x:max_x] |= local_mask
+        self._live_mask[y1:y2, x1:x2] |= local_mask
 
     def stroke_preview(self):
-        # Живой интерактивный предпросмотр выделения синим цветом
-        if self._mask is not None and self._target_layer is not None:
-            h, w = self._mask.shape
+        if self._dragging and self._live_mask is not None and self._active_layer:
+            h, w = self._live_mask.shape
             img = QImage(w, h, QImage.Format.Format_ARGB32_Premultiplied)
             img.fill(0)
             
-            m_ptr = img.bits()
-            m_buf = (ctypes.c_uint8 * img.sizeInBytes()).from_address(int(m_ptr))
-            bpl = img.bytesPerLine()
-            
-            # В ARGB32 порядок байт в памяти на Little-Endian: BGRA
-            img_arr = np.ndarray((h, bpl // 4, 4), dtype=np.uint8, buffer=m_buf)
-            img_arr[:, :w][self._mask] = [250, 150, 50, 100] # Полупрозрачный лазурно-синий
-            return (img, self._target_layer.offset, 1.0)
+            ptr = img.bits()
+            ptr.setsize(img.sizeInBytes())
+            img_arr = np.ndarray((h, img.bytesPerLine() // 4, 4), dtype=np.uint8, buffer=ptr)
+            img_arr[:, :w][self._live_mask] = [250, 150, 50, 120] 
+            return img, self._active_layer.offset, 1.0
         return None
 
-    def needs_history_push(self): return True
-    def cursor(self): return Qt.CursorShape.CrossCursor
 
-
-class ObjectSelectionTool(BaseTool, LassoMixin):
-    """Инструмент 'Выделение объекта': автоматически находит контрастный объект внутри прямоугольной рамки"""
+class ObjectSelectionTool(AbstractSelectionTool):
+    """Инструмент 'Выделение объекта' в рамке."""
     name = "ObjectSelection"
-    icon = "📦"
+    icon_name = "box-selection.svg"
     shortcut = "W"
 
     def __init__(self):
@@ -272,77 +275,57 @@ class ObjectSelectionTool(BaseTool, LassoMixin):
             self._end = pos
 
     def on_release(self, pos, doc, fg, bg, opts):
-        if not self._dragging: 
+        if not self._dragging:
             return
         self._dragging = False
         self._end = pos
 
-        layer = doc.get_active_layer()
-        if not layer or layer.locked or layer.image.isNull():
+        try:
+            layer = doc.get_active_layer()
+            if not layer or layer.locked:
+                return
+
+            snapshot = self._get_safe_layer_snapshot(layer)
+            if not snapshot:
+                return
+            img, np_data = snapshot
+
+            doc_rect = QRect(self._start, self._end).normalized()
+            rect = doc_rect.translated(-layer.offset).intersected(QRect(0, 0, img.width(), img.height()))
+
+            if rect.width() < 8 or rect.height() < 8:
+                return
+
+            x1, x2, y1, y2 = rect.left(), rect.right(), rect.top(), rect.bottom()
+            roi = np_data[y1:y2+1, x1:x2+1]
+
+            rh, rw, _ = roi.shape
+            cx1, cx2 = int(rw * 0.3), int(rw * 0.7)
+            cy1, cy2 = int(rh * 0.3), int(rh * 0.7)
+            center_zone = roi[cy1:cy2, cx1:cx2]
+
+            if center_zone.size > 0:
+                avg_color = np.median(center_zone[..., :3], axis=(0, 1))
+            else:
+                avg_color = roi[rh // 2, rw // 2, :3]
+
+            dist_sq = (roi[..., 0] - avg_color[0])**2 + (roi[..., 1] - avg_color[1])**2 + (roi[..., 2] - avg_color[2])**2
+            tolerance_sq = (45 / 100.0 * 255)**2 * 3
+            
+            local_mask = (dist_sq <= tolerance_sq) & (roi[..., 3] > 0)
+
+            if np.any(local_mask):
+                global_mask = np.zeros((img.height(), img.width()), dtype=bool)
+                global_mask[y1:y2+1, x1:x2+1] = local_mask
+                
+                path = self._convert_mask_to_path(global_mask, layer.offset)
+                self._apply_path(doc, path, opts)
+
+        except Exception:
+            print(f"Сбой ObjectSelection: {traceback.format_exc()}")
+        finally:
             self._start = None
-            return
-
-        target_img = layer.mask if (getattr(layer, "editing_mask", False) and getattr(layer, "mask", None) is not None) else layer.image
-
-        doc_rect = QRect(self._start, self._end).normalized()
-        w, h = target_img.width(), target_img.height()
-        rect = doc_rect.translated(-layer.offset).intersected(QRect(0, 0, w, h))
-
-        if rect.width() < 10 or rect.height() < 10:
-            self._start = None
-            return
-
-        min_x, max_x, min_y, max_y = rect.left(), rect.right(), rect.top(), rect.bottom()
-        
-        # Читаем каналы
-        R, G, B, A = qimage_to_channels(target_img)
-        
-        roi_R = R[min_y:max_y+1, min_x:max_x+1]
-        roi_G = G[min_y:max_y+1, min_x:max_x+1]
-        roi_B = B[min_y:max_y+1, min_x:max_x+1]
-        roi_A = A[min_y:max_y+1, min_x:max_x+1]
-
-        # Эвристика: берем медианный цвет центральной 40% зоны рамки
-        roi_h, roi_w = roi_R.shape
-        cw, ch = int(roi_w * 0.4), int(roi_h * 0.4)
-        c_x1, c_y1 = (roi_w - cw) // 2, (roi_h - ch) // 2
-        
-        center_R = roi_R[c_y1:c_y1+ch, c_x1:c_x1+cw]
-        center_G = roi_G[c_y1:c_y1+ch, c_x1:c_x1+cw]
-        center_B = roi_B[c_y1:c_y1+ch, c_x1:c_x1+cw]
-        
-        if center_R.size > 0:
-            avg_r = np.median(center_R)
-            avg_g = np.median(center_G)
-            avg_b = np.median(center_B)
-        else:
-            avg_r = roi_R[roi_h // 2, roi_w // 2]
-            avg_g = roi_G[roi_h // 2, roi_w // 2]
-            avg_b = roi_B[roi_h // 2, roi_w // 2]
-
-        dist_sq = (roi_R - avg_r)**2 + (roi_G - avg_g)**2 + (roi_B - avg_b)**2
-
-        # Интеллектуальный порог отсечения объекта от фона
-        tolerance_sq = (50 / 100.0 * 255)**2 * 3
-        local_mask = (dist_sq <= tolerance_sq) & (roi_A > 0)
-        
-        if np.any(local_mask):
-            mask_img = QImage(w, h, QImage.Format.Format_RGBA8888)
-            mask_img.fill(0)
-            
-            m_ptr = mask_img.bits()
-            m_buf = (ctypes.c_uint8 * mask_img.sizeInBytes()).from_address(int(m_ptr))
-            m_bpl = mask_img.bytesPerLine()
-            
-            mask_arr = np.ndarray((h, m_bpl // 4, 4), dtype=np.uint8, buffer=m_buf)
-            mask_arr[min_y:max_y+1, min_x:max_x+1, 3][local_mask] = 255
-            
-            path = QPainterPath()
-            path.addRegion(QRegion(QBitmap.fromImage(mask_img.createAlphaMask())))
-            path.translate(layer.offset.x(), layer.offset.y())
-            self._apply_path(doc, path.simplified(), opts)
-
-        self._start = None
+            self._end = None
 
     def sub_drag_path(self):
         if self._dragging and self._start and self._end:
@@ -350,6 +333,3 @@ class ObjectSelectionTool(BaseTool, LassoMixin):
             p.addRect(QRectF(QRect(self._start, self._end).normalized()))
             return p
         return None
-
-    def needs_history_push(self): return True
-    def cursor(self): return Qt.CursorShape.CrossCursor
