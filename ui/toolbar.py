@@ -8,6 +8,12 @@ from PyQt6.QtGui import QIcon, QPixmap
 from core.locale import tr
 
 
+# ВАЖНО: Вычисляем абсолютный путь к корню вашего проекта.
+# __file__ указывает на ui/toolbar.py. 
+# Первый dirname поднимает нас до папки ui/, второй — до корня всего проекта (где лежит assets).
+BASE_DIR = os.path.dirname(os.path.dirname(os.path.abspath(__file__)))
+
+
 @dataclass(frozen=True)
 class _ToolDef:
     name: str
@@ -19,10 +25,12 @@ class _ToolDef:
 
 def _load_recolored_icon(icon_file: str, color: str = "#FFFFFF") -> QIcon:
     """
-    Безопасно загружает SVG-файл из памяти, заменяя дефолтный 
-    цвет обводки (currentColor) на выбранный (например, белый).
+    Безопасно загружает SVG-файл, используя жесткий абсолютный путь,
+    заменяя дефолтный цвет обводки (currentColor) на выбранный.
     """
-    icon_path = os.path.join("assets", "icons", icon_file)
+    # ИСПРАВЛЕНО: Теперь путь строится от BASE_DIR, а не от папки запуска терминала
+    icon_path = os.path.join(BASE_DIR, "assets", "icons", icon_file)
+    
     if os.path.exists(icon_path):
         try:
             with open(icon_path, "r", encoding="utf-8") as f:
