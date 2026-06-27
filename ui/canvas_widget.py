@@ -9,7 +9,7 @@ from PyQt6.QtGui import (QPainter, QColor, QPixmap, QBrush, QPen, QImage, QCurso
 from tools.other_tools import (SelectTool, CropTool, ShapesTool,
                                HandTool, ZoomTool, RotateViewTool, GradientTool, PerspectiveCropTool)
 
-# Инструменты с кистью — для них показываем кружок-курсор
+# Brush tools — show circle cursor for these
 _BRUSH_TOOLS = {"Brush", "Eraser", "BackgroundEraser", "Blur", "Sharpen", "Smudge", "CloneStamp", "PatternStamp",
                 "Pencil", "ColorReplacement", "MixerBrush",
                 "SpotHealing", "HealingBrush", "HistoryBrush",
@@ -25,7 +25,7 @@ _SELECTION_TOOLS = {
 _sel_cursor_cache: dict = {}
 
 def _make_sel_cursor(mode: str) -> QCursor:
-    """Создает перекрестие курсора с индикатором режима выделения: '' / '+' / '−' / '×'."""
+    """Create a crosshair cursor with selection mode indicator: '' / '+' / '-' / 'x'."""
     if mode in _sel_cursor_cache:
         return _sel_cursor_cache[mode]
 
@@ -81,7 +81,7 @@ class CanvasWidget(QWidget):
     pixels_changed   = pyqtSignal()
     color_picked     = pyqtSignal(QColor)
     tool_state_changed = pyqtSignal(object)
-    cursor_info      = pyqtSignal(int, int, QColor)  # doc x, doc y, цвет пикселя
+    cursor_info      = pyqtSignal(int, int, QColor)  # doc x, doc y, pixel color
 
     def __init__(self, parent=None):
         super().__init__(parent)
@@ -186,7 +186,7 @@ class CanvasWidget(QWidget):
         self.update()
 
     def _start_effect_stroke(self):
-        """Безопасно кэширует фон под активным слоем для спецэффектов."""
+        """Safely cache the background beneath the active layer for effects."""
         try:
             doc = self.document
             active = doc.get_active_layer() if doc else None
@@ -207,7 +207,7 @@ class CanvasWidget(QWidget):
             if hasattr(self.active_tool, "_stroke_preview_active"):
                 self.active_tool._stroke_preview_active = True
         except Exception as e:
-            print(f"Предохранитель кэша эффектов: {e}")
+            print(f"Effect cache safety catch: {e}")
             self._effect_bg_cache = None
             self._in_effect_stroke = False
 
@@ -326,7 +326,7 @@ class CanvasWidget(QWidget):
                 painter.restore()
 
     def paintEvent(self, _event):
-        """Отрисовка сцены, защищенная от сбоев внутренних скриптов."""
+        """Render the scene, guarded against internal script failures."""
         try:
             painter = QPainter(self)
             if self.zoom > 0.9:
@@ -357,7 +357,7 @@ class CanvasWidget(QWidget):
             else:
                 self._paint_canvas_content(painter)
                 
-            # Отрисовка имен Артбордов
+            # Draw artboard names
             painter.save()
             painter.translate(self._pan)
             painter.scale(self.zoom, self.zoom)
@@ -375,7 +375,7 @@ class CanvasWidget(QWidget):
                     painter.drawText(ar.left(), ar.top() - max(4, int(4/self.zoom)), layer.name)
             painter.restore()
                 
-            # Защищенный вывод оверлеев кастомных инструментов
+            # Guarded rendering of custom tool overlays
             if self.active_tool and hasattr(self.active_tool, "draw_overlays"):
                 try:
                     painter.save()
@@ -396,7 +396,7 @@ class CanvasWidget(QWidget):
                         
                     painter.restore()
                 except Exception as e:
-                    print(f"Ошибка отрисовки оверлея инструмента {getattr(self.active_tool, 'name', '')}: {e}")
+                    print(f"Tool overlay rendering error {getattr(self.active_tool, 'name', '')}: {e}")
 
             if self._show_brush_cursor and not self._panning and not self._space:
                 self._draw_brush_cursor(painter)
@@ -406,10 +406,10 @@ class CanvasWidget(QWidget):
 
             painter.end()
         except Exception as ce:
-            print(f"Критический сбой цикла отрисовки холста: {traceback.format_exc()}")
+            print(f"Critical canvas paint loop failure: {traceback.format_exc()}")
 
     def _paint_canvas_content(self, painter: QPainter):
-        """Внутренний послойный рендеринг кэша изображений и векторов."""
+        """Internal layer-by-layer rendering of cached images and vectors."""
         dr = self._doc_rect_in_widget()
         has_artboards = any(getattr(l, "layer_type", "") == "artboard" for l in self.document.layers)
 
@@ -425,6 +425,7 @@ class CanvasWidget(QWidget):
             if self._in_effect_stroke and self._effect_bg_cache is not None:
                 self._composite_cache = self._effect_bg_cache
             else:
+                self.document.invalidate_composite()
                 self._composite_cache = self.document.get_composite()
             self._cache_dirty = False
             self._display_cache = None
@@ -499,7 +500,7 @@ class CanvasWidget(QWidget):
         painter.drawImage(0, 0, display_img)
         painter.restore()
 
-        # Направляющая сетка (Grid)
+        # Grid overlay
         if getattr(self.document, "show_grid", False):
             painter.save()
             painter.translate(self._pan)
@@ -510,7 +511,7 @@ class CanvasWidget(QWidget):
             for y in range(0, self.document.height, gs): painter.drawLine(QPointF(0, y), QPointF(self.document.width, y))
             painter.restore()
 
-        # Линейки быстрых направляющих (Guides)
+        # Guides
         if getattr(self.document, "show_guides", False):
             painter.save()
             painter.translate(self._pan)
@@ -529,7 +530,7 @@ class CanvasWidget(QWidget):
                     painter.drawLine(QPointF(-10000, val), QPointF(10000, val))
             painter.restore()
 
-        # Сегменты раскройки веб-макетов (Slices)
+        # Slices
         if getattr(self.document, "show_slices", True):
             slices = getattr(self.document, "slices", [])
             if slices:
@@ -556,7 +557,7 @@ class CanvasWidget(QWidget):
             painter.setBrush(Qt.BrushStyle.NoBrush)
             painter.drawRect(dr.adjusted(0, 0, -1, -1))
 
-        # Относительные оси зеркальной симметрии кистей
+        # Brush mirror symmetry axes
         mirror_x = bool(self.tool_opts.get("brush_mirror_x", False))
         mirror_y = bool(self.tool_opts.get("brush_mirror_y", False))
         cx_pct = float(self.tool_opts.get("brush_mirror_cx", 0.5))
@@ -586,7 +587,7 @@ class CanvasWidget(QWidget):
             painter.drawEllipse(QPointF(sym_x, sym_y), r_handle, r_handle)
             painter.restore()
 
-        # Классическая «бегущая» рамка активного выделения
+        # Marching ants selection outline
         sel = self.document.selection
         in_qm = getattr(self.document, "quick_mask_layer", None) is not None
         if sel and not sel.isEmpty() and not in_qm:
@@ -606,7 +607,7 @@ class CanvasWidget(QWidget):
             painter.drawPath(sel)
             painter.restore()
 
-        # Превью геометрического вычитания (Subtract-drag)
+        # Subtract-drag preview
         if self.active_tool and hasattr(self.active_tool, "sub_drag_path"):
             try:
                 sub_p = self.active_tool.sub_drag_path()
@@ -638,7 +639,7 @@ class CanvasWidget(QWidget):
                     painter.restore()
             except Exception: pass
 
-        # Интерактивное превью векторного Лассо
+        # Lasso preview
         if self.active_tool and hasattr(self.active_tool, "lasso_preview"):
             try:
                 preview_data = self.active_tool.lasso_preview()
@@ -671,7 +672,7 @@ class CanvasWidget(QWidget):
                     painter.restore()
             except Exception: pass
 
-        # Временный слой трансформации (Move/Warp)
+        # Transform layer preview (Move/Warp)
         if self.active_tool and hasattr(self.active_tool, "floating_preview"):
             try:
                 fp = self.active_tool.floating_preview()
@@ -701,7 +702,7 @@ class CanvasWidget(QWidget):
                         painter.restore()
             except Exception: pass
 
-        # Быстрый оверлей мазка кистей
+        # Brush stroke overlay
         if self.active_tool and hasattr(self.active_tool, "stroke_preview"):
             try:
                 sp = self.active_tool.stroke_preview()
@@ -719,7 +720,7 @@ class CanvasWidget(QWidget):
                     painter.restore()
             except Exception: pass
 
-        # Превью кадрирования (Crop)
+        # Crop preview
         if isinstance(self.active_tool, CropTool) and self.active_tool.pending_rect:
             try:
                 cr = self.active_tool.pending_rect
@@ -767,7 +768,7 @@ class CanvasWidget(QWidget):
                 painter.restore()
             except Exception: pass
 
-        # Отрисовка перспективного кадрирования
+        # Perspective crop preview
         if isinstance(self.active_tool, PerspectiveCropTool):
             try:
                 painter.save()
@@ -821,7 +822,7 @@ class CanvasWidget(QWidget):
                 painter.restore()
             except Exception: pass
 
-        # Отрисовка превью векторных фигур (Shapes)
+        # Shapes preview
         if isinstance(self.active_tool, ShapesTool):
             try:
                 ps = self.active_tool.preview_shape()
@@ -878,7 +879,7 @@ class CanvasWidget(QWidget):
                     painter.restore()
             except Exception: pass
 
-        # Отрисовка вектора градиентов (Gradient Line)
+        # Gradient line preview
         if isinstance(self.active_tool, GradientTool):
             try:
                 pg = self.active_tool.preview_gradient()
@@ -913,7 +914,7 @@ class CanvasWidget(QWidget):
                     painter.restore()
             except Exception: pass
 
-        # Отрезок-цель для Клонирующего штампа (CloneStamp)
+        # Clone stamp source indicator
         crosshair = getattr(self.active_tool, "_crosshair_pos", None)
         if crosshair is not None:
             painter.save()
@@ -931,7 +932,7 @@ class CanvasWidget(QWidget):
             painter.drawLine(QPointF(crosshair.x(), crosshair.y() - r), QPointF(crosshair.x(), crosshair.y() + r))
             painter.restore()
 
-        # Математические инструменты измерений (Линейка и Пипетка-Эталон)
+        # Measurement tools (Ruler and Color Sampler)
         try:
             from tools.measure_tools import ColorSamplerTool, RulerTool
             if isinstance(self.active_tool, ColorSamplerTool):
@@ -1158,7 +1159,7 @@ class CanvasWidget(QWidget):
         ev.ignore()
 
     def mousePressEvent(self, ev):
-        """Перехватывает и изолирует любые ошибки инициализации мазков/инструментов."""
+        """Handles mouse press with error isolation for tool initialization."""
         if not self.document:
             return
             
@@ -1298,13 +1299,13 @@ class CanvasWidget(QWidget):
                 if getattr(self.active_tool, "needs_background_composite", False):
                     self._start_effect_stroke()
 
-                # УМНЫЙ ПРЕДОХРАНИТЕЛЬ: Безопасный запуск логики инструмента
+                # Safe tool press handler
                 try:
                     self.active_tool.on_press(doc_pos, self.document, self.fg_color, self.bg_color, self.tool_opts)
                 except Exception as tool_ex:
-                    print(f"🛑 Ошибка выполнения on_press в инструменте {tool_name}:\n{traceback.format_exc()}")
+                    print(f"[CanvasWidget] on_press error in {tool_name}:\n{traceback.format_exc()}")
                     if hasattr(self.window(), "_status"):
-                        self.window()._status.showMessage(f"Ошибка инструмента {tool_name}: сбой операции", 4000)
+                        self.window()._status.showMessage(f"Tool {tool_name}: operation failed", 4000)
                     self._stroke_in_progress = False
                     self._pre_stroke_state = None
 
@@ -1319,11 +1320,11 @@ class CanvasWidget(QWidget):
                     
             self._emit_tool_state()
         except Exception as global_ex:
-            print(f"Критический сбой события нажатия мыши: {traceback.format_exc()}")
+            print(f"[CanvasWidget] Critical mouse press error: {traceback.format_exc()}")
             self._stroke_in_progress = False
 
     def mouseMoveEvent(self, ev):
-        """Обеспечивает непрерывный мазок кисти или деформации, изолируя утечки памяти."""
+        """Handles mouse move for brush strokes and deformations."""
         try:
             mods = ev.modifiers()
             self.tool_opts["_shift"] = bool(mods & Qt.KeyboardModifier.ShiftModifier)
@@ -1396,13 +1397,13 @@ class CanvasWidget(QWidget):
             if (ev.buttons() & Qt.MouseButton.LeftButton and self._stroke_in_progress and self.active_tool):
                 doc_pos = self.to_doc(ev.position())
                 
-                # УМНЫЙ ПРЕДОХРАНИТЕЛЬ: Безопасное проведение операции мазка/выделения
+                # Safe tool move handler
                 try:
                     self.active_tool.on_move(doc_pos, self.document, self.fg_color, self.bg_color, self.tool_opts)
                 except Exception as move_ex:
-                    print(f"🛑 Ошибка итерации on_move в инструменте {getattr(self.active_tool, 'name', '')}:\n{traceback.format_exc()}")
+                    print(f"[CanvasWidget] on_move error in {getattr(self.active_tool, 'name', '')}:\n{traceback.format_exc()}")
                     if hasattr(self.window(), "_status"):
-                        self.window()._status.showMessage("Сбой интерактивного шага инструмента", 1000)
+                        self.window()._status.showMessage("Tool move step failed", 1000)
 
                 if getattr(self.active_tool, "modifies_canvas_on_move", False):
                     is_brush_preview = (
@@ -1442,10 +1443,10 @@ class CanvasWidget(QWidget):
                         color = QColor(0, 0, 0, 0)
                     self.cursor_info.emit(cx, cy, color)
         except Exception as global_move_ex:
-            print(f"Критический сбой события перемещения мыши: {global_move_ex}")
+            print(f"[CanvasWidget] Critical mouse move error: {global_move_ex}")
 
     def mouseReleaseEvent(self, ev):
-        """Финализирует мазки и принудительно очищает оперативную память от остатков NumPy."""
+        """Handles mouse release to finalize strokes."""
         try:
             if getattr(self, "_dragging_sym_center", False) and ev.button() == Qt.MouseButton.LeftButton:
                 self._dragging_sym_center = False
@@ -1482,14 +1483,14 @@ class CanvasWidget(QWidget):
                 doc_pos = self.to_doc(ev.position())
                 tool_name = getattr(self.active_tool, "name", "")
                 
-                # УМНЫЙ ПРЕДОХРАНИТЕЛЬ: Финализация вычислений инструмента
+                # Safe tool release handler
                 if self.active_tool:
                     try:
                         self.active_tool.on_release(doc_pos, self.document, self.fg_color, self.bg_color, self.tool_opts)
                     except Exception as rel_ex:
-                        print(f"🛑 Ошибка завершения мазка on_release в инструменте {tool_name}:\n{traceback.format_exc()}")
+                        print(f"[CanvasWidget] on_release error in {tool_name}:\n{traceback.format_exc()}")
                         if hasattr(self.window(), "_status"):
-                            self.window()._status.showMessage("Сбой сохранения результатов работы инструмента", 4000)
+                            self.window()._status.showMessage("Tool release failed", 4000)
 
                 self._stroke_in_progress = False
                 self._prev_brush_wp = None
@@ -1502,7 +1503,7 @@ class CanvasWidget(QWidget):
                 self.document_changed.emit()
             self._emit_tool_state()
         except Exception as global_release_ex:
-            print(f"Критический сбой события отпускания мыши: {global_release_ex}")
+            print(f"[CanvasWidget] Critical mouse release error: {global_release_ex}")
             self._stroke_in_progress = False
 
     def enterEvent(self, ev):

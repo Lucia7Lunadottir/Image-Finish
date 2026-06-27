@@ -319,8 +319,8 @@ class MainWindow(QMainWindow,
         splitter.addWidget(self._center_stack)
         splitter.addWidget(right)
         splitter.setSizes([self.width() - 260, 260])
-        splitter.setStretchFactor(0, 1) # Холст будет растягиваться
-        splitter.setStretchFactor(1, 0) # Панель — нет
+        splitter.setStretchFactor(0, 1) # Canvas stretches
+        splitter.setStretchFactor(1, 0) # Panel does not
 
         body_h.addWidget(splitter, 1)
         root_v.addWidget(body, 1)
@@ -720,6 +720,8 @@ class MainWindow(QMainWindow,
     def _canvas_refresh(self):
         if self._canvas:
             self._canvas._cache_dirty = True
+            if self._document:
+                self._document.invalidate_composite()
             self._canvas.update()
 
     # ================================================================= Signals
@@ -895,7 +897,7 @@ class MainWindow(QMainWindow,
             if tool and getattr(tool, "is_transforming", False):
                 from core.history import HistoryState, clone_work_path
                 
-                # Временно восстанавливаем исходное состояние слоя и выделения для чистого слепка
+                # Temporarily restore original layer and selection state for a clean snapshot
                 layer = self._document.get_active_layer()
                 tmp_img, tmp_off, tmp_sel = None, None, None
                 tmp_rect = None
@@ -931,7 +933,7 @@ class MainWindow(QMainWindow,
                     bit_depth_snapshot=getattr(self._document, "bit_depth", 8)
                 )
                 
-                # Возвращаем "вырезанную" версию обратно для финального склеивания
+                # Restore the "cut" version back for the final compositing
                 if layer and tmp_img is not None:
                     layer.image = tmp_img
                     layer.offset = tmp_off
@@ -990,7 +992,7 @@ class MainWindow(QMainWindow,
         from ui.layer_style_dialog import LayerStyleDialog
         dlg = LayerStyleDialog(layer, self._canvas_refresh, self)
         if dlg.exec():
-            self._push_history("Стили слоя")
+            self._push_history("Layer Styles")
             self._refresh_layers()
         else:
             dlg.reject()
@@ -1110,13 +1112,13 @@ class MainWindow(QMainWindow,
         self._canvas.update()
 
     def _on_pixels_changed(self):
-        # Не обновляем тяжёлые панели (гистограмма, навигатор) на каждое
-        # движение мыши — они вызывают get_composite() и убивают FPS.
-        # Панели обновятся в _on_doc_changed() при завершении мазка.
+        # Skip updating heavy panels (histogram, navigator) on every
+        # mouse move — they call get_composite() and kill FPS.
+        # Panels will update in _on_doc_changed() when the stroke ends.
         self._update_status()
 
     def _on_doc_changed(self):
-        self._refresh_layers()
+        # Push history state immediately (needs pre-stroke snapshot)
         state = getattr(self._canvas, "_pre_stroke_state", None)
         if state:
             self._history.push(state)
@@ -1124,8 +1126,13 @@ class MainWindow(QMainWindow,
             if state.doc_width != self._document.width or state.doc_height != self._document.height:
                 self._canvas.reset_zoom()
         self._update_title()
+        # Defer heavy panel refreshes so the canvas repaints first
         from PyQt6.QtCore import QTimer
-        QTimer.singleShot(0, self._refresh_secondary_panels)
+        QTimer.singleShot(0, self._deferred_panel_refresh)
+
+    def _deferred_panel_refresh(self):
+        self._refresh_layers()
+        self._refresh_secondary_panels()
 
     def _refresh_secondary_panels(self):
         canvas = self._canvas
@@ -1492,7 +1499,7 @@ class MainWindow(QMainWindow,
             self._on_layer_clipping_toggled(self._document.active_layer_index)
             
     def _on_layer_clipping_toggled(self, index: int):
-        if 0 < index < len(self._document.layers): # Нельзя применить к самому нижнему слою
+        if 0 < index < len(self._document.layers): # Cannot apply to the bottom layer
             layer = self._document.layers[index]
             self._push_history(tr("history.clipping_mask"))
             layer.clipping = not getattr(layer, "clipping", False)
@@ -1560,7 +1567,7 @@ class MainWindow(QMainWindow,
         )
         
         if getattr(self._document, "quick_mask_layer", None) is not None:
-            # Выход из режима Быстрой Маски
+            # Exit Quick Mask mode
             qm = self._document.quick_mask_layer.image
             import numpy as np
             from PyQt6.QtGui import QImage, QRegion, QBitmap
@@ -1587,7 +1594,7 @@ class MainWindow(QMainWindow,
                 self._color_panel.set_bg(self._qm_old_bg)
                 self._canvas.bg_color = self._qm_old_bg
         else:
-            # Вход в режим Быстрой маски
+            # Enter Quick Mask mode
             from core.layer import Layer
             from PyQt6.QtGui import QPainter
             
@@ -2113,7 +2120,7 @@ class MainWindow(QMainWindow,
             self._remove_recent_file(path)
             return
             
-        # Если в FileActionsMixin есть готовый метод загрузки, используем его
+        # If FileActionsMixin has a ready-made load method, use it
         if hasattr(self, "_open_file_path"):
             self._open_file_path(path)
 

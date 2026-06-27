@@ -171,7 +171,7 @@ class Document:
             if getattr(active, "layer_type", "raster") in ("artboard", "group"):
                 parent_id = getattr(active, "layer_id", None)
                 if index is not None and index == self.active_layer_index + 1:
-                    # Вставляем ВНУТРЬ группы (то есть на место группы, сдвигая саму группу выше)
+                    # Insert INSIDE the group (at the group's position, shifting the group itself up)
                     insert_idx = self.active_layer_index
             else:
                 parent_id = getattr(active, "parent_id", None)
@@ -220,7 +220,13 @@ class Document:
         return None
 
     # ---------------------------------------------------------------- Composite
+    def invalidate_composite(self):
+        self._composite_cache_doc = None
+
     def get_composite(self) -> QImage:
+        cached = getattr(self, "_composite_cache_doc", None)
+        if cached is not None:
+            return cached
         result = QImage(self.width, self.height, QImage.Format.Format_ARGB32_Premultiplied)
         result.fill(Qt.GlobalColor.transparent)
 
@@ -422,7 +428,7 @@ class Document:
                         img_to_draw, offset_delta = apply_layer_styles(img_to_draw, layer.layer_styles)
                         current_offset = current_offset + offset_delta
                         
-                        # Применяем стиль Сдвиг (Offset)
+                        # Apply the Offset style
                         offset_style = layer.layer_styles.get("offset", {})
                         if offset_style.get("enabled"):
                             dx_pct = offset_style.get("dx_pct", 0)
@@ -542,7 +548,7 @@ class Document:
             bpl = qm.bytesPerLine()
             arr = np.ndarray((qm.height(), bpl // 4, 4), dtype=np.uint8, buffer=ptr)[:, :self.width, :]
             
-            # Чёрный цвет (или альфа=0) станет красной плёнкой, белый — прозрачным
+            # Black (or alpha=0) becomes a red overlay; white becomes transparent
             gray = 0.299*arr[..., 2] + 0.587*arr[..., 1] + 0.114*arr[..., 0]
             mask_val = (255 - gray) * (arr[..., 3] / 255.0)
             
@@ -565,6 +571,7 @@ class Document:
             del arr
             del ptr
             
+        self._composite_cache_doc = result
         return result
 
     # ----------------------------------------------------------------- History
@@ -628,37 +635,37 @@ class Document:
         if quad.isEmpty() or quad.count() < 4:
             return
 
-        # Извлекаем 4 точки
+        # Extract 4 points
         pts = [quad[i] for i in range(4)]
 
-        # Сортируем точки: находим две верхние (с минимальным Y) и две нижние
+        # Sort points: find the two topmost (minimum Y) and two bottommost
         pts.sort(key=lambda p: p.y())
         top_pts = pts[:2]
         bottom_pts = pts[2:]
 
-        # Сортируем их по оси X (слева направо)
+        # Sort each pair by X (left to right)
         top_pts.sort(key=lambda p: p.x())
         bottom_pts.sort(key=lambda p: p.x())
 
-        # Получаем строгий порядок: Лево-Верх, Право-Верх, Лево-Низ, Право-Низ
+        # Strict order: Top-Left, Top-Right, Bottom-Left, Bottom-Right
         tl, tr = top_pts
         bl, br = bottom_pts
 
-        # Вспомогательная функция для расчета расстояния (чтобы не импортировать math)
+        # Distance helper (avoids importing math)
         def _dist(p1, p2):
             return ((p1.x() - p2.x())**2 + (p1.y() - p2.y())**2) ** 0.5
 
-        # Вычисляем реальные размеры будущего холста без растяжений
+        # Compute the actual canvas dimensions without stretching
         new_w = int(max(_dist(tl, tr), _dist(bl, br)))
         new_h = int(max(_dist(tl, bl), _dist(tr, br)))
 
         if new_w <= 0 or new_h <= 0:
             return
 
-        # Создаем отсортированный многоугольник-источник (строго по часовой)
+        # Create a sorted source polygon (strictly clockwise)
         sorted_quad = QPolygonF([tl, tr, br, bl])
 
-        # Явно задаем 4 точки приемника (в том же порядке TL, TR, BR, BL)
+        # Explicitly define 4 destination points (same order: TL, TR, BR, BL)
         dst_quad = QPolygonF([
             QPointF(0, 0),
             QPointF(new_w, 0),
@@ -687,7 +694,7 @@ class Document:
             layer.image = new_img
             layer.offset = QPoint(0, 0)
 
-        # Обновляем размеры самого документа
+        # Update the document dimensions
         self.width = new_w
         self.height = new_h
         self.selection = None
@@ -717,7 +724,7 @@ class Document:
             return QRect(0, 0, w, h)
 
     def fit_to_artboards(self) -> bool:
-        """Оборачивает границы документа строго вокруг всех Артбордов и сдвигает слои при выходе в минус."""
+        """Wrap document bounds tightly around all artboards and shift layers if they go negative."""
         bounds = None
         has_artboards = False
         for layer in self.layers:
