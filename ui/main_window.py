@@ -1124,7 +1124,8 @@ class MainWindow(QMainWindow,
             if state.doc_width != self._document.width or state.doc_height != self._document.height:
                 self._canvas.reset_zoom()
         self._update_title()
-        self._refresh_secondary_panels()
+        from PyQt6.QtCore import QTimer
+        QTimer.singleShot(0, self._refresh_secondary_panels)
 
     def _refresh_secondary_panels(self):
         canvas = self._canvas

@@ -1350,7 +1350,6 @@ class CanvasWidget(QWidget):
                 self._cache_dirty = True
                 self.update()
                 self.document_changed.emit()
-                import gc; gc.collect()
 
             if getattr(self, "_dragging_sym_center", False):
                 doc_pos = self.to_doc(ev.position())
@@ -1423,8 +1422,6 @@ class CanvasWidget(QWidget):
                 self.pixels_changed.emit()
                 
                 self._move_counter = getattr(self, "_move_counter", 0) + 1
-                if self._move_counter % 10 == 0:
-                    import gc; gc.collect(0)
             else:
                 if self.active_tool and hasattr(self.active_tool, "on_hover"):
                     try:
@@ -1503,10 +1500,6 @@ class CanvasWidget(QWidget):
                 self._cache_dirty = True
                 self.update()
                 self.document_changed.emit()
-
-                # Профессиональный клининг кэшей Python Gen 0/1/2 для защиты от Segmentation Fault
-                import gc
-                gc.collect()
             self._emit_tool_state()
         except Exception as global_release_ex:
             print(f"Критический сбой события отпускания мыши: {global_release_ex}")
