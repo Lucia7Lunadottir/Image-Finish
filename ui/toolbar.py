@@ -8,27 +8,27 @@ from PyQt6.QtGui import QIcon, QPixmap
 from core.locale import tr
 
 
-# ВАЖНО: Вычисляем абсолютный путь к корню вашего проекта.
-# __file__ указывает на ui/toolbar.py. 
-# Первый dirname поднимает нас до папки ui/, второй — до корня всего проекта (где лежит assets).
+# IMPORTANT: Compute absolute path to project root.
+# __file__ points to ui/toolbar.py. 
+# First dirname goes up to ui/, second — to project root (where assets lives).
 BASE_DIR = os.path.dirname(os.path.dirname(os.path.abspath(__file__)))
 
 
 @dataclass(frozen=True)
 class _ToolDef:
     name: str
-    icon_file: str      # Имя SVG-файла в папке assets/icons/
-    fallback_icon: str  # Эмодзи на случай, если файл не найден
+    icon_file: str      # SVG filename in assets/icons/
+    fallback_icon: str  # Emoji fallback if file not found
     shortcut: str
     tr_key: str
 
 
 def _load_recolored_icon(icon_file: str, color: str = "#FFFFFF") -> QIcon:
     """
-    Безопасно загружает SVG-файл, используя жесткий абсолютный путь,
-    заменяя дефолтный цвет обводки (currentColor) на выбранный.
+    Safely loads an SVG file using a hard absolute path,
+    replacing the default stroke color (currentColor) with the chosen one.
     """
-    # ИСПРАВЛЕНО: Теперь путь строится от BASE_DIR, а не от папки запуска терминала
+    # FIXED: Path is now built from BASE_DIR, not from the terminal launch directory
     icon_path = os.path.join(BASE_DIR, "assets", "icons", icon_file)
     
     if os.path.exists(icon_path):
@@ -36,20 +36,20 @@ def _load_recolored_icon(icon_file: str, color: str = "#FFFFFF") -> QIcon:
             with open(icon_path, "r", encoding="utf-8") as f:
                 svg_content = f.read()
             
-            # Меняем цвет обводки "на лету" в текстовой структуре SVG
+            # Change stroke color on-the-fly in the SVG text structure
             svg_content = svg_content.replace('stroke="currentColor"', f'stroke="{color}"')
             
-            # Превращаем модифицированную строку в байты и загружаем в QPixmap
+            # Convert modified string to bytes and load into QPixmap
             pixmap = QPixmap()
             pixmap.loadFromData(QByteArray(svg_content.encode('utf-8')), "SVG")
             return QIcon(pixmap)
         except Exception as e:
-            print(f"Ошибка динамической покраски {icon_file}: {e}")
+            print(f"Dynamic recolor error for {icon_file}: {e}")
     return QIcon()
 
 
 def _apply_icon(btn, td: _ToolDef, size: int = 22) -> None:
-    """Применяет перекрашенную иконку к кнопке тулбара."""
+    """Applies a recolored icon to a toolbar button."""
     ico = _load_recolored_icon(td.icon_file)
     if not ico.isNull():
         btn.setIcon(ico)
@@ -62,13 +62,13 @@ def _apply_icon(btn, td: _ToolDef, size: int = 22) -> None:
 
 class ToolBar(QWidget):
     """
-    Вертикальная панель инструментов (левая сторона).
-    Генерирует сигнал tool_selected(tool_name) при переключении.
+    Vertical tool panel (left side).
+    Emits tool_selected(tool_name) signal on switch.
     """
 
     tool_selected = pyqtSignal(str)
 
-    # Полная база маппинга всех 58 инструментов на SVG-файлы
+    # Complete mapping of all 58 tools to SVG files
     _TOOL_DEFS: dict[str, _ToolDef] = {
         "Move":            _ToolDef("Move",            "move.svg",            "✋",  "V", "tool.move"),
         "Artboard":        _ToolDef("Artboard",        "artboard.svg",        "🔲", "V", "tool.artboard"),
@@ -212,7 +212,7 @@ class ToolBar(QWidget):
         return f"{label}  [{shortcut}]" if shortcut else label
 
     def retranslate(self):
-        """Обновление локализации контекстных меню и подсказок."""
+        """Update localization for context menus and tooltips."""
         for tool_name, w in self._buttons.items():
             td = self._TOOL_DEFS.get(tool_name)
             if isinstance(w, QPushButton) and td:
@@ -229,7 +229,7 @@ class ToolBar(QWidget):
                 menu.clear()
                 for tname in self._group_tools.get(gid, []):
                     tdef = self._TOOL_DEFS[tname]
-                    # ИСПРАВЛЕНО: Меню теперь тоже получает динамически перекрашенную иконку
+                    # FIXED: Menu now also gets dynamically recolored icon
                     ico = _load_recolored_icon(tdef.icon_file)
                     
                     if not ico.isNull():
@@ -241,14 +241,14 @@ class ToolBar(QWidget):
                     act.triggered.connect(lambda checked=False, n=tname: self._on_click(n))
 
     def set_active(self, tool_name: str):
-        # Одиночные инструменты
+        # Single tools
         for name, w in self._buttons.items():
             if isinstance(w, QPushButton):
                 w.setProperty("active", name == tool_name)
                 w.style().unpolish(w)
                 w.style().polish(w)
 
-        # Инструменты в группах выпадающего списка
+        # Tools in dropdown groups
         gid = self._tool_to_group.get(tool_name)
         for group_id, gbtn in self._groups.items():
             gbtn.setProperty("active", group_id == gid)
@@ -285,11 +285,11 @@ class ToolBar(QWidget):
         btn.setContextMenuPolicy(Qt.ContextMenuPolicy.CustomContextMenu)
         btn.customContextMenuRequested.connect(lambda pos, b=btn: b.menu().exec(b.mapToGlobal(pos)))
 
-        # Создание выпадающего меню группы
+        # Create group dropdown menu
         menu = QMenu(btn)
         for tname in tool_names:
             tdef = self._TOOL_DEFS[tname]
-            # ИСПРАВЛЕНО: Меню при первой инициализации тоже красится в белый
+            # FIXED: Menu also gets white recolor on first initialization
             ico = _load_recolored_icon(tdef.icon_file)
             
             if not ico.isNull():

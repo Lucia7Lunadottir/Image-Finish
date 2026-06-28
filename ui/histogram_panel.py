@@ -1,5 +1,5 @@
 from PyQt6.QtWidgets import (QWidget, QVBoxLayout, QComboBox)
-from PyQt6.QtCore import Qt
+from PyQt6.QtCore import Qt, QRunnable, QThreadPool, QObject, pyqtSignal
 from PyQt6.QtGui import QColor, QPainter, QPen, QImage
 
 from core.locale import tr
@@ -17,6 +17,44 @@ _CH_COLORS = {
     "Lum": ("#cdd6f4", False),
     "RGB": (None,       True),   # special: draw all three with opacity
 }
+
+
+class _HistSignals(QObject):
+    done = pyqtSignal(dict)
+
+class _HistWorker(QRunnable):
+    """Computes histogram data in a background thread."""
+    def __init__(self, pixel_data_np, fallback_img):
+        super().__init__()
+        self.signals = _HistSignals()
+        self._arr = pixel_data_np
+        self._img = fallback_img
+
+    def run(self):
+        try:
+            if self._arr is not None:
+                import numpy as np
+                arr = self._arr
+                mask = arr[..., 3] > 0
+                r_hist = np.bincount(arr[..., 2][mask].flatten(), minlength=256).tolist()
+                g_hist = np.bincount(arr[..., 1][mask].flatten(), minlength=256).tolist()
+                b_hist = np.bincount(arr[..., 0][mask].flatten(), minlength=256).tolist()
+                lum = (0.299 * arr[..., 2] + 0.587 * arr[..., 1]
+                       + 0.114 * arr[..., 0]).astype(np.uint8)
+                lum_hist = np.bincount(lum[mask].flatten(), minlength=256).tolist()
+            else:
+                img = self._img
+                r_hist = [0] * 256; g_hist = [0] * 256
+                b_hist = [0] * 256; lum_hist = [0] * 256
+                for y in range(img.height()):
+                    for x in range(img.width()):
+                        c = QColor(img.pixel(x, y))
+                        if c.alpha() > 0:
+                            r_hist[c.red()] += 1; g_hist[c.green()] += 1; b_hist[c.blue()] += 1
+                            lum_hist[min(255, int(0.299*c.red()+0.587*c.green()+0.114*c.blue()))] += 1
+            self.signals.done.emit({"r": r_hist, "g": g_hist, "b": b_hist, "lum": lum_hist})
+        except Exception:
+            self.signals.done.emit({})
 
 
 class _HistogramView(QWidget):
@@ -135,9 +173,11 @@ class HistogramPanel(QWidget):
     # ----------------------------------------------------------------- public
 
     def refresh(self, canvas):
-        """Recompute histogram from canvas.document.get_composite()."""
+        """Recompute histogram asynchronously from the composite cache."""
+        if getattr(self, '_hist_computing', False):
+            return
         try:
-            composite = canvas.document.get_composite()
+            composite = getattr(canvas, '_composite_cache', None) or canvas.document.get_composite()
         except Exception:
             return
 
@@ -146,49 +186,24 @@ class HistogramPanel(QWidget):
             self._view.set_data({}, self._current_channel())
             return
 
+        # Copy pixel data on GUI thread (fast), compute histograms in background
+        img = composite.convertToFormat(QImage.Format.Format_ARGB32)
         try:
             import numpy as np
-            img = composite.convertToFormat(QImage.Format.Format_ARGB32)
             ptr = img.bits()
             ptr.setsize(img.sizeInBytes())
-            arr = (
-                __import__("numpy")
-                .frombuffer(ptr, dtype=__import__("numpy").uint8)
-                .reshape(img.height(), img.width(), 4)
-            )
-            import numpy as np
-            mask = arr[..., 3] > 0
-            r_hist = np.bincount(arr[..., 2][mask].flatten(), minlength=256).tolist()
-            g_hist = np.bincount(arr[..., 1][mask].flatten(), minlength=256).tolist()
-            b_hist = np.bincount(arr[..., 0][mask].flatten(), minlength=256).tolist()
-            lum = (0.299 * arr[..., 2] + 0.587 * arr[..., 1]
-                   + 0.114 * arr[..., 0]).astype(np.uint8)
-            lum_hist = np.bincount(lum[mask].flatten(), minlength=256).tolist()
+            pixel_data = np.frombuffer(ptr, dtype=np.uint8).reshape(img.height(), img.width(), 4).copy()
         except ImportError:
-            # Slow pixel-by-pixel fallback
-            img = composite.convertToFormat(QImage.Format.Format_ARGB32)
-            r_hist = [0] * 256
-            g_hist = [0] * 256
-            b_hist = [0] * 256
-            lum_hist = [0] * 256
-            for y in range(img.height()):
-                for x in range(img.width()):
-                    px = img.pixel(x, y)
-                    c = QColor(px)
-                    if c.alpha() > 0:
-                        r_hist[c.red()] += 1
-                        g_hist[c.green()] += 1
-                        b_hist[c.blue()] += 1
-                        lv = int(0.299 * c.red() + 0.587 * c.green()
-                                 + 0.114 * c.blue())
-                        lum_hist[min(255, lv)] += 1
+            pixel_data = None
 
-        self._current_data = {
-            "r": r_hist,
-            "g": g_hist,
-            "b": b_hist,
-            "lum": lum_hist,
-        }
+        self._hist_computing = True
+        worker = _HistWorker(pixel_data, img if pixel_data is None else None)
+        worker.signals.done.connect(self._on_hist_done)
+        QThreadPool.globalInstance().start(worker)
+
+    def _on_hist_done(self, data):
+        self._hist_computing = False
+        self._current_data = data
         self._view.set_data(self._current_data, self._current_channel())
 
     def retranslate(self):

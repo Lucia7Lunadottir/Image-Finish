@@ -50,7 +50,9 @@ class Layer:
         self.frame_data: dict | None = None       # {"shape": "rect"|"ellipse", "rect": QRectF}
 
     # ------------------------------------------------------------------
-    def copy(self) -> "Layer":
+    def copy(self, deep_image: bool = True) -> "Layer":
+        """Copy layer. When *deep_image* is False the QImage is shared (faster
+        for undo snapshots of layers that won't be modified)."""
         clone = Layer.__new__(Layer)
         clone.name = self.name
         clone.layer_id = getattr(self, "layer_id", str(uuid.uuid4()))
@@ -64,7 +66,7 @@ class Layer:
         clone.lock_position = getattr(self, "lock_position", False)
         clone.lock_artboard = getattr(self, "lock_artboard", False)
         if getattr(self, "mask", None) is not None:
-            clone.mask = self.mask.copy()
+            clone.mask = self.mask.copy() if deep_image else self.mask
         else:
             clone.mask = None
         clone.mask_enabled = getattr(self, "mask_enabled", True)
@@ -79,7 +81,7 @@ class Layer:
         clone.opacity = self.opacity
         clone.blend_mode = self.blend_mode
         clone.offset = QPoint(self.offset)
-        clone.image = self.image.copy()
+        clone.image = self.image.copy() if deep_image else self.image
         clone.layer_type = getattr(self, "layer_type", "raster")
         if getattr(self, "artboard_rect", None) is not None:
             clone.artboard_rect = QRect(self.artboard_rect)
@@ -100,10 +102,10 @@ class Layer:
         clone.fill_data = dict(fd) if fd else None
         smd = getattr(self, "smart_data", None)
         if smd:
-            clone.smart_data = {"original": smd["original"].copy()}
+            clone.smart_data = {"original": smd["original"].copy() if deep_image else smd["original"]}
         else:
             clone.smart_data = None
-            
+
         import copy
         clone.layer_styles = copy.deepcopy(getattr(self, "layer_styles", None))
         return clone

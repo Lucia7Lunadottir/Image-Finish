@@ -227,11 +227,27 @@ class Document:
         cached = getattr(self, "_composite_cache_doc", None)
         if cached is not None:
             return cached
+
+        # Fast path: single visible raster layer, full opacity, no masks/styles
+        visible = [l for l in self.layers if l.visible]
+        if len(visible) == 1:
+            l = visible[0]
+            lt = getattr(l, "layer_type", "raster")
+            if (lt == "raster" and l.opacity >= 1.0
+                    and not getattr(l, "active_stroke", None)
+                    and not getattr(l, "mask", None)
+                    and not getattr(l, "vector_mask", None)
+                    and not getattr(l, "clipping", False)
+                    and l.offset.x() == 0 and l.offset.y() == 0
+                    and l.image.width() == self.width and l.image.height() == self.height):
+                self._composite_cache_doc = l.image.copy()
+                return self._composite_cache_doc
+
         result = QImage(self.width, self.height, QImage.Format.Format_ARGB32_Premultiplied)
         result.fill(Qt.GlobalColor.transparent)
 
         painter = QPainter(result)
-        
+
         children_map = {}
         for layer in self.layers:
             pid = getattr(layer, "parent_id", None)
@@ -575,8 +591,17 @@ class Document:
         return result
 
     # ----------------------------------------------------------------- History
-    def snapshot_layers(self) -> list[Layer]:
-        snap = [layer.copy() for layer in self.layers]
+    def snapshot_layers(self, modified_index: int | None = None) -> list[Layer]:
+        """Snapshot layers for undo.  When *modified_index* is given, only
+        that layer's image is deep-copied; the rest share their QImage
+        (safe because brush tools only modify the active layer)."""
+        if modified_index is None:
+            snap = [layer.copy() for layer in self.layers]
+        else:
+            snap = [
+                layer.copy(deep_image=(i == modified_index))
+                for i, layer in enumerate(self.layers)
+            ]
         if getattr(self, "quick_mask_layer", None) is not None:
             snap.append(self.quick_mask_layer.copy())
         return snap

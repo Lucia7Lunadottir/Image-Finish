@@ -35,7 +35,7 @@ class ArtboardTool(BaseTool):
         count = sum(1 for l in doc.layers if getattr(l, "layer_type", "") == "artboard")
         
         if count == 0:
-            # Собираем все текущие слои в базовый Артборд 1
+            # Gather all current layers into base Artboard 1
             bg_art = doc.add_layer(f"{tr('layer.name.artboard')} 1")
             bg_art.layer_type = "artboard"
             bg_art.parent_id = None

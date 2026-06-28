@@ -10,12 +10,12 @@ from ui.adjustments_dialog import _JumpSlider
 from tools.tool_utils import fast_box_blur_np
 
 def apply_kuwahara(arr, r):
-    """Мощный математический фильтр Кувахары через интегральные изображения."""
+    """Powerful Kuwahara mathematical filter using integral images."""
     if r <= 0: return arr.copy()
     h, w = arr.shape[:2]
     pad_arr = np.pad(arr, ((r+1, r+1), (r+1, r+1), (0, 0)), mode='edge').astype(np.float32)
     
-    # float64 защищает от переполнения на больших фото
+    # float64 protects against overflow on large photos
     int_img = np.cumsum(np.cumsum(pad_arr, axis=0, dtype=np.float64), axis=1, dtype=np.float64)
     intensity = 0.299 * pad_arr[..., 2] + 0.587 * pad_arr[..., 1] + 0.114 * pad_arr[..., 0]
     int_i = np.cumsum(np.cumsum(intensity, axis=0, dtype=np.float64), axis=1, dtype=np.float64)

@@ -17,7 +17,7 @@ class ColorSamplerTool(BaseTool):
             if not self.markers: return
             dists = [((p.x()-pos.x())**2 + (p.y()-pos.y())**2, p) for p in self.markers]
             dists.sort()
-            if dists[0][0] < 100:  # Удаляем, если кликнули рядом (в пределах 10 пкс)
+            if dists[0][0] < 100:  # Remove if clicked nearby (within 10 px)
                 self.markers.remove(dists[0][1])
         else:
             if len(self.markers) < 10:
@@ -51,7 +51,7 @@ class RulerTool(BaseTool):
                 if min(d1, d2) < best_dist:
                     best_dist = min(d1, d2)
                     best_idx = i
-            if best_dist < 100:  # Удаляем линейку, если кликнули рядом с её точкой (10 пкс)
+            if best_dist < 100:  # Remove ruler if clicked near its endpoint (10 px)
                 self.lines.pop(best_idx)
                 return
                 
@@ -63,7 +63,7 @@ class RulerTool(BaseTool):
                 dx = pos.x() - self._start.x()
                 dy = pos.y() - self._start.y()
                 angle = math.atan2(dy, dx)
-                # Округляем угол до ближайших 45 градусов (pi / 4)
+                # Snap angle to nearest 45 degrees (pi / 4)
                 snapped_angle = round(angle / (math.pi / 4)) * (math.pi / 4)
                 dist = math.hypot(dx, dy)
                 self._end = QPoint(

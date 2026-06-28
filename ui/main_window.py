@@ -810,6 +810,10 @@ class MainWindow(QMainWindow,
         self._doc_tabs.setCurrentIndex(idx)
         if hasattr(self, "_center_stack"):
             self._center_stack.setCurrentIndex(1)
+        # Sync tool options bar with canvas defaults
+        page = self._opts_bar._pages.get(self._active_tool_name)
+        if page and hasattr(page, "update_from_opts"):
+            page.update_from_opts(canvas.tool_opts)
         return canvas
 
     def _close_tab(self, index: int):
@@ -1118,7 +1122,6 @@ class MainWindow(QMainWindow,
         self._update_status()
 
     def _on_doc_changed(self):
-        # Push history state immediately (needs pre-stroke snapshot)
         state = getattr(self._canvas, "_pre_stroke_state", None)
         if state:
             self._history.push(state)
@@ -1126,12 +1129,13 @@ class MainWindow(QMainWindow,
             if state.doc_width != self._document.width or state.doc_height != self._document.height:
                 self._canvas.reset_zoom()
         self._update_title()
-        # Defer heavy panel refreshes so the canvas repaints first
         from PyQt6.QtCore import QTimer
-        QTimer.singleShot(0, self._deferred_panel_refresh)
+        # Delay panel refresh to avoid blocking the GUI right after stroke
+        QTimer.singleShot(50, self._deferred_panel_refresh)
 
     def _deferred_panel_refresh(self):
-        self._refresh_layers()
+        if self._document:
+            self._layers_panel.refresh_active_thumbnail(self._document)
         self._refresh_secondary_panels()
 
     def _refresh_secondary_panels(self):

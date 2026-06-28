@@ -8,7 +8,7 @@ class MagicWandOptions(BaseOptions):
     def __init__(self, parent=None):
         super().__init__(parent)
 
-        # --- Блок чувствительности (Tolerance) ---
+        # --- Tolerance block ---
         self.layout.addWidget(self._lbl("opts.tolerance"))
 
         tol_widget = QWidget()
@@ -31,7 +31,7 @@ class MagicWandOptions(BaseOptions):
         tol_layout.addWidget(self._tol_spin)
         self.layout.addWidget(tol_widget)
 
-        # --- Галочки (Чекбоксы) ---
+        # --- Checkboxes ---
         self._aa_cb = QCheckBox(tr("opts.anti_alias"))
         self._aa_cb.setChecked(True)
         self._aa_cb.toggled.connect(lambda v: self.option_changed.emit("anti_alias", v))

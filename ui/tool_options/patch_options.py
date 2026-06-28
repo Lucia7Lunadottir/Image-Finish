@@ -128,7 +128,7 @@ class RedEyeOptions(BaseOptions):
         self.layout.addWidget(self._lbl("opts.red_eye_hint"))
         self.layout.addSpacing(15)
 
-        # Размер зрачка
+        # Pupil size
         self.layout.addWidget(self._lbl("opts.red_eye.size"))
         self._size_slider = _JumpSlider(Qt.Orientation.Horizontal)
         self._size_slider.setRange(1, 100)
@@ -144,7 +144,7 @@ class RedEyeOptions(BaseOptions):
         self.layout.addWidget(self._size_spin)
         self.layout.addSpacing(15)
 
-        # Степень затемнения
+        # Darken amount
         self.layout.addWidget(self._lbl("opts.red_eye.darken"))
         self._dark_slider = _JumpSlider(Qt.Orientation.Horizontal)
         self._dark_slider.setRange(1, 100)

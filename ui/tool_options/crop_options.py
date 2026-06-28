@@ -62,7 +62,7 @@ class CropOptions(BaseOptions):
             "opts.crop_overlay.grid", "opts.crop_overlay.diagonal"
         ]
         self._overlay_combo.addItems([tr(k) for k in self._OVERLAY_KEYS])
-        self._overlay_combo.setCurrentIndex(1) # По умолчанию Правило третей
+        self._overlay_combo.setCurrentIndex(1) # Default: Rule of Thirds
         self._overlay_combo.currentIndexChanged.connect(
             lambda i: self.option_changed.emit("crop_overlay", self._OVERLAYS[i])
         )

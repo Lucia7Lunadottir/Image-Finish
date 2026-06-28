@@ -20,7 +20,7 @@ def _build_font(opts: dict) -> QFont:
 
 
 def _text_bounding_rect(td: dict, padding: int = 4):
-    """Возвращает QRect bounding box текста по данным text_data (в координатах слоя)."""
+    """Returns QRect bounding box of text from text_data (in layer coordinates)."""
     from PyQt6.QtCore import QRect
     text = td.get("text", "")
     if not text:
@@ -276,7 +276,7 @@ class TextTool(BaseTool):
         layer = doc.get_active_layer()
         re_edit = False
 
-        # Hit-test: найти текстовый слой под курсором по фактическим пикселям
+        # Hit-test: find text layer under cursor by actual pixels
         from core.document import Document as _Document
         pos_pt = pos if isinstance(pos, QPoint) else pos.toPoint()
         for i in range(len(doc.layers) - 1, -1, -1):
@@ -353,7 +353,7 @@ class VerticalTypeTool(BaseTool):
         layer = doc.get_active_layer()
         re_edit = False
 
-        # Hit-test: найти вертикальный текстовый слой под курсором по фактическим пикселям
+        # Hit-test: find vertical text layer under cursor by actual pixels
         from core.document import Document as _Document
         pos_pt = pos if isinstance(pos, QPoint) else pos.toPoint()
         for i in range(len(doc.layers) - 1, -1, -1):

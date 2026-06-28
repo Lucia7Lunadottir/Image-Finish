@@ -14,7 +14,7 @@ from tools.tool_utils import fast_box_blur_np
 
 
 def _generate_noise_image(w, h, octaves=6, seed=None, scale_x=None, scale_y=None):
-    """Настоящий градиентный шум (Perlin Noise) через NumPy для идеальных облаков."""
+    """True gradient noise (Perlin Noise) via NumPy for ideal clouds."""
     if seed is not None: np.random.seed(seed)
     res = np.zeros((h, w), dtype=np.float32)
     base_sx = scale_x if scale_x else max(w, h) / 3.0
@@ -297,7 +297,7 @@ class RenderDialog(QDialog):
                 res_arr[..., :3] = np.abs(self.orig_arr[..., :3].astype(np.float32) - color_noise).astype(np.uint8)
             else:
                 res_arr[..., :3] = color_noise.astype(np.uint8)
-            res_arr[..., 3] = 255 # Делаем слой непрозрачным, если он был пустым
+            res_arr[..., 3] = 255 # Make layer opaque if it was empty
                 
         elif self.mode == "fibers":
             var, strength = self.sl1.value(), self.sl2.value()
@@ -330,13 +330,13 @@ class RenderDialog(QDialog):
                 c1 = np.array([30, 60, 100]) # Dark
                 c2 = np.array([80, 140, 200]) # Light
                 res_arr[..., :3] = (c1 + (c2 - c1) * val[..., np.newaxis]).astype(np.uint8)
-            else: # Bark (Кора)
+            else: # Bark
                 n_base = _generate_noise_image(w, h, octaves=6, scale_x=max(10, w/rings), scale_y=max(50, h/2.0)).astype(np.float32)
                 distort = _generate_noise_image(w, h, octaves=4, scale_x=50, scale_y=50).astype(np.float32)
                 X_dist = np.clip(X + (distort - 0.5) * turb * 100, 0, w - 1).astype(int)
                 
                 ridges = np.abs(n_base[Y, X_dist] - 0.5) * 2.0
-                val = np.power(ridges, 0.5 + turb) # Глубокие трещины
+                val = np.power(ridges, 0.5 + turb) # Deep cracks
                 
                 c1 = np.array([15, 25, 40]) # Deep cracks
                 c2 = np.array([50, 80, 110]) # Surface
@@ -345,7 +345,7 @@ class RenderDialog(QDialog):
             res_arr[..., 3] = 255
             
         elif self.mode in ("lens_flare", "lighting", "frame", "flame"):
-            # Эффекты на базе QPainter
+            # QPainter-based effects
             img = QImage(self.orig_img)
             p = QPainter(img)
             p.setRenderHint(QPainter.RenderHint.Antialiasing)
@@ -401,7 +401,7 @@ class RenderDialog(QDialog):
                 color = self.color_btn.color()
                 f_type = self.cb1.currentIndex()
                 
-                # Достаём контур, который ты могла нарисовать Пером (Pen Tool)
+                # Get the contour drawn with the Pen Tool
                 doc = self.parent()._document if hasattr(self.parent(), "_document") else None
                 wp = getattr(doc, "work_path", {}) if doc else {}
                 nodes = wp.get("nodes", [])
@@ -430,7 +430,7 @@ class RenderDialog(QDialog):
                     base_path.moveTo(w/2, h * 0.9)
                     base_path.lineTo(w/2, h * 0.1)
                     
-                # Огонь рисуется на отдельном прозрачном слое для правильного наложения альфы
+                # Fire is drawn on a separate transparent layer for correct alpha compositing
                 fire_img = QImage(w, h, QImage.Format.Format_ARGB32_Premultiplied)
                 fire_img.fill(0)
                 fp = QPainter(fire_img)

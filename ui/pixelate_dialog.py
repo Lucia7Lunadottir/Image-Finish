@@ -152,9 +152,7 @@ class PixelateDialog(QDialog):
             for t in ["fine_dots", "medium_dots", "grainy_dots", "short_lines", "medium_lines", "long_lines", "short_strokes", "medium_strokes", "long_strokes"]:
                 self.type_combo.addItem(tr(f"pixelate.mezzotint.{t}"), t)
         elif self.mode in ("facet", "fragment"):
-            from core.locale import current as locale_current
-            msg = "Этот фильтр не имеет\nнастраиваемых параметров." if locale_current() == "ru" else "This filter has no\nadjustable parameters."
-            no_param_lbl = QLabel(msg)
+            no_param_lbl = QLabel("This filter has no\nadjustable parameters.")
             no_param_lbl.setStyleSheet("color: #a6adc8; font-size: 12px; font-style: italic;")
             pl.addWidget(no_param_lbl)
 

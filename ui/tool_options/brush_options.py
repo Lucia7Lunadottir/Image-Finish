@@ -9,11 +9,11 @@ from core.locale import tr
 from ui.adjustments_dialog import _JumpSlider
 
 class BrushOptions(BaseOptions):
-    """Панель опций для инструментов с кистью (Кисть, Ластик и т.д.)."""
+    """Options panel for brush-based tools (Brush, Eraser, etc.)."""
     def __init__(self, parent=None):
         super().__init__(parent)
 
-        # --- Маска / Форма кисти ---
+        # --- Mask / Brush shape ---
         self.layout.addWidget(self._lbl("opts.mask"))
         self._mask_combo = QComboBox()
         self._mask_combo.setIconSize(QSize(32, 32))
@@ -21,7 +21,7 @@ class BrushOptions(BaseOptions):
         self._mask_combo.addItem(self._get_icon("square"), tr("opts.mask.square"), "square")
         self._mask_combo.addItem(self._get_icon("scatter"), tr("opts.mask.scatter"), "scatter")
 
-        # Автозагрузка кистей из папки brushes
+        # Auto-load brushes from the brushes folder
         base_dir = os.path.dirname(os.path.dirname(os.path.dirname(os.path.abspath(__file__))))
         brushes_dir = os.path.join(base_dir, "brushes")
         if os.path.exists(brushes_dir):
@@ -35,7 +35,7 @@ class BrushOptions(BaseOptions):
         self._mask_combo.activated.connect(self._on_mask_activated)
         self.layout.addWidget(self._mask_combo)
 
-        # --- Режим смешивания ---
+        # --- Blend mode ---
         self.layout.addWidget(self._lbl("opts.blend_mode"))
         self._blend_combo = QComboBox()
         modes = [
@@ -52,7 +52,7 @@ class BrushOptions(BaseOptions):
         self._blend_combo.activated.connect(lambda idx: self.option_changed.emit("brush_blend_mode", self._blend_combo.itemData(idx)))
         self.layout.addWidget(self._blend_combo)
 
-        # --- Размер ---
+        # --- Size ---
         self.layout.addWidget(self._lbl("opts.size"))
         size_widget = QWidget()
         size_layout = QHBoxLayout(size_widget)
@@ -71,7 +71,7 @@ class BrushOptions(BaseOptions):
         size_layout.addWidget(self._size_dyn_cb)
         self.layout.addWidget(size_widget)
 
-        # --- Непрозрачность ---
+        # --- Opacity ---
         self.layout.addWidget(self._lbl("opts.opacity"))
         opacity_widget = QWidget()
         opacity_layout = QHBoxLayout(opacity_widget)
@@ -92,7 +92,7 @@ class BrushOptions(BaseOptions):
         opacity_layout.addWidget(self._opacity_dyn_cb)
         self.layout.addWidget(opacity_widget)
 
-        # --- Жёсткость ---
+        # --- Hardness ---
         self.layout.addWidget(self._lbl("opts.hardness"))
         hardness_widget = QWidget()
         hardness_layout = QHBoxLayout(hardness_widget)
@@ -110,7 +110,7 @@ class BrushOptions(BaseOptions):
         hardness_layout.addWidget(self._hardness_spin)
         self.layout.addWidget(hardness_widget)
 
-        # --- Угол ---
+        # --- Angle ---
         self.layout.addWidget(self._lbl("opts.angle"))
         angle_widget = QWidget()
         angle_layout = QHBoxLayout(angle_widget)
@@ -135,7 +135,7 @@ class BrushOptions(BaseOptions):
         
         self.layout.addWidget(angle_widget)
 
-        # --- Симметрия ---
+        # --- Symmetry ---
         sym_widget = QWidget()
         sym_layout = QHBoxLayout(sym_widget)
         sym_layout.setContentsMargins(0, 0, 0, 0)
@@ -178,16 +178,16 @@ class BrushOptions(BaseOptions):
         self.layout.addStretch()
 
     def _on_size_slider_change(self, value):
-        """Когда двигается слайдер, обновляем спинбокс и отправляем сигнал."""
+        """When the slider moves, update the spinbox and emit the signal."""
         self._size_spin.blockSignals(True)
         self._size_spin.setValue(value)
         self._size_spin.blockSignals(False)
         self.option_changed.emit("brush_size", value)
 
     def _on_size_spin_change(self, value):
-        """Когда меняется спинбокс, обновляем слайдер и отправляем сигнал."""
+        """When the spinbox changes, update the slider and emit the signal."""
         self._size_slider.blockSignals(True)
-        self._size_slider.setValue(value) # значение зажмётся в рамках слайдера
+        self._size_slider.setValue(value) # value will be clamped to slider range
         self._size_slider.blockSignals(False)
         self.option_changed.emit("brush_size", value)
 
@@ -227,7 +227,7 @@ class BrushOptions(BaseOptions):
                 filename = os.path.basename(path)
                 name = os.path.splitext(filename)[0]
                 
-                # Сохраняем копию в папку brushes для будущих запусков
+                # Save a copy to the brushes folder for future sessions
                 base_dir = os.path.dirname(os.path.dirname(os.path.dirname(os.path.abspath(__file__))))
                 brushes_dir = os.path.join(base_dir, "brushes")
                 os.makedirs(brushes_dir, exist_ok=True)
@@ -267,7 +267,7 @@ class BrushOptions(BaseOptions):
                 self._cy_spin.blockSignals(False)
 
     def update_from_opts(self, opts: dict):
-        # Блокируем сигналы, чтобы не вызывать option_changed при обновлении
+        # Block signals to prevent triggering option_changed during update
         controls = [self._size_slider, self._size_spin, self._size_dyn_cb,
                     self._opacity_slider, self._opacity_spin, self._opacity_dyn_cb,
                     self._hardness_slider, self._hardness_spin, self._angle_spin, self._angle_random_cb,
@@ -280,9 +280,13 @@ class BrushOptions(BaseOptions):
         self._size_slider.setValue(size)
         self._size_spin.setValue(size)
         self._size_dyn_cb.setChecked(opts.get("brush_size_dynamic", False))
-        self._opacity_spin.setValue(int(opts.get("brush_opacity", 1.0) * 100))
+        opacity_val = int(opts.get("brush_opacity", 1.0) * 100)
+        self._opacity_slider.setValue(opacity_val)
+        self._opacity_spin.setValue(opacity_val)
         self._opacity_dyn_cb.setChecked(opts.get("brush_opacity_dynamic", False))
-        self._hardness_spin.setValue(int(opts.get("brush_hardness", 1.0) * 100))
+        hardness_val = int(opts.get("brush_hardness", 1.0) * 100)
+        self._hardness_slider.setValue(hardness_val)
+        self._hardness_spin.setValue(hardness_val)
         self._angle_spin.setValue(int(opts.get("brush_angle", 0.0)))
         self._angle_random_cb.setChecked(opts.get("brush_angle_random", False))
         self._mirror_x_btn.setChecked(bool(opts.get("brush_mirror_x", False)))

@@ -9,13 +9,13 @@ from tools.base_tool import BaseTool
 
 def _make_brush_stamp(size: int, hardness: float, mask: str) -> QImage:
     """
-    Возвращает QImage (size×size ARGB32) — «штамп» кисти.
-    Alpha-канал определяет форму: 255 = полная краска, 0 = пусто.
+    Returns a QImage (size x size ARGB32) brush stamp.
+    Alpha channel defines the shape: 255 = full paint, 0 = empty.
 
     mask:
-      round   — круглая с мягкостью по hardness
-      square  — квадратная
-      scatter — круглая с шумом по краям
+      round   - circular with softness based on hardness
+      square  - square
+      scatter - circular with noise at edges
     """
     s = max(2, size)
     img = QImage(s, s, QImage.Format.Format_ARGB32)
@@ -34,7 +34,7 @@ def _make_brush_stamp(size: int, hardness: float, mask: str) -> QImage:
         p.drawRoundedRect(inner, margin * 0.5, margin * 0.5)
 
     elif mask == "scatter":
-        # Основа — мягкий круг, по краю — случайные выбросы
+        # Base: soft circle, edges: random splashes
         grad = QRadialGradient(cx, cy, r)
         inner_stop = max(0.0, min(1.0, hardness))
         grad.setColorAt(0,          QColor(0, 0, 0, 255))
@@ -43,9 +43,9 @@ def _make_brush_stamp(size: int, hardness: float, mask: str) -> QImage:
         p.setBrush(grad)
         p.setPen(Qt.PenStyle.NoPen)
         p.drawEllipse(QPointF(cx, cy), r, r)
-        # Добавляем случайные "брызги" снаружи
+        # Add random splatter outside
         p.setBrush(QBrush(QColor(0, 0, 0, 180)))
-        rng = random.Random(size)   # детерминированный seed
+        rng = random.Random(size)   # deterministic seed
         for _ in range(int(s * 0.4)):
             angle = rng.uniform(0, 2 * math.pi)
             dist  = rng.uniform(r * 0.6, r * 1.3)
@@ -238,7 +238,7 @@ class BrushTool(BaseTool):
 
     def _get_stamp(self, size: int, hardness: float, mask) -> QImage:
         """
-        Возвращает «штамп» кисти, используя кэш.
+        Returns a brush stamp, using cache.
         """
         actual_mask = mask
         if isinstance(actual_mask, QPixmap):
@@ -255,12 +255,12 @@ class BrushTool(BaseTool):
             return self._stamp_cache[full_key]
 
         if isinstance(actual_mask, QImage) and not actual_mask.isNull():
-            # Для кастомных кистей, маска — это QImage. Масштабируем его до размера кисти.
-            # Игнорируем соотношение сторон, чтобы он соответствовал квадратной области штампа.
+            # For custom brushes, the mask is a QImage. Scale it to brush size.
+            # Ignore aspect ratio so it fits the square stamp area.
             stamp = actual_mask.scaled(size, size, Qt.AspectRatioMode.IgnoreAspectRatio, Qt.TransformationMode.SmoothTransformation)
             
-            # Если у кисти нет прозрачности (например, чёрно-белый исходник),
-            # она нарисуется сплошным квадратом. Вытягиваем альфу из яркости!
+            # If the brush has no transparency (e.g. black-and-white source),
+            # it will draw as a solid square. Extract alpha from luminance!
             if not stamp.hasAlphaChannel():
                 stamp = stamp.convertToFormat(QImage.Format.Format_ARGB32)
                 import numpy as np
@@ -269,24 +269,24 @@ class BrushTool(BaseTool):
                 buf = (ctypes.c_uint8 * stamp.sizeInBytes()).from_address(int(ptr))
                 arr = np.ndarray((stamp.height(), stamp.bytesPerLine() // 4, 4), dtype=np.uint8, buffer=buf)
                 
-                # Считаем яркость. Тёмное = кисть, белое = фон.
+                # Compute luminance. Dark = brush, white = background.
                 luma = (arr[..., 2]*0.299 + arr[..., 1]*0.587 + arr[..., 0]*0.114).astype(np.uint8)
                 
-                # Делаем альфа-канал из инвертированной яркости
+                # Create alpha channel from inverted luminance
                 arr[..., 3] = 255 - luma
-                # Основной цвет делаем чёрным (потом он окрасится в нужный цвет при рисовании)
+                # Set base color to black (it will be colorized during painting)
                 arr[..., 0:3] = 0
         else:
-            # Для стандартных кистей ("round", "square") генерируем штамп.
+            # For standard brushes ("round", "square") generate the stamp.
             stamp = _make_brush_stamp(size, hardness, actual_mask)
 
-        # Ограничиваем кэш, чтобы не забить память при динамическом размере
+        # Limit cache to avoid memory bloat with dynamic sizes
         if len(self._stamp_cache) > 50:
             self._stamp_cache.clear()
         self._stamp_cache[full_key] = stamp
         return stamp
 
-    # ── рисование штампами вдоль отрезка ────────────────────────────────────
+    # ── stamp painting along a line segment ────────────────────────────────────
     def _paint(self, p1: QPoint, p2: QPoint, doc, color: QColor, opts: dict, press1: float = 1.0, press2: float = 1.0):
         layer = self._stroke_layer
         if not layer or layer.locked or self._stroke_img is None:
@@ -316,12 +316,12 @@ class BrushTool(BaseTool):
             if pattern_path and os.path.exists(pattern_path):
                 pattern_pixmap = QPixmap(pattern_path)
 
-        # Для очень жёстких круглых кистей — быстрый QPen
+        # For very hard round brushes - fast QPen path
         if not is_pattern_stamp and mask == "round" and hardness >= 0.98 and not size_dyn and not op_dyn:
             self._paint_fast(p1, p2, layer, color, size_base, doc, opts)
             return
 
-        # Штамп-кисть: рисуем вдоль отрезка с шагом size/3
+        # Stamp brush: draw along segment with step size/3
         step  = max(1, size_base // 3)
         dx    = p2.x() - p1.x()
         dy    = p2.y() - p1.y()
@@ -363,7 +363,7 @@ class BrushTool(BaseTool):
             if mirror_x: centers.extend([(2 * sym_x - c[0], c[1]) for c in centers])
             if mirror_y: centers.extend([(c[0], 2 * sym_y - c[1]) for c in centers])
             
-            # dict.fromkeys убирает дубликаты (например, если рисуем прямо по оси), сохраняя порядок
+            # dict.fromkeys removes duplicates (e.g. drawing directly on axis), preserving order
             for target_cx, target_cy in list(dict.fromkeys(centers)):
                 painter.save()
                 painter.translate(target_cx - layer.offset.x(), target_cy - layer.offset.y())
@@ -371,7 +371,7 @@ class BrushTool(BaseTool):
                 if current_angle != 0.0:
                     painter.rotate(current_angle)
                 painter.translate(-cur_size / 2.0, -cur_size / 2.0)
-                # Применяем alpha-маску штампа
+                # Apply the stamp's alpha mask
                 if pattern_pixmap and not pattern_pixmap.isNull():
                     colored = QImage(stamp.size(), QImage.Format.Format_ARGB32)
                     colored.fill(Qt.GlobalColor.transparent)
@@ -416,7 +416,7 @@ class BrushTool(BaseTool):
         painter.end()
 
     def _paint_fast(self, p1, p2, layer, color, size, doc, opts):
-        """Быстрый путь: QPen без штампа."""
+        """Fast path: QPen without stamp."""
         c = QColor(color)
         painter = QPainter(self._stroke_img)
         if getattr(self, "name", "") != "Pencil":
@@ -620,8 +620,8 @@ class PencilTool(BrushTool):
     shortcut = "B"
 
     def _get_stamp(self, size: int, hardness: float, mask) -> QImage:
-        # Карандаш всегда имеет 100% жёсткость и бинарный альфа-канал.
-        # Кэшируем бинаризованный штамп отдельно, чтобы не копировать+модифицировать каждый раз.
+        # Pencil always has 100% hardness and binary alpha channel.
+        # Cache the binarized stamp separately to avoid copy+modify each time.
         cache_key_inner = id(mask) if isinstance(mask, QImage) else mask
         pencil_key = ("pencil", size, cache_key_inner)
         if pencil_key in self._stamp_cache:
@@ -647,7 +647,7 @@ class ColorReplacementTool(BrushTool):
     shortcut = "B"
 
     def stroke_composition_mode(self, opts=None):
-        # В Qt нет нативного режима Color, используем Overlay для сохранения текстуры слоя
+        # Qt has no native Color mode, use Overlay to preserve layer texture
         return QPainter.CompositionMode.CompositionMode_Overlay
 
 
@@ -670,7 +670,7 @@ class MixerBrushTool(BrushTool):
             if 0 <= cx < self._target_img.width() and 0 <= cy < self._target_img.height():
                 canvas_color = QColor(self._target_img.pixel(cx, cy))
                 if canvas_color.alpha() > 0:
-                    # Замедляем скорость смешивания для более предсказуемого результата
+                    # Slow down mixing speed for a more predictable result
                     factor = 0.05
                     r = int(self._mix_color.red() * (1 - factor) + canvas_color.red() * factor)
                     g = int(self._mix_color.green() * (1 - factor) + canvas_color.green() * factor)
@@ -696,7 +696,7 @@ class HistoryBrushTool(BrushTool):
 
         history = getattr(doc, "history", None)
         if history and history._undo_stack:
-            # Берём оригинальный снимок самого первого состояния документа
+            # Take the original snapshot of the very first document state
             initial_state = history._undo_stack[0]
             src_layer = next((l for l in initial_state.layers_snapshot if l.layer_id == layer.layer_id), None)
             if src_layer:
@@ -778,7 +778,7 @@ class HistoryBrushTool(BrushTool):
                 pp.setCompositionMode(QPainter.CompositionMode.CompositionMode_SourceIn)
                 pp.translate(cur_size / 2.0, cur_size / 2.0)
                 if current_angle != 0.0:
-                    pp.rotate(-current_angle)  # Отменяем вращение кисти, чтобы текстура истории оставалась прямой
+                    pp.rotate(-current_angle)  # Undo brush rotation so history texture stays upright
                 pp.translate(-target_cx, -target_cy)
                 pp.drawImage(0, 0, self._source_img)
                 pp.end()

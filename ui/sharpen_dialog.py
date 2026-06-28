@@ -151,7 +151,7 @@ class SharpenDialog(QDialog):
 
         if self.mode == "unsharp":
             self.amount_sl.setRange(1, 500); self.amount_sl.setValue(50)
-            self.radius_sl.setRange(1, 250); self.radius_sl.setValue(10) # Делим на 10 для float (1.0)
+            self.radius_sl.setRange(1, 250); self.radius_sl.setValue(10) # Divide by 10 for float (1.0)
             self.thresh_sl.setRange(0, 255); self.thresh_sl.setValue(0)
             for w in [self.amount_sl, self.amt_lbl, self.radius_sl, self.rad_lbl, self.thresh_sl, self.thr_lbl]: w.show()
         elif self.mode == "smart":
@@ -209,7 +209,7 @@ class SharpenDialog(QDialog):
                 thresh = self.thresh_sl.value()
                 mask = np.max(np.abs(diff), axis=-1, keepdims=True) > thresh
             else:
-                mask = True # Smart Sharpen применяет разницу везде
+                mask = True # Smart Sharpen applies difference everywhere
                 
             res_arr[..., :3] = np.where(mask, np.clip(self.orig_arr[..., :3].astype(np.float32) + diff * amt, 0, 255).astype(np.uint8), self.orig_arr[..., :3])
             

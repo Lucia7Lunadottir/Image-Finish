@@ -52,7 +52,7 @@ class LayerListWidget(QListWidget):
         
         if from_row != to_row and from_row >= 0 and to_row >= 0:
             self.order_dropped.emit(from_row, to_row)
-        event.ignore()  # Не даем QListWidget удалить наши кастомные виджеты строк!
+        event.ignore()  # Prevent QListWidget from deleting our custom row widgets!
 
 
 class LayerNameEdit(QLineEdit):
@@ -537,6 +537,26 @@ class LayersPanel(QWidget):
             self._blend_combo.blockSignals(False)
 
         self._updating = False
+
+    def refresh_active_thumbnail(self, document):
+        """Lightweight refresh: only update the active layer's thumbnail."""
+        if not document:
+            return
+        self._document = document
+        active = document.active_layer_index
+        layer = document.get_active_layer()
+        if not layer:
+            return
+        for row in range(self._list.count()):
+            item = self._list.item(row)
+            if item and item.data(Qt.ItemDataRole.UserRole) == active:
+                widget = self._list.itemWidget(item)
+                if widget and hasattr(widget, "thumb_lbl"):
+                    thumb_pix = QPixmap.fromImage(
+                        layer.image.scaled(24, 24, Qt.AspectRatioMode.KeepAspectRatio,
+                                           Qt.TransformationMode.FastTransformation))
+                    widget.thumb_lbl.setPixmap(thumb_pix)
+                break
 
     # ---------------------------------------------------------------- Private
     def _on_layer_drag_drop(self, from_row: int, to_row: int):

@@ -5,12 +5,12 @@ from tools.base_tool import BaseTool
 
 class SelectTool(BaseTool):
     """
-    Прямоугольное выделение:
-      • Drag вне выделения      → новое выделение
-      • Ctrl+drag               → добавить к выделению (union)
-      • Alt+drag                → вычесть из выделения (subtract)
-      • Ctrl+Alt+drag            → пересечь (intersect)
-      • Drag ВНУТРИ выделения   → переместить контур выделения
+    Rectangular selection:
+      - Drag outside selection    -> new selection
+      - Ctrl+drag                 -> add to selection (union)
+      - Alt+drag                  -> subtract from selection
+      - Ctrl+Alt+drag             -> intersect
+      - Drag INSIDE selection     -> move selection outline
     """
     name = "Select"
     icon = "⬜"
@@ -108,12 +108,12 @@ class SelectTool(BaseTool):
 
 class EllipticalSelectTool(BaseTool):
     """
-    Эллиптическое выделение (аналог Elliptical Marquee):
-      • Drag вне выделения      → новое выделение
-      • Ctrl+drag               → добавить к выделению (union)
-      • Alt+drag                → вычесть из выделения (subtract)
-      • Ctrl+Alt+drag            → пересечь (intersect)
-      • Drag ВНУТРИ выделения   → переместить контур выделения
+    Elliptical selection (Elliptical Marquee):
+      - Drag outside selection    -> new selection
+      - Ctrl+drag                 -> add to selection (union)
+      - Alt+drag                  -> subtract from selection
+      - Ctrl+Alt+drag             -> intersect
+      - Drag INSIDE selection     -> move selection outline
     """
     name = "EllipseSelect"
     icon = "⭕"

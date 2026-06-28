@@ -44,17 +44,17 @@ class FillTool(BaseTool):
         if target_rgba == fill_rgba:
             return
 
-        # Распаковка целевого цвета
+        # Unpack the target color
         tr, tg, tb, ta = (target_rgba >> 16) & 0xFF, (target_rgba >> 8) & 0xFF, \
                          target_rgba & 0xFF, (target_rgba >> 24) & 0xFF
                          
-        # Нельзя заливать прозрачные пиксели, если альфа заблокирована
+        # Cannot fill transparent pixels when alpha is locked
         if lock_alpha and ta == 0:
             return
 
         fr, fg_g, fb, fa = fill_color.red(), fill_color.green(), fill_color.blue(), fill_color.alpha()
 
-        # --- NUMPY ОПТИМИЗАЦИЯ ---
+        # --- NUMPY OPTIMIZATION ---
         import ctypes
         bpl = image.bytesPerLine()
         ptr = image.bits()
@@ -67,13 +67,13 @@ class FillTool(BaseTool):
         R = arr[..., 2].astype(np.int32)
         A = arr[..., 3].astype(np.int32)
 
-        # Вычисляем квадрат расстояния (с учетом Alpha)
+        # Compute squared distance (including Alpha)
         dist_sq = (R - tr)**2 + (G - tg)**2 + (B - tb)**2 + (A - ta)**2
         tolerance_sq = tolerance**2
 
         color_mask = dist_sq <= tolerance_sq
 
-        # Если есть выделение, применяем его быстро через QPainter
+        # If there is a selection, apply it quickly via QPainter
         if selection:
             sel_img = QImage(w, h, QImage.Format.Format_Grayscale8)
             sel_img.fill(0)
@@ -93,7 +93,7 @@ class FillTool(BaseTool):
             return
 
         if contiguous:
-            # 1. ОСНОВНОЙ ПРОХОД (Flood Fill по маске)
+            # 1. MAIN PASS (Flood Fill over mask)
             visited = np.zeros((h, w), dtype=bool)
             stack = [(y, x)]
             visited[y, x] = True
@@ -110,7 +110,7 @@ class FillTool(BaseTool):
             visited = color_mask.copy()
             visited[y, x] = True
 
-        # 2. ФАЗА "ПОЖИРАНИЯ" ГРАНИЦ (Anti-Halo)
+        # 2. BORDER CONSUMPTION PHASE (Anti-Halo)
         up = np.roll(visited, 1, axis=0); up[0, :] = False
         down = np.roll(visited, -1, axis=0); down[-1, :] = False
         left = np.roll(visited, 1, axis=1); left[:, 0] = False
@@ -123,7 +123,7 @@ class FillTool(BaseTool):
         border_tolerance = tolerance * 1.5 + 20
         border_tol_sq = border_tolerance**2
         
-        # В оригинале для границ проверялся только RGB
+        # Originally only RGB was checked for borders
         dist_sq_rgb = (R - tr)**2 + (G - tg)**2 + (B - tb)**2
         border_mask = neighbors & (dist_sq_rgb <= border_tol_sq)
         
@@ -131,13 +131,13 @@ class FillTool(BaseTool):
         if lock_alpha:
             final_fill &= (A > 0)
 
-        # 3. ФИНАЛЬНАЯ ЗАЛИВКА махом
+        # 3. FINAL FILL in one sweep
         if lock_alpha:
             existing_a = A[final_fill].astype(np.float32) / 255.0
             arr[final_fill, 0] = (fb * existing_a).astype(np.uint8)
             arr[final_fill, 1] = (fg_g * existing_a).astype(np.uint8)
             arr[final_fill, 2] = (fr * existing_a).astype(np.uint8)
-            # Альфу не трогаем!
+            # Do not touch alpha!
         else:
             arr[final_fill, 0] = fb
             arr[final_fill, 1] = fg_g

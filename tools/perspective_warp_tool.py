@@ -137,7 +137,7 @@ class PerspectiveWarpTool(BaseTool):
     def apply_transform(self, doc):
         if not self.is_transforming: return
         from tools.move_tool import MoveTool
-        # Одалживаем логику финального запекания у MoveTool для QTransform
+        # Borrow the final bake logic from MoveTool for QTransform
         mt = MoveTool()
         mt.is_transforming, mt._target_layer, mt._original_img = True, self._target_layer, self._original_img
         mt._original_offset, mt._total_transform = self._original_offset, self._local_transform

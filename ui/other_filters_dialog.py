@@ -146,7 +146,7 @@ class OtherFiltersDialog(QDialog):
         
         for w in [self.dx_lbl, self.dx_sp, self.dy_lbl, self.dy_sp, self.edge_lbl, self.edge_combo]: pl.addWidget(w)
 
-        # Пользовательская матрица 3x3
+        # Custom 3x3 matrix
         self.matrix_w = QWidget()
         grid = QGridLayout(self.matrix_w)
         grid.setContentsMargins(0,0,0,0); grid.setSpacing(4)

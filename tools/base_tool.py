@@ -4,32 +4,30 @@ from PyQt6.QtCore import QPoint, Qt, QObject, pyqtSignal, QRunnable, QThreadPool
 from PyQt6.QtGui import QColor
 
 class BaseTool(ABC):
-    """
-    Абстрактный базовый класс для всех инструментов рисования и редактирования.
-    Каждый инструмент получает координаты в пространстве документа.
-    """
+    """Abstract base class for all drawing and editing tools.
+    Each tool receives coordinates in document space."""
     name: str = "Tool"
     icon_name: str = "move.svg"
     shortcut: str = ""
     modifies_canvas_on_move: bool = False
 
     def on_press(self, pos: QPoint, doc, fg: QColor, bg: QColor, opts: dict):
-        """Вызывается при нажатии кнопки мыши."""
+        """Called on mouse button press."""
         pass
 
     def on_move(self, pos: QPoint, doc, fg: QColor, bg: QColor, opts: dict):
-        """Вызывается при движении мыши с зажатой кнопкой."""
+        """Called on mouse move while button is held."""
         pass
 
     def on_release(self, pos: QPoint, doc, fg: QColor, bg: QColor, opts: dict):
-        """Вызывается при отпускании кнопки мыши."""
+        """Called on mouse button release."""
         pass
 
     def cursor(self) -> Qt.CursorShape:
         return Qt.CursorShape.CrossCursor
 
     def needs_history_push(self) -> bool:
-        """Возвращает True, если инструмент должен сохранять снимок истории при нажатии."""
+        """Returns True if the tool should save a history snapshot on press."""
         return True
 
     def __repr__(self) -> str:
@@ -37,13 +35,13 @@ class BaseTool(ABC):
 
 
 class AsyncToolSignals(QObject):
-    """Система сигналов для безопасного возврата результатов вычислений в GUI-поток."""
+    """Signals for safely returning computation results to the GUI thread."""
     finished = pyqtSignal(object, object, dict)  # (result_data, doc, opts)
     error = pyqtSignal(str)
 
 
 class GenericToolWorker(QRunnable):
-    """Универсальный фоновый рабочий для выполнения тяжелых расчетов любого инструмента."""
+    """Background worker for executing heavy tool computations."""
     def __init__(self, target_func, *args, **kwargs):
         super().__init__()
         self.signals = AsyncToolSignals()
@@ -53,7 +51,6 @@ class GenericToolWorker(QRunnable):
 
     def run(self):
         try:
-            # Выполняем тяжелые вычисления в отдельном потоке ОС
             result = self.target_func(*self.args, **self.kwargs)
             self.signals.finished.emit(result, self.kwargs.get('doc'), self.kwargs.get('opts'))
         except Exception:
@@ -61,42 +58,38 @@ class GenericToolWorker(QRunnable):
 
 
 class AbstractAsyncTool(BaseTool, ABC):
-    """
-    Абстрактный класс-предохранитель для инструментов, требующих асинхронных вычислений.
-    Предотвращает зависание графического интерфейса (UI Lag).
-    """
+    """Abstract base for tools requiring async computations.
+    Prevents GUI freezing by offloading work to QThreadPool."""
     def __init__(self):
         super().__init__()
         self._is_working = False
 
     def execute_async(self, background_func, on_finished_gui_callback, doc, opts, *args, **kwargs):
-        """Упаковывает переданную функцию вычислений в поток и отправляет в QThreadPool."""
+        """Wraps the given function and submits it to QThreadPool."""
         if self._is_working:
-            return  # Блокировка повторного запуска до окончания текущего расчета
+            return
 
-            self._is_working = True
-            kwargs['doc'] = doc
-            kwargs['opts'] = opts
+        self._is_working = True
+        kwargs['doc'] = doc
+        kwargs['opts'] = opts
 
-            worker = GenericToolWorker(background_func, *args, **kwargs)
-            
-            # Потокобезопасное связывание сигналов
-            worker.signals.finished.connect(
-                lambda res, d=doc, o=opts: self._safe_gui_wrapper(on_finished_gui_callback, res, d, o)
-            )
-            worker.signals.error.connect(self._safe_error_handler)
+        worker = GenericToolWorker(background_func, *args, **kwargs)
 
-            # Запуск в глобальном пуле потоков приложения
-            QThreadPool.globalInstance().start(worker)
+        worker.signals.finished.connect(
+            lambda res, d=doc, o=opts: self._safe_gui_wrapper(on_finished_gui_callback, res, d, o)
+        )
+        worker.signals.error.connect(self._safe_error_handler)
 
-        def _safe_gui_wrapper(self, callback, result, doc, opts):
-            try:
-                callback(result, doc, opts)
-            except Exception:
-                print(f"🛑 Сбой отрисовки интерфейса в инструменте {self.name}:\n{traceback.format_exc()}")
-            finally:
-                self._is_working = False
+        QThreadPool.globalInstance().start(worker)
 
-        def _safe_error_handler(self, err_trace):
-            print(f"💥 Критическая ошибка вычислений в инструменте {self.name}:\n{err_trace}")
+    def _safe_gui_wrapper(self, callback, result, doc, opts):
+        try:
+            callback(result, doc, opts)
+        except Exception:
+            print(f"[{self.name}] GUI callback error:\n{traceback.format_exc()}")
+        finally:
             self._is_working = False
+
+    def _safe_error_handler(self, err_trace):
+        print(f"[{self.name}] Background computation error:\n{err_trace}")
+        self._is_working = False

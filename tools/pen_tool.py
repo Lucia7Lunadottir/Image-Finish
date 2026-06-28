@@ -266,7 +266,7 @@ class PathSelectionTool(BasePenTool):
         wp = self._get_wp(doc)
         if not wp['nodes']: return
         path = self._build_path(wp)
-        # Проверяем, кликнули ли мы близко к габаритам контура
+        # Check if we clicked near the path bounding box
         if path.boundingRect().adjusted(-10, -10, 10, 10).contains(QPointF(pos)):
             self._dragging = True
             self._start_pos = QPointF(pos)

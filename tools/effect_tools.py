@@ -1,20 +1,20 @@
 """
-effect_tools.py — Blur, Sharpen, Smudge, Dodge, Burn, Sponge.
+effect_tools.py - Blur, Sharpen, Smudge, Dodge, Burn, Sponge.
 
-Архитектура:
-- BrushEffectTool  — базовый класс: весь бойлерплейт один раз
-  * layer.locked / lock_pixels → early return
-  * layer.lock_alpha           → восстанавливаем alpha после эффекта
-  * layer.offset               → правильная система координат
-  * doc.selection (clip)       → ограничение по выделению
-  * CompositionMode_Source     → запись без артефактов прозрачности
-  * _make_mask()               → маска кисти (переопределяется подклассом)
+Architecture:
+- BrushEffectTool  - base class: all boilerplate in one place
+  * layer.locked / lock_pixels -> early return
+  * layer.lock_alpha           -> restore alpha after effect
+  * layer.offset               -> correct coordinate system
+  * doc.selection (clip)       -> constrain to selection
+  * CompositionMode_Source     -> write without transparency artifacts
+  * _make_mask()               -> brush mask (overridden by subclass)
 
-- Каждый инструмент реализует только _compute_effect(patch_f, mask, strength, opts)
-  и при необходимости _apply_qt_fallback() для работы без numpy.
+- Each tool implements only _compute_effect(patch_f, mask, strength, opts)
+  and optionally _apply_qt_fallback() for use without numpy.
 
-- _SoftMaskMixin — для Dodge/Burn/Sponge: всегда мягкий smoothstep-градиент,
-  независимо от brush_hardness (у этих инструментов нет слайдера hardness).
+- _SoftMaskMixin - for Dodge/Burn/Sponge: always soft smoothstep gradient,
+  regardless of brush_hardness (these tools have no hardness slider).
 """
 
 from PyQt6.QtGui import QPainter, QColor, QImage
@@ -35,19 +35,19 @@ if _HAS_NUMPY:
 
 class _EffectStrokeMixin:
     """
-    Mixin для эффект-инструментов (Blur, Sharpen, Smudge и т.п.).
+    Mixin for effect tools (Blur, Sharpen, Smudge, etc.).
 
-    Оптимизация canvas_widget:
-    - needs_background_composite = True → canvas кэширует фон без активного слоя
-    - stroke_preview() → canvas рисует активный слой поверх кэша (без get_composite())
-    - Итог: один get_composite() на старте мазка вместо одного на каждое движение.
+    canvas_widget optimization:
+    - needs_background_composite = True -> canvas caches background without active layer
+    - stroke_preview() -> canvas draws active layer over cache (no get_composite())
+    - Result: one get_composite() at stroke start instead of one per mouse move.
     """
 
     needs_background_composite: bool = True
 
     def _init_effect_stroke(self):
         self._eff_layer_ref = None
-        # True только когда canvas включил оптимизацию (_start_effect_stroke).
+        # True only when canvas has enabled optimization (_start_effect_stroke).
         self._stroke_preview_active = False
 
     def _begin_effect_stroke(self, doc):
@@ -58,7 +58,7 @@ class _EffectStrokeMixin:
         self._stroke_preview_active = False
 
     def stroke_preview(self):
-        """Возвращает (QImage, offset, opacity) или None — вызывается canvas на каждый кадр."""
+        """Returns (QImage, offset, opacity) or None - called by canvas each frame."""
         if not self._stroke_preview_active:
             return None
         layer = self._eff_layer_ref
@@ -71,10 +71,10 @@ class _EffectStrokeMixin:
 
 class BrushEffectTool(_EffectStrokeMixin, BaseTool):
     """
-    Базовый класс для всех кисть-like инструментов-эффектов.
+    Base class for all brush-like effect tools.
 
-    Подкласс должен реализовать _compute_effect().
-    Опционально: _make_mask() и _apply_qt_fallback().
+    Subclass must implement _compute_effect().
+    Optionally: _make_mask() and _apply_qt_fallback().
     """
 
     modifies_canvas_on_move = True
@@ -83,7 +83,7 @@ class BrushEffectTool(_EffectStrokeMixin, BaseTool):
         self._init_effect_stroke()
         self._last: QPoint | None = None
 
-    # ── жизненный цикл ────────────────────────────────────────────────────────
+    # ── lifecycle ────────────────────────────────────────────────────────
 
     def on_press(self, pos, doc, fg, bg, opts):
         self._begin_effect_stroke(doc)
@@ -99,10 +99,10 @@ class BrushEffectTool(_EffectStrokeMixin, BaseTool):
         self._end_effect_stroke()
         self._last = None
 
-    # ── ядро ──────────────────────────────────────────────────────────────────
+    # ── core ──────────────────────────────────────────────────────────────────
 
     def _apply(self, pos: QPoint, doc, opts: dict):
-        """Применяет эффект к патчу под кистью. Весь бойлерплейт здесь."""
+        """Apply effect to the patch under the brush. All boilerplate is here."""
         layer = doc.get_active_layer()
         if not layer or layer.locked or getattr(layer, "lock_pixels", False):
             return
@@ -134,45 +134,45 @@ class BrushEffectTool(_EffectStrokeMixin, BaseTool):
 
         result_f = self._compute_effect(patch_f, mask, strength, opts)
 
-        # lock_alpha: эффект не должен менять прозрачность
+        # lock_alpha: effect must not change transparency
         if getattr(layer, "lock_alpha", False):
             result_f[..., 3:4] = patch_f[..., 3:4]
 
         result_img = _np_to_qimage(result_f.clip(0, 255).astype(np.uint8))
         p = QPainter(layer.image)
-        # Source: пишем пиксели напрямую, без SourceOver-композитинга →
-        # прозрачные пиксели на границах остаются прозрачными
+        # Source: write pixels directly, without SourceOver compositing ->
+        # transparent pixels at edges remain transparent
         p.setCompositionMode(QPainter.CompositionMode.CompositionMode_Source)
         if clip:
             p.setClipPath(clip.translated(-layer.offset.x(), -layer.offset.y()))
         p.drawImage(src_rect.topLeft(), result_img)
         p.end()
 
-    # ── переопределяемые методы ───────────────────────────────────────────────
+    # ── overridable methods ───────────────────────────────────────────────
 
     def _make_mask(self, src_rect, cx, cy, r, hardness):
-        """Маска кисти. По умолчанию: hardness-aware smoothstep.
-        Dodge/Burn/Sponge переопределяют на всегда-мягкую через _SoftMaskMixin."""
+        """Brush mask. Default: hardness-aware smoothstep.
+        Dodge/Burn/Sponge override to always-soft via _SoftMaskMixin."""
         return _brush_mask(src_rect, cx, cy, r, hardness)
 
     def _compute_effect(self, patch_f, mask, strength, opts) -> "np.ndarray":
         """
-        Логика эффекта. Переопределить в подклассе.
+        Effect logic. Override in subclass.
 
         Args:
-            patch_f: float32 (H, W, 4) BGRA — оригинальный патч
-            mask:    float32 (H, W, 1)  — маска кисти [0.0–1.0]
-            strength: float             — сила эффекта [0.0–1.0]
-            opts:    dict               — все параметры инструмента
+            patch_f: float32 (H, W, 4) BGRA - original patch
+            mask:    float32 (H, W, 1)  - brush mask [0.0-1.0]
+            strength: float             - effect strength [0.0-1.0]
+            opts:    dict               - all tool parameters
 
         Returns:
-            float32 (H, W, 4) — результат (alpha канал копируется из patch_f,
-            если включён lock_alpha — base class восстановит его автоматически)
+            float32 (H, W, 4) - result (alpha channel is copied from patch_f;
+            if lock_alpha is enabled, base class restores it automatically)
         """
         return patch_f
 
     def _apply_qt_fallback(self, layer, cx: int, cy: int, size: int, clip, opts: dict):
-        """Qt-fallback (без numpy). Переопределить при необходимости."""
+        """Qt fallback (without numpy). Override if needed."""
         pass
 
 
@@ -180,8 +180,8 @@ class BrushEffectTool(_EffectStrokeMixin, BaseTool):
 
 class _SoftMaskMixin:
     """
-    Переопределяет маску кисти на всегда-мягкую (smoothstep без hardness).
-    Используется Dodge, Burn, Sponge — у них нет слайдера hardness в UI.
+    Overrides brush mask to always-soft (smoothstep without hardness).
+    Used by Dodge, Burn, Sponge - they have no hardness slider in the UI.
     """
 
     def _make_mask(self, src_rect, cx, cy, r, hardness):
@@ -191,8 +191,8 @@ class _SoftMaskMixin:
 # ═══════════════════════════════════════════════════════════════ BlurTool
 
 class BlurTool(BrushEffectTool):
-    """Размытие кистью.
-    RGB размывается в premultiplied alpha пространстве → нет тёмных краёв на прозрачности."""
+    """Brush blur.
+    RGB is blurred in premultiplied alpha space -> no dark edges on transparency."""
     name     = "Blur"
     icon     = "💧"
     shortcut = "R"
@@ -220,7 +220,7 @@ class BlurTool(BrushEffectTool):
 # ═══════════════════════════════════════════════════════════════ SharpenTool
 
 class SharpenTool(BrushEffectTool):
-    """Резкость — unsharp mask внутри круга кисти."""
+    """Sharpen - unsharp mask inside the brush circle."""
     name     = "Sharpen"
     icon     = "🔺"
     shortcut = "Y"
@@ -233,13 +233,13 @@ class SharpenTool(BrushEffectTool):
                        sharpened * (mask * strength)).clip(0, 255)
         return result
 
-    # Без numpy ничего не делаем (sharpen без float-арифметики бессмысленен)
+    # Without numpy we do nothing (sharpen without float arithmetic is pointless)
 
 
 # ═══════════════════════════════════════════════════════════════ SmudgeTool
 
 class SmudgeTool(BrushEffectTool):
-    """Палец — тащит «каплю» цвета в направлении движения кисти."""
+    """Smudge - drags a color drop in the brush movement direction."""
     name     = "Smudge"
     icon     = "👆"
     shortcut = "W"
@@ -249,7 +249,7 @@ class SmudgeTool(BrushEffectTool):
         self._color: QColor | None = None
 
     def on_press(self, pos, doc, fg, bg, opts):
-        """Запоминаем начальный цвет под кистью, но НЕ применяем эффект."""
+        """Remember the initial color under the brush, but do NOT apply the effect."""
         self._begin_effect_stroke(doc)
         self._last = pos
         layer = doc.get_active_layer()
@@ -269,8 +269,8 @@ class SmudgeTool(BrushEffectTool):
         if self._color is None:
             return patch_f
 
-        # «Капля» — BGRA; alpha капли убывает когда она проходит через прозрачные пиксели,
-        # но никогда не растёт — иначе капля «красит» прозрачный фон своим цветом.
+        # Drop - BGRA; drop alpha decreases when passing through transparent pixels,
+        # but never increases - otherwise the drop paints the transparent background.
         drop_a = self._color.alpha()
         smudge = np.array([self._color.blue(), self._color.green(),
                            self._color.red(),  drop_a],
@@ -281,10 +281,10 @@ class SmudgeTool(BrushEffectTool):
 
         result = patch_f.copy()
         result[..., :3] = blended[..., :3]
-        # Alpha: берём минимум — капля может убывать, но не создаёт новую непрозрачность
+        # Alpha: take minimum - drop can fade but does not create new opacity
         result[..., 3:4] = np.minimum(patch_f[..., 3:4], blended[..., 3:4])
 
-        # Обновляем каплю: RGB из патча, alpha — min(текущей, средней по патчу)
+        # Update drop: RGB from patch, alpha = min(current, patch average)
         avg = patch_f.mean(axis=(0, 1))
         new_a = min(drop_a, int(avg[3]))
         self._color = QColor(int(avg[2]), int(avg[1]), int(avg[0]), new_a)
@@ -321,7 +321,7 @@ class SmudgeTool(BrushEffectTool):
 # ═══════════════════════════════════════════════════════════════ DodgeTool
 
 class DodgeTool(_SoftMaskMixin, BrushEffectTool):
-    """Осветление — сдвигает RGB к белому."""
+    """Dodge - shifts RGB toward white."""
     name     = "Dodge"
     icon     = "🌔"
     shortcut = "O"
@@ -337,7 +337,7 @@ class DodgeTool(_SoftMaskMixin, BrushEffectTool):
 # ═══════════════════════════════════════════════════════════════ BurnTool
 
 class BurnTool(_SoftMaskMixin, BrushEffectTool):
-    """Затемнение — сдвигает RGB к чёрному."""
+    """Burn - shifts RGB toward black."""
     name     = "Burn"
     icon     = "🌒"
     shortcut = "O"
@@ -353,14 +353,14 @@ class BurnTool(_SoftMaskMixin, BrushEffectTool):
 # ═══════════════════════════════════════════════════════════════ SpongeTool
 
 class SpongeTool(_SoftMaskMixin, BrushEffectTool):
-    """Губка — насыщение или десатурация."""
+    """Sponge - saturate or desaturate."""
     name     = "Sponge"
     icon     = "🧽"
     shortcut = "O"
 
     def _compute_effect(self, patch_f, mask, strength, opts):
         rgb  = patch_f[..., :3]
-        # Яркость (BGRA: ch0=Blue, ch1=Green, ch2=Red)
+        # Luminance (BGRA: ch0=Blue, ch1=Green, ch2=Red)
         gray = (0.114 * rgb[..., 0:1] +
                 0.587 * rgb[..., 1:2] +
                 0.299 * rgb[..., 2:3])

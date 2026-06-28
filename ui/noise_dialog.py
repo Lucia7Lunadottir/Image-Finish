@@ -225,7 +225,7 @@ class NoiseDialog(QDialog):
             thresh = self.threshold_sl.value() if self.mode == "dust_scratches" else 0
             
             current = self.orig_arr[..., :3].copy()
-            iters = min(r, 10) # Ограничиваем количество проходов (эмуляция широкой медианы без падения FPS)
+            iters = min(r, 10) # Limit pass count (emulate wide median without FPS drop)
             for _ in range(iters):
                 padded = np.pad(current, ((1,1),(1,1),(0,0)), mode='edge')
                 stack = np.stack([padded[dy:h+dy, dx:w+dx] for dy in range(3) for dx in range(3)], axis=-1)

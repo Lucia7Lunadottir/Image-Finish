@@ -36,7 +36,7 @@ class BlurGalleryCanvas(QWidget):
         p.translate(self._pan)
         p.scale(self.zoom, self.zoom)
         
-        # Шахматка
+        # Checkerboard
         tile = 16
         for y in range(0, h, tile):
             for x in range(0, w, tile):
@@ -45,7 +45,7 @@ class BlurGalleryCanvas(QWidget):
                 
         p.drawImage(0, 0, self.dialog.preview_img)
         
-        # Отрисовка UI элементов (центр фокуса)
+        # Draw UI elements (focus center)
         cx, cy = self.dialog.cx, self.dialog.cy
         p.setPen(QPen(QColor(255, 255, 255, 200), max(1.0, 1.5/self.zoom)))
         p.setBrush(QColor(0, 0, 0, 100))
@@ -85,7 +85,7 @@ class BlurGalleryCanvas(QWidget):
             self._pan_last = ev.position()
             self.setCursor(Qt.CursorShape.ClosedHandCursor)
         elif ev.button() == Qt.MouseButton.LeftButton:
-            # Проверка попадания в центр
+            # Check hit on center
             pos = ev.position()
             img_x = (pos.x() - self._pan.x()) / self.zoom
             img_y = (pos.y() - self._pan.y()) / self.zoom
@@ -197,13 +197,13 @@ class BlurGalleryDialog(QDialog):
             pl.addWidget(sl)
             return sl
             
-        self.blur_sl = add_slider("Размытие (Amount):", 0, 150, 15)
+        self.blur_sl = add_slider("Blur (Amount):", 0, 150, 15)
         
-        self.focus_sl = add_slider("Зона резкости:", 0, 100, 20)
-        self.trans_sl = add_slider("Плавность перехода:", 0, 100, 30)
-        self.angle_sl = add_slider("Угол наклона:", -180, 180, 0)
+        self.focus_sl = add_slider("Focus zone:", 0, 100, 20)
+        self.trans_sl = add_slider("Transition smoothness:", 0, 100, 30)
+        self.angle_sl = add_slider("Tilt angle:", -180, 180, 0)
         
-        # Скрываем ненужные ползунки в зависимости от режима
+        # Hide irrelevant sliders depending on mode
         if self.mode == "field":
             for sl in (self.focus_sl, self.trans_sl, self.angle_sl):
                 pl.itemAt(pl.indexOf(sl)).widget().hide()
@@ -240,9 +240,9 @@ class BlurGalleryDialog(QDialog):
         h, w = self.orig_arr.shape[:2]
         
         if self.mode in ("field", "iris", "tilt_shift"):
-            # Кэшируем блюр для скорости
+            # Cache blur for speed
             if self.last_blur_radius != r or self.blurred_cache is None:
-                # Двойной проход для мягкости (псевдо-гаусс)
+                # Double pass for softness (pseudo-Gaussian)
                 self.blurred_cache = fast_box_blur_np(fast_box_blur_np(self.orig_arr, r//2), r//2)
                 self.last_blur_radius = r
                 
@@ -267,15 +267,15 @@ class BlurGalleryDialog(QDialog):
                 
             res_arr = (self.orig_arr.astype(np.float32) * (1.0 - mask) + self.blurred_cache.astype(np.float32) * mask).astype(np.uint8)
             
-            # Обновляем картинку
+            # Update the image
             self.preview_img = QImage(res_arr.data, w, h, w*4, QImage.Format.Format_ARGB32_Premultiplied).copy()
             
         elif self.mode in ("path", "spin"):
-            # Для motion/spin blur проще и быстрее использовать QPainter
+            # For motion/spin blur it is simpler and faster to use QPainter
             res_img = QImage(w, h, QImage.Format.Format_ARGB32_Premultiplied)
             res_img.fill(0)
             p = QPainter(res_img)
-            steps = min(40, max(5, r)) # Адаптивное число шагов
+            steps = min(40, max(5, r)) # Adaptive step count
             p.setOpacity(1.0 / steps)
             p.setCompositionMode(QPainter.CompositionMode.CompositionMode_Plus)
             p.translate(self.cx, self.cy)
@@ -288,13 +288,13 @@ class BlurGalleryDialog(QDialog):
                     offset = (i - steps/2) * (r / steps)
                     p.translate(np.cos(theta) * offset, np.sin(theta) * offset)
                 elif self.mode == "spin":
-                    a = (i - steps/2) * (r / steps) * 2.0 # Градусы
+                    a = (i - steps/2) * (r / steps) * 2.0 # Degrees
                     p.rotate(a)
                 p.drawImage(QPointF(-self.cx, -self.cy), self.orig_img)
                 p.restore()
             p.end()
             
-            # Компенсация потери яркости и альфы из-за погрешностей 8-битного сложения QPainter
+            # Compensate brightness and alpha loss from 8-bit QPainter compositing errors
             step_alpha = int(round(255.0 / steps))
             if step_alpha > 0:
                 max_possible = step_alpha * steps

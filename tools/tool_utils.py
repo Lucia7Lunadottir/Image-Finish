@@ -1,8 +1,8 @@
 """
-tool_utils.py — общие утилиты для инструментов, работающих с пикселями.
+tool_utils.py - common utilities for pixel-level tools.
 
-Функции для работы с numpy/QImage: маски кисти, блюр, конвертация форматов.
-Импортируются из effect_tools, fill_tool, advanced_erasers и т.д.
+Functions for numpy/QImage: brush masks, blur, format conversion.
+Imported by effect_tools, fill_tool, advanced_erasers, etc.
 """
 
 from PyQt6.QtGui import QImage
@@ -15,10 +15,10 @@ except ImportError:
     _HAS_NUMPY = False
 
 
-# ── Геометрия ─────────────────────────────────────────────────────────────────
+# ── Geometry ─────────────────────────────────────────────────────────────────
 
 def _clamp_rect(rect: QRect, w: int, h: int) -> QRect:
-    """Обрезает QRect по границам изображения."""
+    """Clamp QRect to image boundaries."""
     x1 = max(0, rect.left())
     y1 = max(0, rect.top())
     x2 = min(w, rect.right() + 1)
@@ -26,10 +26,10 @@ def _clamp_rect(rect: QRect, w: int, h: int) -> QRect:
     return QRect(x1, y1, x2 - x1, y2 - y1)
 
 
-# ── Конвертация QImage ↔ numpy ────────────────────────────────────────────────
+# ── QImage <-> numpy conversion ────────────────────────────────────────────────
 
 def _qimage_to_np(img: QImage):
-    """QImage ARGB32 → numpy (H, W, 4) uint8. Каналы: BGRA."""
+    """QImage ARGB32 -> numpy (H, W, 4) uint8. Channels: BGRA."""
     img = img.convertToFormat(QImage.Format.Format_ARGB32)
     w, h = img.width(), img.height()
     import ctypes
@@ -39,7 +39,7 @@ def _qimage_to_np(img: QImage):
 
 
 def _np_to_qimage(arr) -> QImage:
-    """numpy (H, W, 4) uint8 → QImage ARGB32."""
+    """numpy (H, W, 4) uint8 -> QImage ARGB32."""
     h, w = arr.shape[:2]
     import ctypes
     arr_c = np.ascontiguousarray(arr)
@@ -48,10 +48,10 @@ def _np_to_qimage(arr) -> QImage:
     return img
 
 
-# ── Маски кисти ───────────────────────────────────────────────────────────────
+# ── Brush masks ───────────────────────────────────────────────────────────────
 
 def _circle_mask(src_rect: QRect, cx: int, cy: int, r: int):
-    """Бинарная маска круга (H, W, 1) float32: 1.0 внутри, 0.0 снаружи."""
+    """Binary circle mask (H, W, 1) float32: 1.0 inside, 0.0 outside."""
     pw, ph = src_rect.width(), src_rect.height()
     xs = np.arange(pw) + src_rect.left() - cx
     ys = np.arange(ph) + src_rect.top()  - cy
@@ -60,8 +60,8 @@ def _circle_mask(src_rect: QRect, cx: int, cy: int, r: int):
 
 
 def _soft_circle_mask(src_rect: QRect, cx: int, cy: int, r: int):
-    """Мягкая радиальная маска (H, W, 1) float32 [0.0–1.0], smoothstep.
-    Всегда мягкая — не зависит от hardness. Используется Dodge/Burn/Sponge."""
+    """Soft radial mask (H, W, 1) float32 [0.0-1.0], smoothstep.
+    Always soft - independent of hardness. Used by Dodge/Burn/Sponge."""
     pw, ph = src_rect.width(), src_rect.height()
     xs = np.arange(pw) + src_rect.left() - cx
     ys = np.arange(ph) + src_rect.top()  - cy
@@ -73,8 +73,8 @@ def _soft_circle_mask(src_rect: QRect, cx: int, cy: int, r: int):
 
 
 def _brush_mask(src_rect: QRect, cx: int, cy: int, r: int, hardness: float = 1.0):
-    """Маска кисти с контролем жёсткости (H, W, 1) float32.
-    hardness=1.0 → жёсткий бинарный край; hardness=0.0 → smoothstep от центра."""
+    """Brush mask with hardness control (H, W, 1) float32.
+    hardness=1.0 -> hard binary edge; hardness=0.0 -> smoothstep from center."""
     pw, ph = src_rect.width(), src_rect.height()
     xs = np.arange(pw) + src_rect.left() - cx
     ys = np.arange(ph) + src_rect.top()  - cy
@@ -93,11 +93,11 @@ def _brush_mask(src_rect: QRect, cx: int, cy: int, r: int, hardness: float = 1.0
     return mask[:, :, np.newaxis].astype(np.float32)
 
 
-# ── Размытие ──────────────────────────────────────────────────────────────────
+# ── Blur ──────────────────────────────────────────────────────────────────
 
 def _box_blur_rgb(arr3: "np.ndarray", radius: int) -> "np.ndarray":
-    """Быстрый separable box blur для float32 массива с произвольным числом каналов.
-    Используется для premultiplied RGB (или alpha) перед/после размытия."""
+    """Fast separable box blur for float32 array with arbitrary channel count.
+    Used for premultiplied RGB (or alpha) before/after blur."""
     from numpy import pad, cumsum
     r = max(1, radius)
     padded = pad(arr3, ((0, 0), (r, r), (0, 0)), mode='edge')
@@ -109,8 +109,8 @@ def _box_blur_rgb(arr3: "np.ndarray", radius: int) -> "np.ndarray":
 
 
 def _box_blur_np(arr, radius: int):
-    """Box blur для 4-канального BGRA через premultiplied alpha.
-    Используется в SharpenTool (_sharpen_np)."""
+    """Box blur for 4-channel BGRA via premultiplied alpha.
+    Used in SharpenTool (_sharpen_np)."""
     from numpy import pad, cumsum
     r     = max(1, radius)
     arr_f = arr.astype(np.float32)
@@ -139,12 +139,12 @@ def _sharpen_np(arr, strength: float = 1.0):
     return (arr.astype(np.float32) + strength * detail).clip(0, 255).astype(np.uint8)
 
 
-# ── Qt fallback (без numpy) ───────────────────────────────────────────────────
+# ── Qt fallback (without numpy) ───────────────────────────────────────────────
 
 def fast_box_blur_np(arr, radius: int):
-    """Быстрый separable box blur для предпросмотра в диалогах.
-    Принимает (H, W, C) uint8, возвращает uint8 того же размера.
-    Не зависит от порядка каналов — не содержит логики premultiplied alpha."""
+    """Fast separable box blur for dialog previews.
+    Takes (H, W, C) uint8, returns uint8 of the same size.
+    Channel order agnostic - no premultiplied alpha logic."""
     import numpy as np
     r = int(radius)
     if r <= 0:
@@ -172,7 +172,7 @@ def fast_box_blur_np(arr, radius: int):
 
 
 def _apply_qt_blur(image: QImage, cx: int, cy: int, radius: int, passes: int = 2):
-    """Box blur круговой области через QImage.pixel (медленно, fallback)."""
+    """Box blur of a circular area via QImage.pixel (slow, fallback)."""
     from PyQt6.QtGui import QColor
     rect = _clamp_rect(QRect(cx - radius, cy - radius, 2*radius, 2*radius),
                        image.width(), image.height())

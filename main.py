@@ -26,7 +26,7 @@ PATTERNS_DIR = os.path.join(_APP_DIR, "patterns")
 
 
 def _load_custom_fonts():
-    """Загружает все .ttf/.otf шрифты из папки fonts/."""
+    """Load all .ttf/.otf fonts from the fonts/ directory."""
     os.makedirs(FONTS_DIR, exist_ok=True)
     os.makedirs(BRUSHES_DIR, exist_ok=True)
     os.makedirs(PATTERNS_DIR, exist_ok=True)
@@ -37,7 +37,7 @@ def _load_custom_fonts():
             if QFontDatabase.addApplicationFont(path) != -1:
                 loaded += 1
     if loaded:
-        print(f"[fonts] Загружено кастомных шрифтов: {loaded}")
+        print(f"[fonts] Loaded custom fonts: {loaded}")
 
 
 def main():

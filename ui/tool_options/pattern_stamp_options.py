@@ -32,7 +32,7 @@ class PatternStampOptions(BrushOptions):
         pat_layout.addWidget(self._pat_lbl)
         pat_layout.addWidget(self._pattern_combo)
         
-        # --- Масштаб узора ---
+        # --- Pattern scale ---
         self._scale_lbl = QLabel(tr("opts.pattern_scale"))
         pat_layout.addWidget(self._scale_lbl)
         self._scale_slider = QSlider(Qt.Orientation.Horizontal)
@@ -46,7 +46,7 @@ class PatternStampOptions(BrushOptions):
         pat_layout.addWidget(self._scale_slider)
         pat_layout.addWidget(self._scale_spin)
 
-        # Добавляем в самое начало панели кисти
+        # Insert at the very beginning of the brush panel
         self.layout.insertWidget(0, pat_widget)
 
     def _on_pattern_activated(self, idx):

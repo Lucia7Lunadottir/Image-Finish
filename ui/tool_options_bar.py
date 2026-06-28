@@ -68,7 +68,7 @@ class ToolOptionsBar(QWidget):
         self._pages["Fill"] = FillOptions()
         self._pages["Eraser"] = self._pages["Brush"]
         self._pages["BackgroundEraser"] = BackgroundEraserOptions()
-        # Magic Eraser использует толерантность, у тебя есть FillOptions, там как раз есть Tolerance
+        # Magic Eraser uses tolerance — FillOptions already has a Tolerance control
         self._pages["MagicEraser"] = self._pages["Fill"]
         self._pages["Gradient"] = GradientOptions()
         self._pages["Select"] = SelectOptions()
@@ -152,7 +152,7 @@ class ToolOptionsBar(QWidget):
             current.update_params(state)
 
     def retranslate(self):
-        # Используем set, чтобы не обновлять одну и ту же панель (например, BrushOptions) несколько раз
+        # Use set to avoid updating the same panel (e.g. BrushOptions) multiple times
         for page in set(self._pages.values()):
             if hasattr(page, "retranslate"):
                 page.retranslate()

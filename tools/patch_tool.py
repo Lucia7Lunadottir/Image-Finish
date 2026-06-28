@@ -12,7 +12,7 @@ class PatchTool(BaseTool, LassoMixin):
 
     def __init__(self):
         self.points = []
-        self._mode = "new"  # 'new' (рисование лассо) или 'drag' (перетаскивание заплатки)
+        self._mode = "new"  # 'new' (drawing lasso) or 'drag' (dragging patch)
         self._drag_start = None
         self._drag_offset = QPoint(0, 0)
         self._sel_path = None
@@ -106,7 +106,7 @@ class PatchTool(BaseTool, LassoMixin):
         if sy_start < sy_end and sx_start < sx_end:
             source_roi[ry_start:ry_end, rx_start:rx_end] = arr[sy_start:sy_end, sx_start:sx_end]
 
-        # Находим границы выделения (для выравнивания яркости Mean Value)
+        # Find selection boundary (for Mean Value brightness matching)
         mask_bin = mask_roi > 0.5
         up = np.roll(mask_bin, 1, axis=0); up[0, :] = False
         down = np.roll(mask_bin, -1, axis=0); down[-1, :] = False
@@ -119,12 +119,12 @@ class PatchTool(BaseTool, LassoMixin):
             t_mean = np.mean(target_roi[boundary], axis=0)
             s_mean = np.mean(source_roi[boundary], axis=0)
             diff = t_mean - s_mean
-            diff[3] = 0 # Альфа-канал не сдвигаем
+            diff[3] = 0 # Do not shift the alpha channel
             cloned = np.clip(source_roi + diff, 0, 255)
         else:
             cloned = source_roi
 
-        # Динамическое многопроходное Гауссово сглаживание маски (Feathering)
+        # Dynamic multi-pass Gaussian mask smoothing (Feathering)
         diffusion = int(opts.get("patch_diffusion", 5))
         base_r = max(2, min(w, h) // 40)
         blur_r = max(1, int(base_r * (diffusion / 5.0)))
@@ -177,7 +177,7 @@ class PatchTool(BaseTool, LassoMixin):
             p.setOpacity(self._current_opacity)
             local_path = self._sel_path.translated(-br.x(), -br.y())
             p.setClipPath(local_path)
-            # Отрисовываем исходник со смещением, чтобы показать превью "Заплатки" внутри выделения
+            # Draw the source with offset to show the patch preview inside the selection
             source_rect = br.translated(self._drag_offset)
             p.drawImage(0, 0, self._layer_backup, source_rect.x(), source_rect.y(), source_rect.width(), source_rect.height())
             p.end()
@@ -244,7 +244,7 @@ class SpotHealingTool(BaseTool):
         x1, x2 = max(0, x_idx.min() - self._current_size), min(w, x_idx.max() + self._current_size + 1)
         rw, rh = x2 - x1, y2 - y1
 
-        # Автоматический поиск чистой текстуры рядом со штрихом
+        # Automatic search for clean texture near the stroke
         dx, dy = 0, 0
         offsets = [(rw, 0), (-rw, 0), (0, rh), (0, -rh), (rw, rh), (-rw, -rh), (rw, -rh), (-rw, rh)]
         for ox, oy in offsets:
@@ -253,7 +253,7 @@ class SpotHealingTool(BaseTool):
                 break
                 
         if dx == 0 and dy == 0:
-            dx, dy = min(rw, 10), min(rh, 10) # Fallback чтобы края тоже работали
+            dx, dy = min(rw, 10), min(rh, 10) # Fallback so edges also work
 
         arr = np.empty((h, layer.image.bytesPerLine() // 4, 4), dtype=np.uint8)
         ctypes.memmove(arr.ctypes.data, int(layer.image.constBits()), layer.image.sizeInBytes())
@@ -344,7 +344,7 @@ class RedEyeTool(BaseTool):
         
         rect = QRect(self._start, self._end).normalized()
         if rect.width() < 5 or rect.height() < 5:
-            # Если просто кликнули, создаем рамку на основе ползунка размера
+            # If just clicked, create a box based on the size slider
             r = int(opts.get("red_eye_size", 50))
             rect = QRect(pos.x() - r, pos.y() - r, r*2, r*2)
 
@@ -365,14 +365,14 @@ class RedEyeTool(BaseTool):
             G = roi[..., 1].astype(np.float32)
             R = roi[..., 2].astype(np.float32)
 
-            # Формула обнаружения покраснения (Redness)
+            # Redness detection formula
             redness = R - (G + B) / 2.0
             mask = np.clip((redness - 15) / 30.0, 0.0, 1.0)
             
             darken = float(opts.get("red_eye_darken", 50)) / 100.0
             target_lum = ((G + B) / 2.0) * (1.0 - darken)
 
-            # Заменяем красные пиксели на серые/темные
+            # Replace red pixels with gray/dark
             roi[..., 0] = np.clip(B * (1 - mask) + target_lum * mask, 0, 255).astype(np.uint8)
             roi[..., 1] = np.clip(G * (1 - mask) + target_lum * mask, 0, 255).astype(np.uint8)
             roi[..., 2] = np.clip(R * (1 - mask) + target_lum * mask, 0, 255).astype(np.uint8)

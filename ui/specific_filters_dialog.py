@@ -224,7 +224,7 @@ class SpecificFiltersDialog(QDialog):
             self._trigger_update()
 
     def apply_warp(self, x1, y1, x2, y2):
-        """Интерактивный Forward Warp (Деформация) для Пластики."""
+        """Interactive Forward Warp for Liquify."""
         h, w = self.orig_arr.shape[:2]
         r = self.sl1.value() / 2.0
         strength = self.sl2.value() / 100.0
@@ -233,7 +233,7 @@ class SpecificFiltersDialog(QDialog):
         dist_move = math.hypot(dx, dy)
         if dist_move < 1: return
         
-        # Ограничиваем ROI для скорости
+        # Limit ROI for performance
         min_x = max(0, int(min(x1, x2) - r))
         max_x = min(w, int(max(x1, x2) + r + 1))
         min_y = max(0, int(min(y1, y2) - r))
@@ -244,11 +244,11 @@ class SpecificFiltersDialog(QDialog):
         Y, X = np.ogrid[min_y:max_y, min_x:max_x]
         dist_sq = (X - x1)**2 + (Y - y1)**2
         
-        # Кисть деформации (плавный спад)
+        # Warp brush (smooth falloff)
         weight = np.clip(1.0 - (dist_sq / (r**2)), 0.0, 1.0)
         weight = weight * weight * strength
         
-        # Смещаем карту координат В ОБРАТНУЮ СТОРОНУ (чтобы тянуть пиксели за мышкой)
+        # Shift the coordinate map in reverse (to pull pixels towards the mouse)
         self.disp_x[min_y:max_y, min_x:max_x] -= dx * weight
         self.disp_y[min_y:max_y, min_x:max_x] -= dy * weight
         
@@ -268,20 +268,20 @@ class SpecificFiltersDialog(QDialog):
             
             arr_f = self.orig_arr[..., :3].astype(np.float32)
             
-            # Температура и Оттенок (Баланс белого)
+            # Temperature and Tint (White Balance)
             arr_f[..., 2] += temp * 40.0   # Red
             arr_f[..., 0] -= temp * 40.0   # Blue
             arr_f[..., 1] += tint * 40.0   # Green
             arr_f[..., 2] -= tint * 20.0   # Magenta compensation
             arr_f[..., 0] -= tint * 20.0
             
-            # Экспозиция (Умножение)
+            # Exposure (Multiplication)
             arr_f *= (2.0 ** exposure)
             
-            # Контраст
+            # Contrast
             arr_f = (arr_f - 128.0) * math.tan((contrast + 1) * math.pi/4) + 128.0
             
-            # Тени / Света
+            # Shadows / Highlights
             luma = 0.299 * arr_f[..., 2] + 0.587 * arr_f[..., 1] + 0.114 * arr_f[..., 0]
             
             shadow_mask = np.clip(1.0 - (luma / 128.0), 0.0, 1.0)
@@ -293,7 +293,7 @@ class SpecificFiltersDialog(QDialog):
             res_arr[..., :3] = np.clip(arr_f, 0, 255).astype(np.uint8)
             
         elif self.mode == "lens_correction":
-            k = self.sl1.value() / 100.0 # Оптическое искажение
+            k = self.sl1.value() / 100.0 # Lens distortion
             vig = self.sl2.value() / 100.0
             
             Y, X = np.ogrid[:h, :w]
@@ -310,7 +310,7 @@ class SpecificFiltersDialog(QDialog):
             
             base = self.orig_arr[src_Y, src_X, :3].astype(np.float32)
             
-            # Виньетка
+            # Vignette
             if vig != 0:
                 v_mask = 1.0 - np.clip(r2 * abs(vig), 0.0, 1.0)
                 if vig < 0: base *= v_mask[..., np.newaxis] # Darken
@@ -319,7 +319,7 @@ class SpecificFiltersDialog(QDialog):
             res_arr[..., :3] = np.clip(base, 0, 255).astype(np.uint8)
             
         elif self.mode == "liquify":
-            # Рендеринг по карте смещений
+            # Render from displacement map
             src_X = np.clip(self.disp_x, 0, w - 1).astype(int)
             src_Y = np.clip(self.disp_y, 0, h - 1).astype(int)
             res_arr[..., :3] = self.orig_arr[src_Y, src_X, :3]

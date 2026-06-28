@@ -71,7 +71,7 @@ def apply_layer_styles(img: QImage, styles: dict) -> tuple[QImage, QPoint]:
         if gtype == "radial":
             grad = QRadialGradient(cx, cy, math.hypot(w, h) / 2.0)
         else:
-            # Расчет идеального вектора градиента для заливки всего прямоугольника под углом
+            # Calculate ideal gradient vector for filling the entire rectangle at an angle
             r = (w * abs(math.cos(angle)) + h * abs(math.sin(angle))) / 2.0
             sx, sy = cx - r * math.cos(angle), cy + r * math.sin(angle)
             ex, ey = cx + r * math.cos(angle), cy - r * math.sin(angle)

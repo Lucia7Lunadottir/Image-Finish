@@ -49,12 +49,12 @@ class GradientTool(BaseTool):
         opacity = float(opts.get("gradient_opacity", 100)) / 100
         reverse = bool(opts.get("gradient_reverse",  False))
 
-        # Получаем список точек градиента. Если мы еще ни разу не открывали
-        # редактор, берем дефолтные текущие цвета (от fg до bg)
+        # Get the list of gradient stops. If the editor has never been opened,
+        # use the default current colors (from fg to bg)
         stops = opts.get("gradient_stops", [(0.0, fg), (1.0, bg)])
 
         if reverse:
-            # Инвертируем позиции и порядок: точка на 0.1 станет 0.9 и т.д.
+            # Invert positions and order: stop at 0.1 becomes 0.9, etc.
             stops = [(1.0 - pos, color) for pos, color in reversed(stops)]
             
         if getattr(layer, "editing_mask", False) and getattr(layer, "mask", None) is not None:
@@ -107,7 +107,7 @@ class GradientTool(BaseTool):
         else:  # linear
             grad = QLinearGradient(QPointF(sx, sy), QPointF(ex, ey))
 
-        # Применяем все цветовые точки из списка
+        # Apply all color stops from the list
         for pos, color in stops:
             grad.setColorAt(pos, color)
 

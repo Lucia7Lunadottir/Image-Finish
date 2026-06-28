@@ -2,12 +2,19 @@ import math
 import traceback
 
 from PyQt6.QtWidgets import QWidget
-from PyQt6.QtCore import Qt, QPoint, QPointF, QRect, QRectF, pyqtSignal
+from PyQt6.QtCore import Qt, QPoint, QPointF, QRect, QRectF, QTimer, pyqtSignal
 from PyQt6.QtGui import (QPainter, QColor, QPixmap, QBrush, QPen, QImage, QCursor, QInputDevice,
                          QRadialGradient, QPainterPath, QPolygon, QPolygonF, QBitmap, QRegion, QTransform)
 
 from tools.other_tools import (SelectTool, CropTool, ShapesTool,
                                HandTool, ZoomTool, RotateViewTool, GradientTool, PerspectiveCropTool)
+from ui.overlay_renderers import (
+    draw_grid, draw_guides, draw_slices, draw_symmetry_axes, draw_selection,
+    draw_subtract_drag, draw_lasso_preview, draw_transform_preview,
+    draw_brush_stroke, draw_crop_preview, draw_perspective_crop,
+    draw_shapes_preview, draw_gradient_preview, draw_artboard_preview,
+    draw_clone_stamp, draw_measurements,
+)
 
 # Brush tools — show circle cursor for these
 _BRUSH_TOOLS = {"Brush", "Eraser", "BackgroundEraser", "Blur", "Sharpen", "Smudge", "CloneStamp", "PatternStamp",
@@ -154,6 +161,9 @@ class CanvasWidget(QWidget):
         self.show_rulers: bool = False
         self._dragging_guide = None
 
+        self._march_offset: int = 0
+        self._march_timer: QTimer | None = None
+
         self.setMouseTracking(True)
         self.setFocusPolicy(Qt.FocusPolicy.StrongFocus)
         self.setMinimumSize(400, 300)
@@ -177,12 +187,31 @@ class CanvasWidget(QWidget):
         self._cache_dirty = True
         self._display_cache = None
         self._pre_stroke_state = None
+        self._check_marching_ants()
         self._fit_to_window()
         self.update()
 
     def invalidate_cache(self):
         self._cache_dirty = True
         self._display_cache = None
+        self._check_marching_ants()
+        self.update()
+
+    def _check_marching_ants(self):
+        has_sel = (self.document and self.document.selection
+                   and not self.document.selection.isEmpty()
+                   and getattr(self.document, "quick_mask_layer", None) is None)
+        if has_sel and self._march_timer is None:
+            self._march_timer = QTimer(self)
+            self._march_timer.timeout.connect(self._advance_march)
+            self._march_timer.start(100)
+        elif not has_sel and self._march_timer is not None:
+            self._march_timer.stop()
+            self._march_timer.deleteLater()
+            self._march_timer = None
+
+    def _advance_march(self):
+        self._march_offset = (self._march_offset + 1) % 16
         self.update()
 
     def _start_effect_stroke(self):
@@ -500,496 +529,48 @@ class CanvasWidget(QWidget):
         painter.drawImage(0, 0, display_img)
         painter.restore()
 
-        # Grid overlay
-        if getattr(self.document, "show_grid", False):
-            painter.save()
-            painter.translate(self._pan)
-            painter.scale(self.zoom, self.zoom)
-            painter.setPen(QPen(QColor(128, 128, 128, 100), max(1.0, 1.0/self.zoom), Qt.PenStyle.DotLine))
-            gs = max(5, getattr(self.document, "grid_size", 50))
-            for x in range(0, self.document.width, gs): painter.drawLine(QPointF(x, 0), QPointF(x, self.document.height))
-            for y in range(0, self.document.height, gs): painter.drawLine(QPointF(0, y), QPointF(self.document.width, y))
-            painter.restore()
+        # Overlays (each function handles its own save/restore)
+        _pan, _zoom = self._pan, self.zoom
+        _doc, _tool = self.document, self.active_tool
+        _opts = self.tool_opts
+        _tname = getattr(_tool, "name", "")
 
-        # Guides
-        if getattr(self.document, "show_guides", False):
-            painter.save()
-            painter.translate(self._pan)
-            painter.scale(self.zoom, self.zoom)
-            pw = max(1.0, 1.0 / self.zoom)
-            painter.setPen(QPen(QColor(0, 255, 255, 200), pw))
-            for gx in getattr(self.document, "guides_v", []): painter.drawLine(QPointF(gx, -10000), QPointF(gx, 10000))
-            for gy in getattr(self.document, "guides_h", []): painter.drawLine(QPointF(-10000, gy), QPointF(10000, gy))
-                
-            if getattr(self, "_dragging_guide", None):
-                gtype, val, _ = self._dragging_guide
-                painter.setPen(QPen(QColor(0, 255, 255, 255), pw))
-                if gtype == 'v':
-                    painter.drawLine(QPointF(val, -10000), QPointF(val, 10000))
-                else:
-                    painter.drawLine(QPointF(-10000, val), QPointF(10000, val))
-            painter.restore()
-
-        # Slices
-        if getattr(self.document, "show_slices", True):
-            slices = getattr(self.document, "slices", [])
-            if slices:
-                painter.save()
-                painter.translate(self._pan)
-                painter.scale(self.zoom, self.zoom)
-                pw = max(1.0, 1.0 / self.zoom)
-                painter.setPen(QPen(QColor(0, 150, 255, 200), pw))
-                font = painter.font()
-                font.setPointSizeF(max(8.0, 10.0 / self.zoom))
-                painter.setFont(font)
-                for i, r in enumerate(slices):
-                    painter.setBrush(QColor(0, 150, 255, 20))
-                    painter.drawRect(r)
-                    badge_rect = QRectF(r.left(), r.top(), 24 / self.zoom, 16 / self.zoom)
-                    painter.fillRect(badge_rect, QColor(0, 150, 255, 200))
-                    painter.setPen(QColor(255, 255, 255))
-                    painter.drawText(badge_rect, Qt.AlignmentFlag.AlignCenter, str(i+1))
-                    painter.setPen(QPen(QColor(0, 150, 255, 200), pw))
-                painter.restore()
+        draw_grid(painter, doc=_doc, pan=_pan, zoom=_zoom)
+        draw_guides(painter, doc=_doc, pan=_pan, zoom=_zoom,
+                    dragging_guide=getattr(self, "_dragging_guide", None))
+        draw_slices(painter, doc=_doc, pan=_pan, zoom=_zoom)
 
         if not has_artboards:
             painter.setPen(QPen(QColor(80, 80, 100), 1))
             painter.setBrush(Qt.BrushStyle.NoBrush)
             painter.drawRect(dr.adjusted(0, 0, -1, -1))
 
-        # Brush mirror symmetry axes
-        mirror_x = bool(self.tool_opts.get("brush_mirror_x", False))
-        mirror_y = bool(self.tool_opts.get("brush_mirror_y", False))
-        cx_pct = float(self.tool_opts.get("brush_mirror_cx", 0.5))
-        cy_pct = float(self.tool_opts.get("brush_mirror_cy", 0.5))
-        tool_name = getattr(self.active_tool, "name", "")
-        if tool_name in _BRUSH_TOOLS and (mirror_x or mirror_y):
-            painter.save()
-            painter.translate(self._pan)
-            painter.scale(self.zoom, self.zoom)
-            pw = max(1.0, 1.0 / self.zoom)
-            pen1 = QPen(QColor(0, 0, 0, 100), pw * 3)
-            pen2 = QPen(QColor(100, 200, 255, 180), pw)
-            pen2.setStyle(Qt.PenStyle.DashLine)
-            w, h = self.document.width, self.document.height
-            sym_x = w * cx_pct
-            sym_y = h * cy_pct
-            if mirror_x:
-                painter.setPen(pen1); painter.drawLine(QPointF(sym_x, 0), QPointF(sym_x, h))
-                painter.setPen(pen2); painter.drawLine(QPointF(sym_x, 0), QPointF(sym_x, h))
-            if mirror_y:
-                painter.setPen(pen1); painter.drawLine(QPointF(0, sym_y), QPointF(w, sym_y))
-                painter.setPen(pen2); painter.drawLine(QPointF(0, sym_y), QPointF(w, sym_y))
-                
-            r_handle = max(4.0, 6.0 / self.zoom)
-            painter.setPen(QPen(QColor(0, 0, 0, 150), max(1.0, 2.0 / self.zoom)))
-            painter.setBrush(QColor(100, 200, 255, 200))
-            painter.drawEllipse(QPointF(sym_x, sym_y), r_handle, r_handle)
-            painter.restore()
-
-        # Marching ants selection outline
-        sel = self.document.selection
-        in_qm = getattr(self.document, "quick_mask_layer", None) is not None
-        if sel and not sel.isEmpty() and not in_qm:
-            painter.save()
-            painter.translate(self._pan)
-            painter.scale(self.zoom, self.zoom)
-            pw = max(1.0, 1.0 / self.zoom)
-            painter.setBrush(Qt.BrushStyle.NoBrush)
-            pen = QPen(QColor(0, 0, 0, 160), pw * 1.5)
-            pen.setStyle(Qt.PenStyle.DashLine)
-            painter.setPen(pen)
-            painter.drawPath(sel)
-            pen2 = QPen(QColor(255, 255, 255, 220), pw)
-            pen2.setStyle(Qt.PenStyle.DashLine)
-            pen2.setDashOffset(4)
-            painter.setPen(pen2)
-            painter.drawPath(sel)
-            painter.restore()
-
-        # Subtract-drag preview
-        if self.active_tool and hasattr(self.active_tool, "sub_drag_path"):
-            try:
-                sub_p = self.active_tool.sub_drag_path()
-                if sub_p:
-                    painter.save()
-                    painter.translate(self._pan)
-                    painter.scale(self.zoom, self.zoom)
-                    pw = max(1.0, 1.0 / self.zoom)
-                    pen = QPen(QColor(220, 60, 60), pw)
-                    pen.setStyle(Qt.PenStyle.DashLine)
-                    painter.setPen(pen)
-                    painter.setBrush(Qt.BrushStyle.NoBrush)
-                    painter.drawPath(sub_p)
-                    painter.restore()
-            except Exception: pass
-        elif isinstance(self.active_tool, SelectTool):
-            try:
-                sub_r = self.active_tool.sub_drag_rect()
-                if sub_r:
-                    painter.save()
-                    painter.translate(self._pan)
-                    painter.scale(self.zoom, self.zoom)
-                    pw = max(1.0, 1.0 / self.zoom)
-                    pen = QPen(QColor(220, 60, 60), pw)
-                    pen.setStyle(Qt.PenStyle.DashLine)
-                    painter.setPen(pen)
-                    painter.setBrush(Qt.BrushStyle.NoBrush)
-                    painter.drawRect(sub_r)
-                    painter.restore()
-            except Exception: pass
-
-        # Lasso preview
-        if self.active_tool and hasattr(self.active_tool, "lasso_preview"):
-            try:
-                preview_data = self.active_tool.lasso_preview()
-                if preview_data:
-                    painter.save()
-                    painter.translate(self._pan)
-                    painter.scale(self.zoom, self.zoom)
-                    painter.setRenderHint(QPainter.RenderHint.Antialiasing)
-                    pw = max(1.0, 1.0 / self.zoom)
-
-                    pen1 = QPen(QColor(0, 0, 0), pw)
-                    pen2 = QPen(QColor(255, 255, 255), pw)
-                    pen2.setStyle(Qt.PenStyle.DashLine)
-
-                    points = preview_data[0] if isinstance(preview_data, tuple) else preview_data
-                    current_pos = preview_data[1] if isinstance(preview_data, tuple) else None
-
-                    if len(points) > 0:
-                        poly = QPolygonF(points)
-                        painter.setPen(pen1)
-                        painter.drawPolyline(poly)
-                        painter.setPen(pen2)
-                        painter.drawPolyline(poly)
-
-                        if current_pos and getattr(self, "_is_mouse_in", True):
-                            painter.setPen(pen1)
-                            painter.drawLine(points[-1], current_pos)
-                            painter.setPen(pen2)
-                            painter.drawLine(points[-1], current_pos)
-                    painter.restore()
-            except Exception: pass
-
-        # Transform layer preview (Move/Warp)
-        if self.active_tool and hasattr(self.active_tool, "floating_preview"):
-            try:
-                fp = self.active_tool.floating_preview()
-                if fp:
-                    if len(fp) == 4 and fp[0] == "transform":
-                        _, img, tl, transform = fp
-                        painter.save()
-                        painter.translate(self._pan)
-                        painter.scale(self.zoom, self.zoom)
-                        painter.setTransform(QTransform().translate(tl.x(), tl.y()) * transform, combine=True)
-                        painter.drawImage(0, 0, img)
-                        painter.restore()
-                    elif len(fp) == 4 and fp[0] == "warp":
-                        _, src_img, patches, fast = fp
-                        painter.save()
-                        painter.translate(self._pan)
-                        painter.scale(self.zoom, self.zoom)
-                        from tools.warp_tool import WarpTool
-                        WarpTool.draw_warp_patches(painter, src_img, patches, fast)
-                        painter.restore()
-                    else:
-                        img, tl = fp
-                        painter.save()
-                        painter.translate(self._pan)
-                        painter.scale(self.zoom, self.zoom)
-                        painter.drawImage(tl, img)
-                        painter.restore()
-            except Exception: pass
-
-        # Brush stroke overlay
-        if self.active_tool and hasattr(self.active_tool, "stroke_preview"):
-            try:
-                sp = self.active_tool.stroke_preview()
-                if sp:
-                    img, tl, op = sp
-                    painter.save()
-                    painter.translate(self._pan)
-                    painter.scale(self.zoom, self.zoom)
-                    
-                    if hasattr(self.active_tool, "stroke_composition_mode"):
-                        painter.setCompositionMode(self.active_tool.stroke_composition_mode(self.tool_opts))
-                    
-                    painter.setOpacity(max(0.0, min(1.0, float(op))))
-                    painter.drawImage(tl, img)
-                    painter.restore()
-            except Exception: pass
-
-        # Crop preview
-        if isinstance(self.active_tool, CropTool) and self.active_tool.pending_rect:
-            try:
-                cr = self.active_tool.pending_rect
-                painter.save()
-                painter.translate(self._pan)
-                painter.scale(self.zoom, self.zoom)
-                
-                path = QPainterPath()
-                path.addRect(QRectF(0, 0, self.document.width, self.document.height))
-                path.addRect(QRectF(cr))
-                path.setFillRule(Qt.FillRule.OddEvenFill)
-                painter.fillPath(path, QColor(0, 0, 0, 100))
-                
-                painter.setPen(QPen(QColor(255, 200, 0), max(1, 1 / self.zoom)))
-                painter.setBrush(Qt.BrushStyle.NoBrush)
-                painter.drawRect(cr)
-                
-                overlay = self.tool_opts.get("crop_overlay", "thirds")
-                if overlay != "none":
-                    painter.setPen(QPen(QColor(255, 255, 255, 150), max(1.0, 1.0 / self.zoom), Qt.PenStyle.DashLine))
-                    w, h = cr.width(), cr.height()
-                    if overlay == "thirds":
-                        painter.drawLine(QPointF(cr.left(), cr.top() + h/3), QPointF(cr.right(), cr.top() + h/3))
-                        painter.drawLine(QPointF(cr.left(), cr.top() + h*2/3), QPointF(cr.right(), cr.top() + h*2/3))
-                        painter.drawLine(QPointF(cr.left() + w/3, cr.top()), QPointF(cr.left() + w/3, r.bottom() if hasattr(cr, 'bottom') else cr.top()+h))
-                        painter.drawLine(QPointF(cr.left() + w*2/3, cr.top()), QPointF(cr.left() + w*2/3, cr.bottom() if hasattr(cr, 'bottom') else cr.top()+h))
-                    elif overlay == "grid":
-                        for i in range(1, 5):
-                            painter.drawLine(QPointF(cr.left(), cr.top() + h*i/5), QPointF(cr.right(), cr.top() + h*i/5))
-                            painter.drawLine(QPointF(cr.left() + w*i/5, cr.top()), QPointF(cr.left() + w*i/5, cr.bottom() if hasattr(cr, 'bottom') else cr.top()+h))
-                    elif overlay == "diagonal":
-                        painter.drawLine(cr.topLeft(), cr.bottomRight())
-                        painter.drawLine(cr.topRight(), cr.bottomLeft())
-                        
-                painter.setBrush(QColor(255, 255, 255))
-                pw = max(1.0, 1.0 / self.zoom)
-                painter.setPen(QPen(QColor(0, 0, 0), pw))
-                s = 3 * pw
-                pts = [cr.topLeft(), QPointF(cr.center().x(), cr.top()), cr.topRight(),
-                       QPointF(cr.right(), cr.center().y()), cr.bottomRight(),
-                       QPointF(cr.center().x(), cr.bottom()), cr.bottomLeft(),
-                       QPointF(cr.left(), cr.center().y())]
-                for pt in pts:
-                    painter.drawRect(QRectF(pt.x() - s, pt.y() - s, s*2, s*2))
-                painter.restore()
-            except Exception: pass
-
-        # Perspective crop preview
-        if isinstance(self.active_tool, PerspectiveCropTool):
-            try:
-                painter.save()
-                painter.translate(self._pan)
-                painter.scale(self.zoom, self.zoom)
-
-                if self.active_tool.pending_quad:
-                    quad = self.active_tool.pending_quad
-                    path = QPainterPath()
-                    path.addRect(QRectF(0, 0, self.document.width, self.document.height))
-                    path.addPolygon(QPolygonF([QPointF(p) for p in quad]))
-                    path.setFillRule(Qt.FillRule.OddEvenFill)
-                    painter.fillPath(path, QColor(0, 0, 0, 100))
-
-                    painter.setPen(QPen(QColor(255, 200, 0), max(1, 1 / self.zoom)))
-                    painter.setBrush(Qt.BrushStyle.NoBrush)
-                    painter.drawPolygon(quad)
-                    
-                    overlay = self.tool_opts.get("crop_overlay", "thirds")
-                    if overlay != "none" and len(quad) == 4:
-                        painter.setPen(QPen(QColor(255, 255, 255, 150), max(1.0, 1.0 / self.zoom), Qt.PenStyle.DashLine))
-                        pts = [QPointF(quad[i]) for i in range(4)]
-                        p0, p1, p2, p3 = pts[0], pts[1], pts[2], pts[3]
-                        def lerp(a, b, t): return a + (b - a) * t
-                        
-                        if overlay == "thirds":
-                            for t in (1/3, 2/3):
-                                painter.drawLine(lerp(p0, p3, t), lerp(p1, p2, t))
-                                painter.drawLine(lerp(p0, p1, t), lerp(p3, p2, t))
-                        elif overlay == "grid":
-                            for t in (1/5, 2/5, 3/5, 4/5):
-                                painter.drawLine(lerp(p0, p3, t), lerp(p1, p2, t))
-                                painter.drawLine(lerp(p0, p1, t), lerp(p3, p2, t))
-                        elif overlay == "diagonal":
-                            painter.drawLine(p0, p2)
-                            painter.drawLine(p1, p3)
-
-                if self.active_tool.points:
-                    painter.setRenderHint(QPainter.RenderHint.Antialiasing)
-                    pen = QPen(QColor(255, 255, 255), max(1.0, 1.5 / self.zoom))
-                    pen.setStyle(Qt.PenStyle.DashLine)
-                    painter.setPen(pen)
-                    painter.setBrush(QColor(255, 255, 255, 180))
-
-                    pts = self.active_tool.points
-                    r = max(4.0, 6.0 / self.zoom)
-                    for i, p in enumerate(pts):
-                        painter.drawEllipse(QPointF(p), r, r)
-                        if i > 0 and not self.active_tool.pending_quad:
-                            painter.drawLine(pts[i-1], pts[i])
-                painter.restore()
-            except Exception: pass
-
-        # Shapes preview
-        if isinstance(self.active_tool, ShapesTool):
-            try:
-                ps = self.active_tool.preview_shape()
-                if ps:
-                    painter.save()
-                    painter.translate(self._pan)
-                    painter.scale(self.zoom, self.zoom)
-                    painter.setRenderHint(QPainter.RenderHint.Antialiasing)
-                    stroke = max(1, int(self.tool_opts.get("brush_size", 3)))
-                    shape_color = self.tool_opts.get("shape_color", self.fg_color)
-                    pen = QPen(shape_color, stroke)
-                    pen.setStyle(Qt.PenStyle.DashLine)
-                    painter.setPen(pen)
-                    painter.setBrush(Qt.BrushStyle.NoBrush)
-                    shape = ps["shape"]
-                    rect  = ps["rect"]
-                    angle = ps.get("angle", 0)
-                    if angle and shape != "line":
-                        cx, cy = rect.center().x(), rect.center().y()
-                        painter.translate(cx, cy)
-                        painter.rotate(angle)
-                        painter.translate(-cx, -cy)
-                    if shape.startswith("custom:"):
-                        custom_path = ShapesTool._load_custom_shape(shape[7:])
-                        if custom_path and not custom_path.isEmpty():
-                            br = custom_path.boundingRect()
-                            if not br.isEmpty():
-                                sx = rect.width() / br.width()
-                                sy = rect.height() / br.height()
-                                painter.save()
-                                painter.setTransform(QTransform().translate(rect.left(), rect.top()).scale(sx, sy).translate(-br.left(), -br.top()), combine=True)
-                                painter.drawPath(custom_path)
-                                painter.restore()
-                    elif shape == "ellipse":
-                        painter.drawEllipse(rect)
-                    elif shape == "triangle":
-                        painter.drawPolygon(QPolygon([
-                            QPoint(rect.center().x(), rect.top()),
-                            QPoint(rect.left(),  rect.bottom()),
-                            QPoint(rect.right(), rect.bottom()),
-                        ]))
-                    elif shape == "polygon":
-                        painter.drawPolygon(ShapesTool._polygon_points(rect, ps["sides"]))
-                    elif shape == "line":
-                        painter.drawLine(ps["start"], ps["end"])
-                    elif shape == "star":
-                        painter.drawPolygon(ShapesTool._star_points(rect))
-                    elif shape == "arrow":
-                        painter.drawPath(ShapesTool._arrow_path(rect))
-                    elif shape == "cross":
-                        painter.drawPath(ShapesTool._cross_path(rect))
-                    else:
-                        painter.drawRect(rect)
-                    painter.restore()
-            except Exception: pass
-
-        # Gradient line preview
-        if isinstance(self.active_tool, GradientTool):
-            try:
-                pg = self.active_tool.preview_gradient()
-                if pg:
-                    p0, p1 = pg
-                    painter.save()
-                    painter.translate(self._pan)
-                    painter.scale(self.zoom, self.zoom)
-                    pw = max(1.0, 1.0 / self.zoom)
-                    pen = QPen(QColor(255, 255, 255, 200), pw * 1.5)
-                    pen.setStyle(Qt.PenStyle.DashLine)
-                    painter.setPen(pen)
-                    painter.drawLine(p0, p1)
-                    painter.setBrush(QBrush(QColor(255, 255, 255, 200)))
-                    painter.setPen(QPen(QColor(0, 0, 0, 160), pw))
-                    r = pw * 3
-                    painter.drawEllipse(QPointF(p0), r, r)
-                    painter.drawEllipse(QPointF(p1), r, r)
-                    painter.restore()
-            except Exception: pass
-                
-        if hasattr(self.active_tool, "artboard_preview"):
-            try:
-                ar = self.active_tool.artboard_preview()
-                if ar:
-                    painter.save()
-                    painter.translate(self._pan)
-                    painter.scale(self.zoom, self.zoom)
-                    painter.setPen(QPen(QColor(100, 160, 255), max(1.5, 2.0 / self.zoom)))
-                    painter.setBrush(QColor(255, 255, 255, 50))
-                    painter.drawRect(ar)
-                    painter.restore()
-            except Exception: pass
-
-        # Clone stamp source indicator
-        crosshair = getattr(self.active_tool, "_crosshair_pos", None)
-        if crosshair is not None:
-            painter.save()
-            painter.translate(self._pan)
-            painter.scale(self.zoom, self.zoom)
-            pw = max(1.0, 1.0 / self.zoom)
-            pen1 = QPen(QColor(0, 0, 0, 180), pw * 3)
-            pen2 = QPen(QColor(255, 255, 255, 220), pw)
-            r = 6 * pw
-            painter.setPen(pen1)
-            painter.drawLine(QPointF(crosshair.x() - r, crosshair.y()), QPointF(crosshair.x() + r, crosshair.y()))
-            painter.drawLine(QPointF(crosshair.x(), crosshair.y() - r), QPointF(crosshair.x(), crosshair.y() + r))
-            painter.setPen(pen2)
-            painter.drawLine(QPointF(crosshair.x() - r, crosshair.y()), QPointF(crosshair.x() + r, crosshair.y()))
-            painter.drawLine(QPointF(crosshair.x(), crosshair.y() - r), QPointF(crosshair.x(), crosshair.y() + r))
-            painter.restore()
-
-        # Measurement tools (Ruler and Color Sampler)
-        try:
-            from tools.measure_tools import ColorSamplerTool, RulerTool
-            if isinstance(self.active_tool, ColorSamplerTool):
-                painter.save()
-                painter.translate(self._pan)
-                painter.scale(self.zoom, self.zoom)
-                pw = max(1.0, 1.0 / self.zoom)
-                for pt in self.active_tool.markers:
-                    painter.setPen(QPen(QColor(0,0,0, 180), pw*3))
-                    painter.drawLine(QPointF(pt.x() - 6*pw, pt.y()), QPointF(pt.x() + 6*pw, pt.y()))
-                    painter.drawLine(QPointF(pt.x(), pt.y() - 6*pw), QPointF(pt.x(), pt.y() + 6*pw))
-                    painter.setPen(QPen(QColor(255,255,255), pw))
-                    painter.drawLine(QPointF(pt.x() - 6*pw, pt.y()), QPointF(pt.x() + 6*pw, pt.y()))
-                    painter.drawLine(QPointF(pt.x(), pt.y() - 6*pw), QPointF(pt.x(), pt.y() + 6*pw))
-                painter.restore()
-                painter.save()
-                painter.setRenderHint(QPainter.RenderHint.TextAntialiasing)
-                for i, pt in enumerate(self.active_tool.markers):
-                    c = QColor(0,0,0,0)
-                    if self._composite_cache and 0 <= pt.x() < self._composite_cache.width() and 0 <= pt.y() < self._composite_cache.height():
-                        c = QColor(self._composite_cache.pixel(pt))
-                    text = f" #{i+1} R:{c.red()} G:{c.green()} B:{c.blue()} "
-                    wp = self.to_widget(pt)
-                    tr_rect = painter.fontMetrics().boundingRect(text)
-                    tr_rect.moveTopLeft(QPoint(int(wp.x()) + 10, int(wp.y()) + 10))
-                    tr_rect.adjust(-4, -2, 4, 2)
-                    painter.fillRect(tr_rect, QColor(0, 0, 0, 180))
-                    painter.setPen(QColor(255, 255, 255))
-                    painter.drawText(tr_rect, Qt.AlignmentFlag.AlignCenter, text)
-                painter.restore()
-            elif isinstance(self.active_tool, RulerTool):
-                lines = self.active_tool.get_lines()
-                if lines:
-                    painter.save()
-                    painter.translate(self._pan); painter.scale(self.zoom, self.zoom)
-                    pw = max(1.0, 1.0 / self.zoom)
-                    for p1, p2 in lines:
-                        painter.setPen(QPen(QColor(0,0,0, 180), pw*3)); painter.drawLine(p1, p2)
-                        painter.setPen(QPen(QColor(255,255,255), pw)); painter.drawLine(p1, p2)
-                        painter.drawEllipse(QPointF(p1), 3*pw, 3*pw); painter.drawEllipse(QPointF(p2), 3*pw, 3*pw)
-                    painter.restore()
-                    painter.save()
-                    for p1, p2 in lines:
-                        dx, dy = p2.x() - p1.x(), p2.y() - p1.y()
-                        if dx == 0 and dy == 0: continue
-                        angle = math.degrees(math.atan2(-dy, dx))
-                        if angle < 0: angle += 360
-                        text = f" L: {math.hypot(dx, dy):.1f} px   A: {angle:.1f}° "
-                        wp = self.to_widget(QPoint(int((p1.x()+p2.x())/2), int((p1.y()+p2.y())/2)))
-                        tr_rect = painter.fontMetrics().boundingRect(text)
-                        tr_rect.moveTopLeft(QPoint(int(wp.x()) + 10, int(wp.y()) + 10))
-                        tr_rect.adjust(-4, -2, 4, 2)
-                        painter.fillRect(tr_rect, QColor(0, 0, 0, 180))
-                        painter.setPen(QColor(255, 255, 255))
-                        painter.drawText(tr_rect, Qt.AlignmentFlag.AlignCenter, text)
-                    painter.restore()
-        except Exception: pass
+        draw_symmetry_axes(painter, doc=_doc, pan=_pan, zoom=_zoom,
+                           tool_opts=_opts, tool_name=_tname, brush_tools=_BRUSH_TOOLS)
+        draw_selection(painter, doc=_doc, pan=_pan, zoom=_zoom,
+                       march_offset=self._march_offset)
+        draw_subtract_drag(painter, active_tool=_tool, pan=_pan, zoom=_zoom,
+                           SelectTool=SelectTool)
+        draw_lasso_preview(painter, active_tool=_tool, pan=_pan, zoom=_zoom,
+                           is_mouse_in=getattr(self, "_is_mouse_in", True))
+        draw_transform_preview(painter, active_tool=_tool, pan=_pan, zoom=_zoom)
+        draw_brush_stroke(painter, active_tool=_tool, tool_opts=_opts,
+                          pan=_pan, zoom=_zoom)
+        draw_crop_preview(painter, active_tool=_tool, tool_opts=_opts,
+                          pan=_pan, zoom=_zoom, doc=_doc, CropTool=CropTool)
+        draw_perspective_crop(painter, active_tool=_tool, tool_opts=_opts,
+                              pan=_pan, zoom=_zoom, doc=_doc,
+                              PerspectiveCropTool=PerspectiveCropTool)
+        draw_shapes_preview(painter, active_tool=_tool, tool_opts=_opts,
+                            fg_color=self.fg_color, pan=_pan, zoom=_zoom,
+                            ShapesTool=ShapesTool)
+        draw_gradient_preview(painter, active_tool=_tool, pan=_pan, zoom=_zoom,
+                              GradientTool=GradientTool)
+        draw_artboard_preview(painter, active_tool=_tool, pan=_pan, zoom=_zoom)
+        draw_clone_stamp(painter, active_tool=_tool, pan=_pan, zoom=_zoom)
+        draw_measurements(painter, active_tool=_tool, pan=_pan, zoom=_zoom,
+                          composite_cache=self._composite_cache,
+                          to_widget_fn=self.to_widget)
 
     def _update_brush_region(self, pos: QPointF):
         mirror_x = bool(self.tool_opts.get("brush_mirror_x", False))
@@ -1280,9 +861,12 @@ class CanvasWidget(QWidget):
 
                 if self.active_tool.needs_history_push():
                     from core.history import HistoryState, clone_work_path
+                    # Only deep-copy the active layer image for pixel-modifying tools;
+                    # other layers are shared (they won't be modified by the stroke).
+                    mod_idx = self.document.active_layer_index if tool_name in _BRUSH_TOOLS else None
                     self._pre_stroke_state = HistoryState(
                         description=self.active_tool.name,
-                        layers_snapshot=self.document.snapshot_layers(),
+                        layers_snapshot=self.document.snapshot_layers(modified_index=mod_idx),
                         active_layer_index=self.document.active_layer_index,
                         doc_width=self.document.width,
                         doc_height=self.document.height,
@@ -1292,7 +876,6 @@ class CanvasWidget(QWidget):
                         color_mode_snapshot=getattr(self.document, "color_mode", "RGB"),
                         bit_depth_snapshot=getattr(self.document, "bit_depth", 8)
                     )
-
                 old_layer_idx = self.document.active_layer_index if self.document else -1
                 doc_pos = self.to_doc(ev.position())
 
@@ -1310,6 +893,7 @@ class CanvasWidget(QWidget):
                     self._pre_stroke_state = None
 
                 self._cache_dirty = True
+                self._check_marching_ants()
                 self.update()
 
                 if getattr(self.active_tool, "needs_immediate_commit", False) and self._stroke_in_progress:
@@ -1317,7 +901,7 @@ class CanvasWidget(QWidget):
                     self.document_changed.emit()
                 elif self.document and self.document.active_layer_index != old_layer_idx:
                     self.document_changed.emit()
-                    
+
             self._emit_tool_state()
         except Exception as global_ex:
             print(f"[CanvasWidget] Critical mouse press error: {traceback.format_exc()}")
@@ -1348,7 +932,12 @@ class CanvasWidget(QWidget):
                     self.active_tool._stroke_preview_active = False
                 self._in_effect_stroke = False
                 self._effect_bg_cache = None
-                self._cache_dirty = True
+                # Eager composite so paintEvent is instant
+                self.document.invalidate_composite()
+                self._composite_cache = self.document.get_composite()
+                self._cache_dirty = False
+                self._display_cache = None
+                self._check_marching_ants()
                 self.update()
                 self.document_changed.emit()
 
@@ -1482,7 +1071,7 @@ class CanvasWidget(QWidget):
             if ev.button() == Qt.MouseButton.LeftButton and self._stroke_in_progress:
                 doc_pos = self.to_doc(ev.position())
                 tool_name = getattr(self.active_tool, "name", "")
-                
+
                 # Safe tool release handler
                 if self.active_tool:
                     try:
@@ -1498,7 +1087,15 @@ class CanvasWidget(QWidget):
                     self.active_tool._stroke_preview_active = False
                 self._in_effect_stroke = False
                 self._effect_bg_cache = None
-                self._cache_dirty = True
+
+                # Eagerly recompute the composite now (stroke already applied to
+                # the layer in on_release above).  This keeps paintEvent cheap.
+                self.document.invalidate_composite()
+                self._composite_cache = self.document.get_composite()
+                self._cache_dirty = False
+                self._display_cache = None
+
+                self._check_marching_ants()
                 self.update()
                 self.document_changed.emit()
             self._emit_tool_state()

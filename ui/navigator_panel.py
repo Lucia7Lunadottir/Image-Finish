@@ -1,9 +1,28 @@
 from PyQt6.QtWidgets import (QWidget, QVBoxLayout, QHBoxLayout, QLabel,
                              QSlider, QPushButton)
-from PyQt6.QtCore import Qt, pyqtSignal
-from PyQt6.QtGui import QPixmap
+from PyQt6.QtCore import Qt, pyqtSignal, QRunnable, QThreadPool, QObject
+from PyQt6.QtGui import QPixmap, QImage
 
 from core.locale import tr
+
+class _ThumbSignals(QObject):
+    done = pyqtSignal(QImage)
+
+class _ThumbWorker(QRunnable):
+    """Scales the composite thumbnail in a background thread."""
+    def __init__(self, source_img):
+        super().__init__()
+        self.signals = _ThumbSignals()
+        self._img = source_img
+
+    def run(self):
+        try:
+            scaled = self._img.scaled(200, 120,
+                                      Qt.AspectRatioMode.KeepAspectRatio,
+                                      Qt.TransformationMode.SmoothTransformation)
+            self.signals.done.emit(scaled)
+        except Exception:
+            self.signals.done.emit(QImage())
 
 DARK = "background:#1e1e2e;"
 BTN_STYLE = ("QPushButton{background:#313244;color:#cdd6f4;border:none;"
@@ -83,22 +102,22 @@ class NavigatorPanel(QWidget):
     # ----------------------------------------------------------------- public
 
     def refresh(self, canvas):
-        """Update thumbnail and slider from canvas state."""
+        """Update thumbnail (async) and slider from canvas state."""
         self._updating = True
 
-        # Update thumbnail
-        try:
-            composite = canvas.document.get_composite()
-            if composite and not composite.isNull():
-                pix = QPixmap.fromImage(composite)
-                scaled = pix.scaled(200, 120,
-                                    Qt.AspectRatioMode.KeepAspectRatio,
-                                    Qt.TransformationMode.SmoothTransformation)
-                self._thumb.setPixmap(scaled)
-            else:
+        # Update thumbnail in background thread
+        if not getattr(self, '_thumb_computing', False):
+            try:
+                composite = getattr(canvas, '_composite_cache', None) or canvas.document.get_composite()
+                if composite and not composite.isNull():
+                    self._thumb_computing = True
+                    worker = _ThumbWorker(composite.copy())
+                    worker.signals.done.connect(self._on_thumb_done)
+                    QThreadPool.globalInstance().start(worker)
+                else:
+                    self._thumb.clear()
+            except Exception:
                 self._thumb.clear()
-        except Exception:
-            self._thumb.clear()
 
         # Update slider to match canvas.zoom (float, e.g. 1.0 = 100%)
         zoom_pct = int(getattr(canvas, "zoom", 1.0) * 100)
@@ -107,6 +126,11 @@ class NavigatorPanel(QWidget):
         self._zoom_label.setText(f"{zoom_pct}%")
 
         self._updating = False
+
+    def _on_thumb_done(self, scaled_img):
+        self._thumb_computing = False
+        if not scaled_img.isNull():
+            self._thumb.setPixmap(QPixmap.fromImage(scaled_img))
 
     def retranslate(self):
         """Update translatable strings."""

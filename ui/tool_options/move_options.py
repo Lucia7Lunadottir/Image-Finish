@@ -40,7 +40,7 @@ class MoveOptions(BaseOptions):
             
             self.layout.addWidget(self._align_widget)
             
-            # --- Блок точной трансформации ---
+            # --- Precise transform block ---
             self._tf_widget = QWidget()
             tf_layout = QHBoxLayout(self._tf_widget)
             tf_layout.setContentsMargins(0, 0, 0, 0)

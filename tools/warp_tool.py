@@ -125,7 +125,7 @@ class WarpTool(BaseTool):
                 layer.image = QImage(1, 1, QImage.Format.Format_ARGB32)
                 layer.image.fill(Qt.GlobalColor.transparent)
 
-            # Создаем легковесный прокси для мгновенного рендера при перетаскивании
+            # Create a lightweight proxy for instant rendering during drag
             max_dim = max(self._original_img.width(), self._original_img.height())
             if max_dim > 600:
                 self._proxy_scale = 600.0 / max_dim
@@ -153,7 +153,7 @@ class WarpTool(BaseTool):
         self._drag_idx = self._get_handle_hit(QPointF(pos), opts.get("_zoom", 1.0))
 
     def _calc_grid(self, steps_u, steps_v):
-        """Векторизованное вычисление всей поверхности Безье через умножение матриц NumPy."""
+        """Vectorized Bezier surface computation via NumPy matrix multiplication."""
         u = np.linspace(0, 1, steps_u)
         v = np.linspace(0, 1, steps_v)
         bu = np.array([(1-u)**3, 3*u*(1-u)**2, 3*u**2*(1-u), u**3])
@@ -263,12 +263,12 @@ class WarpTool(BaseTool):
 
     @staticmethod
     def draw_warp_patches(painter: QPainter, src_img: QImage, patches: list, fast: bool):
-        # Отключаем сглаживание геометрии, чтобы между треугольниками не было прозрачных швов (дырок)
+        # Disable geometry antialiasing to avoid transparent seams (gaps) between triangles
         painter.setRenderHint(QPainter.RenderHint.Antialiasing, False)
         painter.setRenderHint(QPainter.RenderHint.SmoothPixmapTransform, not fast)
             
         for s0, s1, s2, s3, d0, d1, d2, d3 in patches:
-            # Разбиваем каждый прямоугольник сетки на 2 треугольника
+            # Split each grid rectangle into 2 triangles
             for src_tri, dst_tri in [((s0, s1, s2), (d0, d1, d2)), ((s0, s2, s3), (d0, d2, d3))]:
                 ts = QTransform(src_tri[1].x() - src_tri[0].x(), src_tri[1].y() - src_tri[0].y(), 0,
                                 src_tri[2].x() - src_tri[0].x(), src_tri[2].y() - src_tri[0].y(), 0,

@@ -7,11 +7,11 @@ from tools.lasso_tools import LassoMixin
 
 class AbstractSelectionTool(AbstractAsyncTool, LassoMixin):
     """
-    Промежуточный родительский класс для инструментов выделения.
-    Содержит методы безопасного копирования памяти и векторизации масок.
+    Intermediate parent class for selection tools.
+    Contains methods for safe memory copying and mask vectorization.
     """
     def _get_safe_layer_snapshot(self, layer) -> tuple[QImage, np.ndarray] | None:
-        """Создает изолированную копию пикселей слоя, исключая утечки и падения ядра C++."""
+        """Creates an isolated copy of layer pixels, preventing leaks and C++ core crashes."""
         try:
             img = layer.mask if (getattr(layer, "editing_mask", False) and getattr(layer, "mask", None) is not None) else layer.image
             if img.isNull():
@@ -23,15 +23,15 @@ class AbstractSelectionTool(AbstractAsyncTool, LassoMixin):
             ptr = img_rgba.bits()
             ptr.setsize(img_rgba.sizeInBytes())
             
-            # .copy() обязателен — он физически дублирует массив в изолированную память Python
+            # .copy() is required — it physically duplicates the array into isolated Python memory
             np_data = np.frombuffer(ptr, dtype=np.uint8).reshape((h, img_rgba.bytesPerLine() // 4, 4))[:, :w, :].copy()
             return img, np_data
         except Exception as e:
-            print(f"Ошибка создания безопасного снимка памяти: {e}")
+            print(f"Error creating safe memory snapshot: {e}")
             return None
 
     def _convert_mask_to_path(self, mask: np.ndarray, layer_offset: QPoint) -> QPainterPath:
-        """Переводит матрицу пикселей NumPy в оптимизированный векторный контур QPainterPath."""
+        """Converts a NumPy pixel matrix into an optimized QPainterPath vector contour."""
         h, w = mask.shape
         mask_img = QImage(w, h, QImage.Format.Format_RGBA8888)
         mask_img.fill(0)
@@ -58,7 +58,7 @@ class AbstractSelectionTool(AbstractAsyncTool, LassoMixin):
 
 
 class MagicWandTool(AbstractSelectionTool):
-    """Инструмент 'Волшебная палочка' — полностью асинхронный и отказоустойчивый."""
+    """Magic Wand tool — fully async and fault-tolerant."""
     name = "MagicWand"
     icon_name = "wand.svg"
     shortcut = "W"
@@ -85,7 +85,7 @@ class MagicWandTool(AbstractSelectionTool):
             tg = (target_px >> 8) & 0xFF
             tb = target_px & 0xFF
 
-            # Отправляем тяжелый расчет FloodFill в фоновый поток через execute_async
+            # Send heavy FloodFill computation to background thread via execute_async
             self.execute_async(
                 self._background_flood_fill,
                 self._on_calculation_finished,
@@ -99,11 +99,11 @@ class MagicWandTool(AbstractSelectionTool):
                 layer_offset=layer.offset
             )
         except Exception:
-            print(f"Предохранитель MagicWand: {traceback.format_exc()}")
+            print(f"MagicWand safety catch: {traceback.format_exc()}")
 
     @staticmethod
     def _background_flood_fill(*args, **kwargs):
-        """Этот метод выполняется строго в фоновом потоке ОС."""
+        """This method runs strictly in an OS background thread."""
         np_data = kwargs.get('np_data')
         cx, cy = kwargs.get('start_pos')
         tr, tg, tb = kwargs.get('target_color')
@@ -148,7 +148,7 @@ class MagicWandTool(AbstractSelectionTool):
             return visited
 
     def _on_calculation_finished(self, mask_result, doc, opts):
-        """Этот метод вызывается автоматически в GUI-потоке, когда вычисления завершены."""
+        """This method is called automatically in the GUI thread when computation is done."""
         layer = doc.get_active_layer()
         if not layer or mask_result is None or not np.any(mask_result):
             return
@@ -160,7 +160,7 @@ class MagicWandTool(AbstractSelectionTool):
 
 
 class QuickSelectionTool(AbstractSelectionTool):
-    """Инструмент 'Быстрое выделение' (Интеллектуальная кисть)."""
+    """Quick Selection tool (Smart brush)."""
     name = "QuickSelection"
     icon_name = "brush-selection.svg"
     shortcut = "W"
@@ -188,7 +188,7 @@ class QuickSelectionTool(AbstractSelectionTool):
             
             self._process_brush_step(pos, np_data, opts)
         except Exception:
-            print(f"Сбой QuickSelection: {traceback.format_exc()}")
+            print(f"QuickSelection failure: {traceback.format_exc()}")
             self._dragging = False
 
     def on_move(self, pos: QPoint, doc, fg, bg, opts):
@@ -207,7 +207,7 @@ class QuickSelectionTool(AbstractSelectionTool):
                 path = self._convert_mask_to_path(self._live_mask, self._active_layer.offset)
                 self._apply_path(doc, path, opts)
         except Exception:
-            print(f"Сбой финализации QuickSelection: {traceback.format_exc()}")
+            print(f"QuickSelection finalization failure: {traceback.format_exc()}")
         finally:
             self._live_mask = None
             self._active_layer = None
@@ -254,7 +254,7 @@ class QuickSelectionTool(AbstractSelectionTool):
 
 
 class ObjectSelectionTool(AbstractSelectionTool):
-    """Инструмент 'Выделение объекта' в рамке."""
+    """Object Selection tool (bounding box)."""
     name = "ObjectSelection"
     icon_name = "box-selection.svg"
     shortcut = "W"
@@ -322,7 +322,7 @@ class ObjectSelectionTool(AbstractSelectionTool):
                 self._apply_path(doc, path, opts)
 
         except Exception:
-            print(f"Сбой ObjectSelection: {traceback.format_exc()}")
+            print(f"ObjectSelection failure: {traceback.format_exc()}")
         finally:
             self._start = None
             self._end = None

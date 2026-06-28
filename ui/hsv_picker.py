@@ -1,41 +1,50 @@
 """
-hsv_picker.py — Красивый кастомный HSV Color Picker.
+hsv_picker.py -- HSV Color Picker with hue wheel, eyedropper, and recent colors.
 
-Содержит:
-  - HueSaturationMap   : квадратное поле Saturation (X) × Value (Y) для выбранного Hue
-  - HueSlider          : вертикальная/горизонтальная радуга для выбора Hue
-  - AlphaSlider        : ползунок прозрачности
-  - ColorPickerDialog  : полный диалог с превью, hex-полем и числовыми полями HSV/RGB
+Contains:
+  - HueSaturationMap : SV square (Saturation x Value) for a given Hue
+  - HueSlider       : horizontal rainbow bar for hue selection
+  - HueWheel        : conical hue ring with embedded SV square
+  - AlphaSlider     : alpha transparency slider with checker background
+  - ScreenPicker     : fullscreen overlay for picking a color from the screen
+  - ColorPickerDialog: full dialog with preview, hex field, HSV/RGB spinboxes,
+                       mode toggle (square/wheel), eyedropper, and recent colors
 """
 
 from PyQt6.QtWidgets import (QDialog, QVBoxLayout, QHBoxLayout, QLabel,
                              QLineEdit, QSpinBox, QPushButton, QWidget,
-                             QDialogButtonBox, QSizePolicy)
-from PyQt6.QtCore    import Qt, QPoint, QRect, pyqtSignal, QSize
+                             QDialogButtonBox, QSizePolicy, QApplication,
+                             QStackedWidget, QGridLayout, QFrame)
+from PyQt6.QtCore    import Qt, QPoint, QPointF, QRect, pyqtSignal, QSize
 from PyQt6.QtGui     import (QPainter, QColor, QLinearGradient, QConicalGradient,
-                             QRadialGradient, QImage, QPixmap, QPen, QBrush)
+                             QRadialGradient, QImage, QPixmap, QPen, QBrush,
+                             QPainterPath, QScreen, QCursor)
 import math
+
+
+# Module-level recent colors list (persists across dialog invocations)
+_recent_colors: list[QColor] = []
+_MAX_RECENT = 16
 
 
 # ─────────────────────────────────────────────────────────────────────────────
 class HueSaturationMap(QWidget):
-    """
-    Квадрат: ось X = Saturation (0→1), ось Y = Value (1→0 сверху вниз).
-    Hue задаётся снаружи. Клик/перетаскивание меняет S и V.
-    """
-    sv_changed = pyqtSignal(float, float)   # (saturation, value)
+    """SV square: X = Saturation (0..1), Y = Value (1..0 top-to-bottom).
+    Hue is set externally. Click/drag changes S and V."""
+    sv_changed = pyqtSignal(float, float)
 
     def __init__(self, parent=None):
         super().__init__(parent)
         self._hue   = 0.0
         self._sat   = 1.0
         self._val   = 1.0
-        self.setFixedSize(220, 220)
+        self.setMinimumSize(200, 200)
+        self.setSizePolicy(QSizePolicy.Policy.Expanding, QSizePolicy.Policy.Expanding)
         self.setCursor(Qt.CursorShape.CrossCursor)
         self._cache: QPixmap | None = None
         self._cache_hue: float = -1.0
+        self._cache_size: QSize = QSize(0, 0)
 
-    # ── Public ────────────────────────────────────────────────────────────────
     def set_hue(self, hue: float):
         if abs(hue - self._hue) > 0.001:
             self._hue = hue
@@ -47,32 +56,20 @@ class HueSaturationMap(QWidget):
         self._val = v
         self.update()
 
-    # ── Rendering ─────────────────────────────────────────────────────────────
     def _build_cache(self):
-        """
-        Строим карту S×V двумя градиентами поверх базового цвета — без
-        Python-цикла по пикселям, работает мгновенно.
-
-        1. Заливаем чистым Hue-цветом (S=1, V=1).
-        2. Белый градиент слева-направо (белый→прозрачный) = ось Saturation.
-        3. Чёрный градиент снизу-вверх (чёрный→прозрачный) = ось Value.
-        """
+        """Build SV map using two overlaid gradients (no per-pixel loop)."""
         w, h = self.width(), self.height()
         pix = QPixmap(w, h)
-
         p = QPainter(pix)
 
-        # 1. Base hue
         base = QColor.fromHsvF(self._hue, 1.0, 1.0)
         p.fillRect(0, 0, w, h, base)
 
-        # 2. White → transparent (left to right) → adds white = lowers saturation
         white_grad = QLinearGradient(0, 0, w, 0)
         white_grad.setColorAt(0, QColor(255, 255, 255, 255))
         white_grad.setColorAt(1, QColor(255, 255, 255, 0))
         p.fillRect(0, 0, w, h, white_grad)
 
-        # 3. Transparent → black (top to bottom) → lowers value
         black_grad = QLinearGradient(0, 0, 0, h)
         black_grad.setColorAt(0, QColor(0, 0, 0, 0))
         black_grad.setColorAt(1, QColor(0, 0, 0, 255))
@@ -81,29 +78,27 @@ class HueSaturationMap(QWidget):
         p.end()
         self._cache = pix
         self._cache_hue = self._hue
+        self._cache_size = QSize(w, h)
 
     def paintEvent(self, _e):
-        if self._cache is None or self._cache_hue != self._hue:
+        if (self._cache is None or self._cache_hue != self._hue
+                or self._cache_size != self.size()):
             self._build_cache()
 
         p = QPainter(self)
         p.drawPixmap(0, 0, self._cache)
-        # cursor circle
-        cx = int(self._sat  * (self.width()  - 1))
+        cx = int(self._sat * (self.width() - 1))
         cy = int((1.0 - self._val) * (self.height() - 1))
-        pen_out = QPen(Qt.GlobalColor.black, 2)
-        pen_in  = QPen(Qt.GlobalColor.white, 1)
-        p.setPen(pen_out)
+        p.setPen(QPen(Qt.GlobalColor.black, 2))
         p.setBrush(Qt.BrushStyle.NoBrush)
         p.drawEllipse(QPoint(cx, cy), 7, 7)
-        p.setPen(pen_in)
+        p.setPen(QPen(Qt.GlobalColor.white, 1))
         p.drawEllipse(QPoint(cx, cy), 6, 6)
         p.end()
 
-    # ── Mouse ─────────────────────────────────────────────────────────────────
     def _update_from_pos(self, pos: QPoint):
-        s = max(0.0, min(1.0, pos.x() / (self.width()  - 1)))
-        v = max(0.0, min(1.0, 1.0 - pos.y() / (self.height() - 1)))
+        s = max(0.0, min(1.0, pos.x() / max(1, self.width() - 1)))
+        v = max(0.0, min(1.0, 1.0 - pos.y() / max(1, self.height() - 1)))
         self._sat, self._val = s, v
         self.update()
         self.sv_changed.emit(s, v)
@@ -118,8 +113,8 @@ class HueSaturationMap(QWidget):
 
 # ─────────────────────────────────────────────────────────────────────────────
 class HueSlider(QWidget):
-    """Горизонтальная полоса всех оттенков (0–360°)."""
-    hue_changed = pyqtSignal(float)   # 0.0 – 1.0
+    """Horizontal rainbow bar for selecting hue (0..360)."""
+    hue_changed = pyqtSignal(float)
 
     def __init__(self, parent=None):
         super().__init__(parent)
@@ -134,18 +129,12 @@ class HueSlider(QWidget):
     def paintEvent(self, _e):
         p = QPainter(self)
         p.setRenderHint(QPainter.RenderHint.Antialiasing)
-
-        # Rainbow gradient
         grad = QLinearGradient(0, 0, self.width(), 0)
         for stop in range(7):
             grad.setColorAt(stop / 6, QColor.fromHsvF(stop / 6, 1.0, 1.0))
         p.fillRect(self.rect(), grad)
-
-        # Border
         p.setPen(QPen(QColor(40, 40, 60), 1))
         p.drawRect(self.rect().adjusted(0, 0, -1, -1))
-
-        # Cursor
         cx = int(self._hue * (self.width() - 1))
         p.setPen(QPen(Qt.GlobalColor.black, 2))
         p.drawLine(cx, 0, cx, self.height())
@@ -154,9 +143,7 @@ class HueSlider(QWidget):
         p.end()
 
     def _update_from_x(self, x: int):
-        h = max(0.0, min(1.0, x / (self.width() - 1)))
-        # clamp to avoid 1.0 which wraps back to red
-        h = min(h, 0.9999)
+        h = max(0.0, min(0.9999, x / max(1, self.width() - 1)))
         self._hue = h
         self.update()
         self.hue_changed.emit(h)
@@ -170,8 +157,212 @@ class HueSlider(QWidget):
 
 
 # ─────────────────────────────────────────────────────────────────────────────
+class HueWheel(QWidget):
+    """Conical hue ring with an embedded SV square inside."""
+    hue_changed = pyqtSignal(float)
+    sv_changed = pyqtSignal(float, float)
+
+    RING_WIDTH = 22
+
+    def __init__(self, parent=None):
+        super().__init__(parent)
+        self._hue = 0.0
+        self._sat = 1.0
+        self._val = 1.0
+        self._dragging_ring = False
+        self._dragging_sv = False
+        self.setMinimumSize(240, 240)
+        self.setSizePolicy(QSizePolicy.Policy.Expanding, QSizePolicy.Policy.Expanding)
+        self.setCursor(Qt.CursorShape.CrossCursor)
+        self._ring_cache: QPixmap | None = None
+        self._ring_cache_size: int = 0
+        self._sv_cache: QPixmap | None = None
+        self._sv_cache_hue: float = -1.0
+        self._sv_cache_size: int = 0
+
+    def set_hue(self, h: float):
+        if abs(h - self._hue) > 0.001:
+            self._hue = h
+            self._sv_cache = None
+            self.update()
+
+    def set_sv(self, s: float, v: float):
+        self._sat = s
+        self._val = v
+        self.update()
+
+    def _outer_r(self):
+        return min(self.width(), self.height()) // 2 - 2
+
+    def _inner_r(self):
+        return self._outer_r() - self.RING_WIDTH
+
+    def _center(self):
+        return QPointF(self.width() / 2, self.height() / 2)
+
+    def _sv_rect(self):
+        ir = self._inner_r()
+        side = int(ir * math.sqrt(2)) - 4
+        c = self._center()
+        half = side / 2
+        return QRect(int(c.x() - half), int(c.y() - half), side, side)
+
+    def _build_ring_cache(self):
+        sz = min(self.width(), self.height())
+        pix = QPixmap(self.width(), self.height())
+        pix.fill(Qt.GlobalColor.transparent)
+        p = QPainter(pix)
+        p.setRenderHint(QPainter.RenderHint.Antialiasing)
+
+        c = self._center()
+        outer = self._outer_r()
+        inner = self._inner_r()
+
+        cg = QConicalGradient(c, 90)
+        for i in range(13):
+            cg.setColorAt(i / 12, QColor.fromHsvF((i / 12) % 1.0, 1.0, 1.0))
+
+        ring = QPainterPath()
+        ring.addEllipse(c, outer, outer)
+        hole = QPainterPath()
+        hole.addEllipse(c, inner, inner)
+        ring_path = ring - hole
+
+        p.fillPath(ring_path, QBrush(cg))
+        p.setPen(QPen(QColor(30, 30, 40), 1))
+        p.drawEllipse(c, outer, outer)
+        p.drawEllipse(c, inner, inner)
+        p.end()
+
+        self._ring_cache = pix
+        self._ring_cache_size = sz
+
+    def _build_sv_cache(self):
+        r = self._sv_rect()
+        w, h = r.width(), r.height()
+        if w <= 0 or h <= 0:
+            return
+        pix = QPixmap(w, h)
+        p = QPainter(pix)
+
+        base = QColor.fromHsvF(self._hue, 1.0, 1.0)
+        p.fillRect(0, 0, w, h, base)
+
+        wg = QLinearGradient(0, 0, w, 0)
+        wg.setColorAt(0, QColor(255, 255, 255, 255))
+        wg.setColorAt(1, QColor(255, 255, 255, 0))
+        p.fillRect(0, 0, w, h, wg)
+
+        bg = QLinearGradient(0, 0, 0, h)
+        bg.setColorAt(0, QColor(0, 0, 0, 0))
+        bg.setColorAt(1, QColor(0, 0, 0, 255))
+        p.fillRect(0, 0, w, h, bg)
+        p.end()
+
+        self._sv_cache = pix
+        self._sv_cache_hue = self._hue
+        self._sv_cache_size = w
+
+    def paintEvent(self, _e):
+        sz = min(self.width(), self.height())
+        if self._ring_cache is None or self._ring_cache_size != sz:
+            self._build_ring_cache()
+
+        p = QPainter(self)
+        p.setRenderHint(QPainter.RenderHint.Antialiasing)
+        p.drawPixmap(0, 0, self._ring_cache)
+
+        # Hue indicator on ring
+        c = self._center()
+        mid_r = (self._outer_r() + self._inner_r()) / 2
+        angle = self._hue * 2 * math.pi + math.pi / 2
+        hx = c.x() + mid_r * math.cos(angle)
+        hy = c.y() - mid_r * math.sin(angle)
+        p.setPen(QPen(Qt.GlobalColor.black, 2))
+        p.setBrush(Qt.BrushStyle.NoBrush)
+        p.drawEllipse(QPointF(hx, hy), 6, 6)
+        p.setPen(QPen(Qt.GlobalColor.white, 1.5))
+        p.drawEllipse(QPointF(hx, hy), 5, 5)
+
+        # SV square
+        svr = self._sv_rect()
+        if svr.width() > 0 and svr.height() > 0:
+            if (self._sv_cache is None or self._sv_cache_hue != self._hue
+                    or self._sv_cache_size != svr.width()):
+                self._build_sv_cache()
+            p.drawPixmap(svr.topLeft(), self._sv_cache)
+            p.setPen(QPen(QColor(30, 30, 40), 1))
+            p.setBrush(Qt.BrushStyle.NoBrush)
+            p.drawRect(svr)
+
+            # SV cursor
+            sx = svr.x() + int(self._sat * (svr.width() - 1))
+            sy = svr.y() + int((1.0 - self._val) * (svr.height() - 1))
+            p.setPen(QPen(Qt.GlobalColor.black, 2))
+            p.drawEllipse(QPoint(sx, sy), 6, 6)
+            p.setPen(QPen(Qt.GlobalColor.white, 1))
+            p.drawEllipse(QPoint(sx, sy), 5, 5)
+
+        p.end()
+
+    def _is_on_ring(self, pos: QPoint) -> bool:
+        c = self._center()
+        dist = math.hypot(pos.x() - c.x(), pos.y() - c.y())
+        return self._inner_r() <= dist <= self._outer_r()
+
+    def _hue_from_pos(self, pos: QPoint) -> float:
+        c = self._center()
+        angle = math.atan2(-(pos.y() - c.y()), pos.x() - c.x())
+        h = (angle - math.pi / 2) / (2 * math.pi)
+        h = h % 1.0
+        return min(h, 0.9999)
+
+    def _sv_from_pos(self, pos: QPoint):
+        svr = self._sv_rect()
+        s = max(0.0, min(1.0, (pos.x() - svr.x()) / max(1, svr.width() - 1)))
+        v = max(0.0, min(1.0, 1.0 - (pos.y() - svr.y()) / max(1, svr.height() - 1)))
+        return s, v
+
+    def mousePressEvent(self, e):
+        if e.button() != Qt.MouseButton.LeftButton:
+            return
+        if self._is_on_ring(e.pos()):
+            self._dragging_ring = True
+            h = self._hue_from_pos(e.pos())
+            self._hue = h
+            self._sv_cache = None
+            self.update()
+            self.hue_changed.emit(h)
+        elif self._sv_rect().contains(e.pos()):
+            self._dragging_sv = True
+            s, v = self._sv_from_pos(e.pos())
+            self._sat, self._val = s, v
+            self.update()
+            self.sv_changed.emit(s, v)
+
+    def mouseMoveEvent(self, e):
+        if not (e.buttons() & Qt.MouseButton.LeftButton):
+            return
+        if self._dragging_ring:
+            h = self._hue_from_pos(e.pos())
+            self._hue = h
+            self._sv_cache = None
+            self.update()
+            self.hue_changed.emit(h)
+        elif self._dragging_sv:
+            s, v = self._sv_from_pos(e.pos())
+            self._sat, self._val = s, v
+            self.update()
+            self.sv_changed.emit(s, v)
+
+    def mouseReleaseEvent(self, e):
+        self._dragging_ring = False
+        self._dragging_sv = False
+
+
+# ─────────────────────────────────────────────────────────────────────────────
 class AlphaSlider(QWidget):
-    """Ползунок прозрачности (0–255) с шахматной подложкой."""
+    """Alpha transparency slider (0..255) with checker background."""
     alpha_changed = pyqtSignal(int)
 
     def __init__(self, parent=None):
@@ -191,15 +382,12 @@ class AlphaSlider(QWidget):
 
     def paintEvent(self, _e):
         p = QPainter(self)
-
-        # Checker
         tile = 8
         for tx in range(0, self.width(), tile):
             for ty in range(0, self.height(), tile):
                 shade = QColor(200, 200, 200) if (tx // tile + ty // tile) % 2 == 0 else QColor(240, 240, 240)
                 p.fillRect(tx, ty, tile, tile, shade)
 
-        # Color gradient transparent→opaque
         c_transp = QColor(self._color)
         c_transp.setAlpha(0)
         c_opaque = QColor(self._color)
@@ -220,7 +408,7 @@ class AlphaSlider(QWidget):
         p.end()
 
     def _update_from_x(self, x: int):
-        a = max(0, min(255, int(x / (self.width() - 1) * 255)))
+        a = max(0, min(255, int(x / max(1, self.width() - 1) * 255)))
         self._alpha = a
         self.update()
         self.alpha_changed.emit(a)
@@ -235,7 +423,7 @@ class AlphaSlider(QWidget):
 
 # ─────────────────────────────────────────────────────────────────────────────
 class ColorPreview(QWidget):
-    """Прямоугольник «старый цвет | новый цвет» с шахматной подложкой."""
+    """Old color | New color preview rectangle with checker background."""
 
     def __init__(self, parent=None):
         super().__init__(parent)
@@ -263,6 +451,80 @@ class ColorPreview(QWidget):
 
 
 # ─────────────────────────────────────────────────────────────────────────────
+class ScreenPicker(QWidget):
+    """Fullscreen overlay for picking a color from the screen."""
+    color_picked = pyqtSignal(QColor)
+
+    def __init__(self, parent=None):
+        super().__init__(parent)
+        self.setWindowFlags(
+            Qt.WindowType.FramelessWindowHint
+            | Qt.WindowType.WindowStaysOnTopHint
+            | Qt.WindowType.Tool
+        )
+        self.setAttribute(Qt.WidgetAttribute.WA_TranslucentBackground)
+        self.setCursor(Qt.CursorShape.CrossCursor)
+        self._screenshot: QPixmap | None = None
+
+    def start(self):
+        screen = QApplication.primaryScreen()
+        if screen:
+            self._screenshot = screen.grabWindow(0)
+        geo = screen.geometry() if screen else QRect(0, 0, 1920, 1080)
+        self.setGeometry(geo)
+        self.showFullScreen()
+        self.raise_()
+        self.activateWindow()
+
+    def paintEvent(self, _e):
+        p = QPainter(self)
+        if self._screenshot:
+            p.drawPixmap(0, 0, self._screenshot)
+        p.fillRect(self.rect(), QColor(0, 0, 0, 30))
+        p.end()
+
+    def mousePressEvent(self, e):
+        if self._screenshot:
+            img = self._screenshot.toImage()
+            pos = e.pos()
+            if 0 <= pos.x() < img.width() and 0 <= pos.y() < img.height():
+                c = QColor(img.pixel(pos.x(), pos.y()))
+                self.color_picked.emit(c)
+        self.close()
+
+    def keyPressEvent(self, e):
+        if e.key() == Qt.Key.Key_Escape:
+            self.close()
+
+
+# ─────────────────────────────────────────────────────────────────────────────
+class _RecentSwatch(QFrame):
+    """Small clickable color square for the recent colors strip."""
+    clicked = pyqtSignal(QColor)
+
+    def __init__(self, color: QColor, parent=None):
+        super().__init__(parent)
+        self._color = color
+        self.setFixedSize(18, 18)
+        self.setCursor(Qt.CursorShape.PointingHandCursor)
+
+    def paintEvent(self, _e):
+        p = QPainter(self)
+        tile = 4
+        for tx in range(0, self.width(), tile):
+            for ty in range(0, self.height(), tile):
+                shade = QColor(180, 180, 180) if (tx // tile + ty // tile) % 2 == 0 else QColor(220, 220, 220)
+                p.fillRect(tx, ty, tile, tile, shade)
+        p.fillRect(self.rect(), self._color)
+        p.setPen(QPen(QColor(60, 60, 80), 1))
+        p.drawRect(self.rect().adjusted(0, 0, -1, -1))
+        p.end()
+
+    def mousePressEvent(self, _e):
+        self.clicked.emit(self._color)
+
+
+# ─────────────────────────────────────────────────────────────────────────────
 def _spin(lo: int, hi: int, val: int, width: int = 58) -> QSpinBox:
     s = QSpinBox()
     s.setRange(lo, hi)
@@ -281,45 +543,73 @@ def _label(text: str) -> QLabel:
 
 # ─────────────────────────────────────────────────────────────────────────────
 class ColorPickerDialog(QDialog):
-    """
-    Полный HSV color picker.
-    Использование:
-        dlg = ColorPickerDialog(initial_color, parent)
-        if dlg.exec():
-            color = dlg.color()
+    """Full HSV color picker with hue wheel, eyedropper, and recent colors.
+
+    Usage:
+        color = ColorPickerDialog.get_color(initial, parent, title)
     """
 
     def __init__(self, initial: QColor = None, parent=None, title: str = "Pick Color"):
         super().__init__(parent)
         self.setWindowTitle(title)
         self.setModal(True)
-        self.setFixedSize(270, 460)
+        self.setMinimumSize(320, 520)
+        self.resize(400, 600)
 
         if initial is None:
             initial = QColor(0, 0, 0)
         self._color = QColor(initial)
         self._old_color = QColor(initial)
         self._updating = False
+        self._screen_picker: ScreenPicker | None = None
 
         self._build_ui()
         self._load_color(self._color)
 
-    # ── UI construction ───────────────────────────────────────────────────────
     def _build_ui(self):
         root = QVBoxLayout(self)
         root.setContentsMargins(12, 12, 12, 12)
         root.setSpacing(8)
 
-        # SV map
+        # Mode toggle
+        toggle_row = QHBoxLayout()
+        self._mode_btn = QPushButton("Wheel")
+        self._mode_btn.setFixedSize(60, 24)
+        self._mode_btn.setToolTip("Switch between Square and Wheel mode")
+        self._mode_btn.clicked.connect(self._toggle_mode)
+        toggle_row.addStretch()
+        toggle_row.addWidget(self._mode_btn)
+        root.addLayout(toggle_row)
+
+        # Stacked widget: square mode vs wheel mode
+        self._mode_stack = QStackedWidget()
+
+        # -- Square mode (SV map + hue slider)
+        square_w = QWidget()
+        sq_lay = QVBoxLayout(square_w)
+        sq_lay.setContentsMargins(0, 0, 0, 0)
+        sq_lay.setSpacing(6)
         self._sv_map = HueSaturationMap()
         self._sv_map.sv_changed.connect(self._on_sv_changed)
-        root.addWidget(self._sv_map, alignment=Qt.AlignmentFlag.AlignHCenter)
-
-        # Hue slider
-        root.addWidget(QLabel("Hue", styleSheet="color:#a6adc8;font-size:11px;"))
+        sq_lay.addWidget(self._sv_map)
+        sq_lay.addWidget(QLabel("Hue", styleSheet="color:#a6adc8;font-size:11px;"))
         self._hue_slider = HueSlider()
         self._hue_slider.hue_changed.connect(self._on_hue_changed)
-        root.addWidget(self._hue_slider)
+        sq_lay.addWidget(self._hue_slider)
+
+        # -- Wheel mode
+        wheel_w = QWidget()
+        wh_lay = QVBoxLayout(wheel_w)
+        wh_lay.setContentsMargins(0, 0, 0, 0)
+        self._hue_wheel = HueWheel()
+        self._hue_wheel.hue_changed.connect(self._on_hue_changed)
+        self._hue_wheel.sv_changed.connect(self._on_sv_changed)
+        wh_lay.addWidget(self._hue_wheel)
+
+        self._mode_stack.addWidget(square_w)  # index 0
+        self._mode_stack.addWidget(wheel_w)   # index 1
+        self._mode_stack.setCurrentIndex(0)
+        root.addWidget(self._mode_stack, 1)
 
         # Alpha slider
         root.addWidget(QLabel("Alpha", styleSheet="color:#a6adc8;font-size:11px;"))
@@ -332,7 +622,7 @@ class ColorPickerDialog(QDialog):
         self._preview.set_old(self._old_color)
         root.addWidget(self._preview)
 
-        # ── HSV row ───────────────────────────────────────────────────────────
+        # HSV row
         hsv_row = QHBoxLayout()
         hsv_row.setSpacing(4)
         self._spin_h = _spin(0, 359, 0)
@@ -344,7 +634,7 @@ class ColorPickerDialog(QDialog):
         hsv_row.addStretch()
         root.addLayout(hsv_row)
 
-        # ── RGB row ───────────────────────────────────────────────────────────
+        # RGB row
         rgb_row = QHBoxLayout()
         rgb_row.setSpacing(4)
         self._spin_r = _spin(0, 255, 0)
@@ -356,7 +646,7 @@ class ColorPickerDialog(QDialog):
         rgb_row.addStretch()
         root.addLayout(rgb_row)
 
-        # ── Alpha + Hex row ───────────────────────────────────────────────────
+        # Alpha + Hex + Eyedropper row
         hex_row = QHBoxLayout()
         hex_row.setSpacing(4)
         self._spin_a = _spin(0, 255, 255)
@@ -371,10 +661,27 @@ class ColorPickerDialog(QDialog):
         self._hex_edit.setPlaceholderText("RRGGBBAA")
         hex_row.addWidget(hex_label)
         hex_row.addWidget(self._hex_edit)
+        hex_row.addSpacing(4)
+
+        self._eyedropper_btn = QPushButton("\u2388")  # ⎈ target symbol
+        self._eyedropper_btn.setToolTip("Pick color from screen")
+        self._eyedropper_btn.setFixedSize(28, 28)
+        self._eyedropper_btn.clicked.connect(self._start_eyedropper)
+        hex_row.addWidget(self._eyedropper_btn)
         hex_row.addStretch()
         root.addLayout(hex_row)
 
-        # ── Buttons ───────────────────────────────────────────────────────────
+        # Recent colors
+        self._recent_layout = QHBoxLayout()
+        self._recent_layout.setSpacing(2)
+        self._recent_label = QLabel("Recent:")
+        self._recent_label.setStyleSheet("color:#a6adc8;font-size:11px;")
+        self._recent_layout.addWidget(self._recent_label)
+        self._rebuild_recent_swatches()
+        self._recent_layout.addStretch()
+        root.addLayout(self._recent_layout)
+
+        # Buttons
         btns = QDialogButtonBox(
             QDialogButtonBox.StandardButton.Ok | QDialogButtonBox.StandardButton.Cancel)
         btns.accepted.connect(self.accept)
@@ -391,16 +698,59 @@ class ColorPickerDialog(QDialog):
         self._spin_a.valueChanged.connect(self._on_alpha_spin)
         self._hex_edit.editingFinished.connect(self._on_hex_edit)
 
-    # ── Load a colour into all widgets ───────────────────────────────────────
+    def _toggle_mode(self):
+        if self._mode_stack.currentIndex() == 0:
+            self._mode_stack.setCurrentIndex(1)
+            self._mode_btn.setText("Square")
+            self._hue_wheel.set_hue(self._hue_slider._hue)
+            self._hue_wheel.set_sv(self._sv_map._sat, self._sv_map._val)
+        else:
+            self._mode_stack.setCurrentIndex(0)
+            self._mode_btn.setText("Wheel")
+            self._sv_map.set_hue(self._hue_wheel._hue)
+            self._sv_map.set_sv(self._hue_wheel._sat, self._hue_wheel._val)
+            self._hue_slider.set_hue(self._hue_wheel._hue)
+
+    def _rebuild_recent_swatches(self):
+        # Remove old swatches (keep the label at index 0)
+        while self._recent_layout.count() > 1:
+            item = self._recent_layout.takeAt(1)
+            if item.widget():
+                item.widget().deleteLater()
+        for c in _recent_colors[:_MAX_RECENT]:
+            sw = _RecentSwatch(c)
+            sw.clicked.connect(self._on_recent_clicked)
+            self._recent_layout.addWidget(sw)
+        self._recent_layout.addStretch()
+
+    def _on_recent_clicked(self, c: QColor):
+        self._apply(c)
+
+    def _start_eyedropper(self):
+        self._screen_picker = ScreenPicker()
+        self._screen_picker.color_picked.connect(self._on_screen_color)
+        self.hide()
+        self._screen_picker.start()
+
+    def _on_screen_color(self, c: QColor):
+        self.show()
+        self._apply(c)
+
     def _load_color(self, c: QColor):
         self._updating = True
         h, s, v, a = c.hsvHue(), c.hsvSaturation(), c.value(), c.alpha()
         if h < 0:
-            h = 0  # achromatic
+            h = 0
 
-        self._sv_map.set_hue(h / 359.0)
-        self._sv_map.set_sv(s / 255.0, v / 255.0)
-        self._hue_slider.set_hue(h / 359.0)
+        hf = h / 359.0
+        sf = s / 255.0
+        vf = v / 255.0
+
+        self._sv_map.set_hue(hf)
+        self._sv_map.set_sv(sf, vf)
+        self._hue_slider.set_hue(hf)
+        self._hue_wheel.set_hue(hf)
+        self._hue_wheel.set_sv(sf, vf)
         self._alpha_slider.set_color(c)
         self._alpha_slider.set_alpha(a)
         self._preview.set_new(c)
@@ -423,7 +773,6 @@ class ColorPickerDialog(QDialog):
         self._color = c
         self._load_color(c)
 
-    # ── Slots ─────────────────────────────────────────────────────────────────
     def _on_hue_changed(self, h: float):
         if self._updating:
             return
@@ -485,11 +834,18 @@ class ColorPickerDialog(QDialog):
         except ValueError:
             pass
 
-    # ── Result ────────────────────────────────────────────────────────────────
+    def accept(self):
+        global _recent_colors
+        c = QColor(self._color)
+        # Deduplicate
+        _recent_colors = [rc for rc in _recent_colors if rc.name() != c.name() or rc.alpha() != c.alpha()]
+        _recent_colors.insert(0, c)
+        _recent_colors = _recent_colors[:_MAX_RECENT]
+        super().accept()
+
     def color(self) -> QColor:
         return self._color
 
-    # ── Static helper ─────────────────────────────────────────────────────────
     @staticmethod
     def get_color(initial: QColor = None, parent=None, title: str = "Pick Color") -> QColor | None:
         """Returns picked QColor or None if cancelled."""

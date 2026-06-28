@@ -6,7 +6,7 @@ from core.locale import tr
 
 class EditActionsMixin:
     def _undo(self):
-        # Если активна рамка трансформации, Ctrl+Z работает как Escape (Отмена трансформации)
+        # If a transform frame is active, Ctrl+Z acts as Escape (cancel transform)
         tool = self._canvas.active_tool
         if hasattr(tool, "is_transforming") and getattr(tool, "is_transforming", False):
             tool.cancel_transform(self._document)
@@ -130,7 +130,7 @@ class EditActionsMixin:
         self._canvas_refresh()
 
     def _deselect(self):
-        # Сохраняем текущее выделение для функции Reselect
+        # Save the current selection for the Reselect function
         if self._document.selection and not self._document.selection.isEmpty():
             self._last_selection = QPainterPath(self._document.selection)
             self._push_history(tr("history.deselect"))
@@ -146,7 +146,7 @@ class EditActionsMixin:
         self._canvas_refresh()
 
     def _reselect(self):
-        # Восстанавливаем последнее снятое выделение
+        # Restore the last deselected selection
         if hasattr(self, "_last_selection") and self._last_selection:
             self._push_history(tr("history.reselect"))
             self._document.selection = QPainterPath(self._last_selection)
@@ -157,10 +157,10 @@ class EditActionsMixin:
         sel = self._document.selection
 
         if not sel or sel.isEmpty():
-            # Если ничего не выделено, инверсия выделяет весь холст
+            # If nothing is selected, inversion selects the entire canvas
             self._select_all()
         else:
-            # Вычитаем текущее выделение из площади всего холста
+            # Subtract the current selection from the full canvas area
             full_rect = QPainterPath()
             full_rect.addRect(QRectF(0, 0, self._document.width, self._document.height))
             self._document.selection = full_rect.subtracted(sel)
@@ -238,7 +238,7 @@ class EditActionsMixin:
         buf = (ctypes.c_uint8 * img.sizeInBytes()).from_address(int(ptr))
         arr = np.ndarray((h, img.bytesPerLine() // 4, 4), dtype=np.uint8, buffer=buf)[:, :w, :]
 
-        # Эвристика: объект в центре, отличающийся от краёв холста
+        # Heuristic: object in the center, differing from canvas edges
         top = arr[0:max(1, h//20), :, :3].reshape(-1, 3)
         bottom = arr[h-max(1, h//20):h, :, :3].reshape(-1, 3)
         left = arr[:, 0:max(1, w//20), :3].reshape(-1, 3)
@@ -270,7 +270,7 @@ class EditActionsMixin:
 
         B, G, R, A = arr[..., 0].astype(np.float32), arr[..., 1].astype(np.float32), arr[..., 2].astype(np.float32), arr[..., 3]
 
-        # Эвристика: небо сверху, оно синее/голубое или яркое (облака)
+        # Heuristic: sky is at the top, blue or bright (clouds)
         blueness = B - np.maximum(R, G)
         brightness = (R + G + B) / 3.0
         sky_score = np.maximum(blueness * 2, brightness - 130)

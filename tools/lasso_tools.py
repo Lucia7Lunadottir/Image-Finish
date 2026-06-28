@@ -4,7 +4,7 @@ from PyQt6.QtGui import QPainterPath, QPolygonF, QColor
 from tools.base_tool import BaseTool
 
 class LassoMixin:
-    """Общая логика режимов выделения (Add, Subtract, Intersect)"""
+    """Common selection mode logic (Add, Subtract, Intersect)"""
     def _apply_path(self, doc, path: QPainterPath, opts: dict):
         sel = doc.selection
         ctrl = bool(opts.get("_ctrl", False))
@@ -63,11 +63,11 @@ class PolygonalLassoTool(BaseTool, LassoMixin):
         self.current_pos: QPointF | None = None
 
     def on_press(self, pos: QPoint, doc, fg, bg, opts):
-        # Завершение выделения по двойному клику (или если клик близко к началу)
+        # Complete selection on double-click (or if click is near the start)
         if self.points:
             start = self.points[0]
             dist = math.hypot(pos.x() - start.x(), pos.y() - start.y())
-            if dist < 10:  # Замыкаем, если кликнули рядом с первой точкой
+            if dist < 10:  # Close if clicked near the first point
                 self._commit(doc, opts)
                 return
 
@@ -79,7 +79,7 @@ class PolygonalLassoTool(BaseTool, LassoMixin):
             self.current_pos = QPointF(pos)
 
     def on_release(self, pos, doc, fg, bg, opts):
-        pass # Полигональное лассо работает по кликам, а не по drag & drop
+        pass # Polygonal lasso works by clicks, not by drag & drop
 
     def _commit(self, doc, opts):
         if len(self.points) > 2:

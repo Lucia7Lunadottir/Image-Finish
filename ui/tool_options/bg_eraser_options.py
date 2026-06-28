@@ -8,7 +8,7 @@ class BackgroundEraserOptions(BaseOptions):
     def __init__(self, parent=None):
         super().__init__(parent)
         
-        # --- Размер ---
+        # --- Size ---
         self.layout.addWidget(self._lbl("opts.size"))
         size_widget = QWidget()
         size_layout = QHBoxLayout(size_widget)
@@ -24,7 +24,7 @@ class BackgroundEraserOptions(BaseOptions):
         size_layout.addWidget(self._size_spin)
         self.layout.addWidget(size_widget)
 
-        # --- Допуск ---
+        # --- Tolerance ---
         self.layout.addWidget(self._lbl("opts.tolerance"))
         tol_widget = QWidget()
         tol_layout = QHBoxLayout(tol_widget)

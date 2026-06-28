@@ -20,7 +20,7 @@ class ColorRangeDialog(QDialog):
 
         self.layout = QVBoxLayout(self)
 
-        # Чёрно-белое превью выделения, как в Photoshop (чтобы не лагал QPainterPath)
+        # Black-and-white selection preview (to avoid QPainterPath lag)
         self.preview_lbl = QLabel()
         self.preview_lbl.setFixedSize(280, 200)
         self.preview_lbl.setAlignment(Qt.AlignmentFlag.AlignCenter)
@@ -91,7 +91,7 @@ class ColorRangeDialog(QDialog):
         threshold_sq = (fuzz / 200.0)**2 * (255**2 * 3)
         self._final_mask = (dist_sq <= threshold_sq) & (arr[..., 3] > 0)
         
-        # Отрисовываем маску в окно предпросмотра (это мгновенно)
+        # Render the mask in the preview window (instant)
         preview_img = QImage(w, h, QImage.Format.Format_Grayscale8)
         preview_img.fill(0)
         p_ptr = preview_img.bits()
@@ -106,7 +106,7 @@ class ColorRangeDialog(QDialog):
         self.preview_lbl.setPixmap(pixmap)
         
     def accept(self):
-        # Тяжелая конвертация в QPainterPath происходит ТОЛЬКО при нажатии OK
+        # Heavy conversion to QPainterPath happens ONLY when OK is pressed
         if self._final_mask is not None:
             h, w = self._final_mask.shape
             mask_img = QImage(w, h, QImage.Format.Format_RGBA8888)

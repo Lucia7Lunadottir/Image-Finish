@@ -91,7 +91,7 @@ class GradientBar(QWidget):
         self.stop_selected.emit(self._selected)
 
     def select_stop(self, index: int):
-        """Выделяет точку градиента по индексу."""
+        """Selects a gradient stop by index."""
         if 0 <= index < len(self._stops):
             self._selected = index
             self.stop_selected.emit(self._selected)
@@ -313,8 +313,8 @@ class GradientEditorDialog(QDialog):
         self._color_btn.setFixedSize(48, 22)
         ctrl.addWidget(self._color_btn)
 
-    # --- Добавляем элементы для Opacity ---
-        op_lbl = QLabel(tr("opts.opacity")) # Используем существующий ключ перевода
+    # --- Opacity controls ---
+        op_lbl = QLabel(tr("opts.opacity"))
         op_lbl.setObjectName("optLabel")
         ctrl.addWidget(op_lbl)
 
@@ -390,7 +390,7 @@ class GradientEditorDialog(QDialog):
         if 0 <= index < len(stops):
             pos, color = stops[index]
             self._pos_spin.setValue(int(round(pos * 100)))
-            # Обновляем спинбокс прозрачности (извлекаем альфа-канал 0-255 и переводим в 0-100)
+            # Update the opacity spinbox (extract alpha 0-255 and convert to 0-100)
             self._op_spin.setValue(int(round(color.alphaF() * 100)))
             self._update_color_swatch(color)
             self._del_btn.setEnabled(len(stops) > 2)
@@ -401,7 +401,7 @@ class GradientEditorDialog(QDialog):
         self._on_stop_selected(idx)
 
     def _update_color_swatch(self, color: QColor):
-        # Используем rgba для корректного отображения цвета с прозрачностью на кнопке
+        # Use rgba for correct display of color with transparency on the button
         rgba_str = f"rgba({color.red()}, {color.green()}, {color.blue()}, {color.alphaF()})"
         self._color_btn.setStyleSheet(
             f"QPushButton {{ background:{rgba_str}; border:1px solid #555; border-radius:3px; }}")
@@ -433,17 +433,17 @@ class GradientEditorDialog(QDialog):
         if idx < 0 or idx >= len(self._bar._stops):
             return
 
-        # Берем текущий цвет выделенной точки
+        # Get the current color of the selected stop
         current_color = self._bar._stops[idx][1]
 
-        # Создаем новый цвет с обновленным альфа-каналом
+        # Create a new color with updated alpha channel
         new_color = QColor(current_color)
         new_color.setAlphaF(val / 100.0)
 
-        # Обновляем цвет в баре
+        # Update the color in the bar
         self._bar.set_stop_color(idx, new_color)
 
-        # Обновляем кнопку цвета, чтобы она отражала новую прозрачность (если нужно)
+        # Update the color button to reflect the new transparency
         self._updating = True
         self._update_color_swatch(new_color)
         self._updating = False

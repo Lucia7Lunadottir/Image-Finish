@@ -21,20 +21,20 @@ class PerspectiveCropTool(BaseTool):
         if not self.points:
             return
 
-        # Настройка пера для рисования рамки
+        # Set up pen for drawing the frame
         pen = QPen(QColor(255, 255, 255), 1, Qt.PenStyle.DashLine)
         painter.setPen(pen)
 
-        # Рисуем линии между поставленными точками
+        # Draw lines between placed points
         for i in range(len(self.points)):
-            painter.drawEllipse(self.points[i], 4, 4) # Узлы
+            painter.drawEllipse(self.points[i], 4, 4) # Nodes
             if i > 0:
                 painter.drawLine(self.points[i-1], self.points[i])
 
-        # Замыкаем четырехугольник
+        # Close the quadrilateral
         if len(self.points) == 4:
             painter.drawLine(self.points[3], self.points[0])
-            # Можно закрасить область полупрозрачным цветом
+            # Fill the area with a semi-transparent color
             painter.setBrush(QColor(255, 255, 255, 30))
             painter.drawPolygon(QPolygon(self.points))
 

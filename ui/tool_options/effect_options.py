@@ -20,7 +20,7 @@ class EffectOptions(BaseOptions):
         super().__init__(parent)
         self.layout.setSpacing(14)
 
-        # --- Размер ---
+        # --- Size ---
         sl_size = _hslider(4, 200, 20)
         sp_size = QSpinBox()
         sp_size.setRange(4, 200)
@@ -33,7 +33,7 @@ class EffectOptions(BaseOptions):
         self.layout.addWidget(sl_size)
         self.layout.addWidget(sp_size)
 
-        # --- Жёсткость (опционально) ---
+        # --- Hardness (optional) ---
         if show_hardness:
             sl_hard = _hslider(0, 100, 100)
             sp_hard = QSpinBox()
@@ -48,7 +48,7 @@ class EffectOptions(BaseOptions):
             self.layout.addWidget(sl_hard)
             self.layout.addWidget(sp_hard)
 
-        # --- Сила эффекта ---
+        # --- Effect strength ---
         sl_str = _hslider(1, 100, 50)
         sp_str = QSpinBox()
         sp_str.setRange(1, 100)

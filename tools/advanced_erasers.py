@@ -30,9 +30,9 @@ class MagicEraserTool(BaseTool):
 
         target_pixel = img.pixel(sx, sy)
         if qAlpha(target_pixel) == 0:
-            return  # Кликнули по пустой области
+            return  # Clicked on empty area
 
-        # Подготавливаем цвета для быстрого сравнения
+        # Prepare colors for fast comparison
         tr, tg, tb = qRed(target_pixel), qGreen(target_pixel), qBlue(target_pixel)
 
         tolerance_pct = opts.get("fill_tolerance", 32)
@@ -40,14 +40,14 @@ class MagicEraserTool(BaseTool):
         tolerance_sq = (tolerance_pct / 100.0)**2 * max_dist_sq
         contiguous = bool(opts.get("fill_contiguous", True))
 
-        # --- NUMPY ОПТИМИЗАЦИЯ ---
+        # --- NUMPY OPTIMIZATION ---
         import ctypes
         bpl = img.bytesPerLine()
         arr_full = np.empty((h, bpl // 4, 4), dtype=np.uint8)
         ctypes.memmove(arr_full.ctypes.data, int(img.constBits()), img.sizeInBytes())
         arr = arr_full[:, :w, :]
 
-        # Векторно считаем маску совпадения цвета
+        # Vectorized color matching mask computation
         B = arr[..., 0].astype(np.int32)
         G = arr[..., 1].astype(np.int32)
         R = arr[..., 2].astype(np.int32)
@@ -60,7 +60,7 @@ class MagicEraserTool(BaseTool):
             return
 
         if contiguous:
-            # Быстрый Flood Fill по логической маске вместо медленного img.pixel()
+            # Fast Flood Fill over boolean mask instead of slow img.pixel()
             visited = np.zeros((h, w), dtype=bool)
             stack = [(sy, sx)]
             visited[sy, sx] = True
@@ -77,7 +77,7 @@ class MagicEraserTool(BaseTool):
             visited = color_mask.copy()
             visited[sy, sx] = True
 
-        # Мгновенно очищаем все найденные пиксели махом
+        # Instantly clear all found pixels in one sweep
         arr[visited] = 0
         ctypes.memmove(int(img.bits()), arr_full.ctypes.data, img.sizeInBytes())
 
@@ -145,7 +145,7 @@ class BackgroundEraserTool(BaseTool):
         if dist < spacing:
             return
 
-        # Интерполяция для резких рывков мыши
+        # Interpolation for sharp mouse jumps
         steps = int(dist / spacing)
         if steps > 1:
             step_dx = dx / steps
@@ -185,7 +185,7 @@ class BackgroundEraserTool(BaseTool):
         sg = (sc >> 8) & 0xFF
         sb = sc & 0xFF
 
-        # --- NUMPY МАГИЯ НАЧИНАЕТСЯ ЗДЕСЬ ---
+        # --- NUMPY MAGIC STARTS HERE ---
         import ctypes
         bpl = img.bytesPerLine()
         arr_full = np.empty((h, bpl // 4, 4), dtype=np.uint8)
