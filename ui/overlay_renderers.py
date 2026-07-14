@@ -20,7 +20,7 @@ def draw_grid(painter, *, doc, pan, zoom):
     painter.save()
     painter.translate(pan)
     painter.scale(zoom, zoom)
-    painter.setPen(QPen(QColor(128, 128, 128, 100), max(1.0, 1.0 / zoom), Qt.PenStyle.DotLine))
+    painter.setPen(QPen(QColor(128, 128, 128, 100), 1.0 / zoom, Qt.PenStyle.DotLine))
     gs = max(5, getattr(doc, "grid_size", 50))
     for x in range(0, doc.width, gs):
         painter.drawLine(QPointF(x, 0), QPointF(x, doc.height))
@@ -35,7 +35,7 @@ def draw_guides(painter, *, doc, pan, zoom, dragging_guide):
     painter.save()
     painter.translate(pan)
     painter.scale(zoom, zoom)
-    pw = max(1.0, 1.0 / zoom)
+    pw = 1.0 / zoom
     painter.setPen(QPen(QColor(0, 255, 255, 200), pw))
     for gx in getattr(doc, "guides_v", []):
         painter.drawLine(QPointF(gx, -10000), QPointF(gx, 10000))
@@ -60,7 +60,7 @@ def draw_slices(painter, *, doc, pan, zoom):
     painter.save()
     painter.translate(pan)
     painter.scale(zoom, zoom)
-    pw = max(1.0, 1.0 / zoom)
+    pw = 1.0 / zoom
     painter.setPen(QPen(QColor(0, 150, 255, 200), pw))
     font = painter.font()
     font.setPointSizeF(max(8.0, 10.0 / zoom))
@@ -86,7 +86,7 @@ def draw_symmetry_axes(painter, *, doc, pan, zoom, tool_opts, tool_name, brush_t
     painter.save()
     painter.translate(pan)
     painter.scale(zoom, zoom)
-    pw = max(1.0, 1.0 / zoom)
+    pw = 1.0 / zoom
     pen1 = QPen(QColor(0, 0, 0, 100), pw * 3)
     pen2 = QPen(QColor(100, 200, 255, 180), pw)
     pen2.setStyle(Qt.PenStyle.DashLine)
@@ -114,7 +114,7 @@ def draw_selection(painter, *, doc, pan, zoom, march_offset):
     painter.save()
     painter.translate(pan)
     painter.scale(zoom, zoom)
-    pw = max(1.0, 1.0 / zoom)
+    pw = 1.0 / zoom
     painter.setBrush(Qt.BrushStyle.NoBrush)
     pen = QPen(QColor(0, 0, 0, 160), pw * 1.5)
     pen.setStyle(Qt.PenStyle.DashLine)
@@ -137,7 +137,7 @@ def draw_subtract_drag(painter, *, active_tool, pan, zoom, SelectTool):
                 painter.save()
                 painter.translate(pan)
                 painter.scale(zoom, zoom)
-                pw = max(1.0, 1.0 / zoom)
+                pw = 1.0 / zoom
                 pen = QPen(QColor(220, 60, 60), pw)
                 pen.setStyle(Qt.PenStyle.DashLine)
                 painter.setPen(pen)
@@ -153,7 +153,7 @@ def draw_subtract_drag(painter, *, active_tool, pan, zoom, SelectTool):
                 painter.save()
                 painter.translate(pan)
                 painter.scale(zoom, zoom)
-                pw = max(1.0, 1.0 / zoom)
+                pw = 1.0 / zoom
                 pen = QPen(QColor(220, 60, 60), pw)
                 pen.setStyle(Qt.PenStyle.DashLine)
                 painter.setPen(pen)
@@ -175,7 +175,7 @@ def draw_lasso_preview(painter, *, active_tool, pan, zoom, is_mouse_in):
         painter.translate(pan)
         painter.scale(zoom, zoom)
         painter.setRenderHint(QPainter.RenderHint.Antialiasing)
-        pw = max(1.0, 1.0 / zoom)
+        pw = 1.0 / zoom
         pen1 = QPen(QColor(0, 0, 0), pw)
         pen2 = QPen(QColor(255, 255, 255), pw)
         pen2.setStyle(Qt.PenStyle.DashLine)
@@ -272,7 +272,7 @@ def draw_crop_preview(painter, *, active_tool, tool_opts, pan, zoom, doc, CropTo
 
         overlay = tool_opts.get("crop_overlay", "thirds")
         if overlay != "none":
-            painter.setPen(QPen(QColor(255, 255, 255, 150), max(1.0, 1.0 / zoom), Qt.PenStyle.DashLine))
+            painter.setPen(QPen(QColor(255, 255, 255, 150), 1.0 / zoom, Qt.PenStyle.DashLine))
             w, h = cr.width(), cr.height()
             if overlay == "thirds":
                 painter.drawLine(QPointF(cr.left(), cr.top() + h / 3), QPointF(cr.right(), cr.top() + h / 3))
@@ -288,7 +288,7 @@ def draw_crop_preview(painter, *, active_tool, tool_opts, pan, zoom, doc, CropTo
                 painter.drawLine(cr.topRight(), cr.bottomLeft())
 
         painter.setBrush(QColor(255, 255, 255))
-        pw = max(1.0, 1.0 / zoom)
+        pw = 1.0 / zoom
         painter.setPen(QPen(QColor(0, 0, 0), pw))
         s = 3 * pw
         pts = [cr.topLeft(), QPointF(cr.center().x(), cr.top()), cr.topRight(),
@@ -324,7 +324,7 @@ def draw_perspective_crop(painter, *, active_tool, tool_opts, pan, zoom, doc, Pe
 
             overlay = tool_opts.get("crop_overlay", "thirds")
             if overlay != "none" and len(quad) == 4:
-                painter.setPen(QPen(QColor(255, 255, 255, 150), max(1.0, 1.0 / zoom), Qt.PenStyle.DashLine))
+                painter.setPen(QPen(QColor(255, 255, 255, 150), 1.0 / zoom, Qt.PenStyle.DashLine))
                 pts = [QPointF(quad[i]) for i in range(4)]
                 p0, p1, p2, p3 = pts
 
@@ -434,7 +434,7 @@ def draw_gradient_preview(painter, *, active_tool, pan, zoom, GradientTool):
         painter.save()
         painter.translate(pan)
         painter.scale(zoom, zoom)
-        pw = max(1.0, 1.0 / zoom)
+        pw = 1.0 / zoom
         pen = QPen(QColor(255, 255, 255, 200), pw * 1.5)
         pen.setStyle(Qt.PenStyle.DashLine)
         painter.setPen(pen)
@@ -474,7 +474,7 @@ def draw_clone_stamp(painter, *, active_tool, pan, zoom):
     painter.save()
     painter.translate(pan)
     painter.scale(zoom, zoom)
-    pw = max(1.0, 1.0 / zoom)
+    pw = 1.0 / zoom
     pen1 = QPen(QColor(0, 0, 0, 180), pw * 3)
     pen2 = QPen(QColor(255, 255, 255, 220), pw)
     r = 6 * pw
@@ -497,7 +497,7 @@ def draw_measurements(painter, *, active_tool, pan, zoom, composite_cache, to_wi
         painter.save()
         painter.translate(pan)
         painter.scale(zoom, zoom)
-        pw = max(1.0, 1.0 / zoom)
+        pw = 1.0 / zoom
         for pt in active_tool.markers:
             painter.setPen(QPen(QColor(0, 0, 0, 180), pw * 3))
             painter.drawLine(QPointF(pt.x() - 6 * pw, pt.y()), QPointF(pt.x() + 6 * pw, pt.y()))
@@ -527,7 +527,7 @@ def draw_measurements(painter, *, active_tool, pan, zoom, composite_cache, to_wi
             painter.save()
             painter.translate(pan)
             painter.scale(zoom, zoom)
-            pw = max(1.0, 1.0 / zoom)
+            pw = 1.0 / zoom
             for p1, p2 in lines:
                 painter.setPen(QPen(QColor(0, 0, 0, 180), pw * 3))
                 painter.drawLine(p1, p2)

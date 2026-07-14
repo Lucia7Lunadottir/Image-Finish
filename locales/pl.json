@@ -1006,5 +1006,6 @@
   "menu.theme_custom": "Własny",
   "menu.theme_configure": "Skonfiguruj własny…",
   "dlg.theme_main_color": "Główny kolor motywu",
-  "dlg.theme_base_question": "Budować na ciemnej bazie?\n(Nie = jasna baza)"
+  "dlg.theme_base_question": "Budować na ciemnej bazie?\n(Nie = jasna baza)",
+  "status.theme_applied": "Motyw zastosowany"
 }

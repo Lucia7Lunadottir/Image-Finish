@@ -1015,5 +1015,6 @@
   "menu.theme_custom": "Custom",
   "menu.theme_configure": "Configure Custom…",
   "dlg.theme_main_color": "Main theme color",
-  "dlg.theme_base_question": "Build on a dark base?\n(No = light base)"
+  "dlg.theme_base_question": "Build on a dark base?\n(No = light base)",
+  "status.theme_applied": "Theme applied"
 }

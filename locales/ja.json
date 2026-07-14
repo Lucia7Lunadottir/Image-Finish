@@ -1006,5 +1006,6 @@
   "menu.theme_custom": "カスタム",
   "menu.theme_configure": "カスタムを設定…",
   "dlg.theme_main_color": "テーマのメインカラー",
-  "dlg.theme_base_question": "ダークベースで作成しますか？\n(いいえ = ライトベース)"
+  "dlg.theme_base_question": "ダークベースで作成しますか？\n(いいえ = ライトベース)",
+  "status.theme_applied": "テーマを適用しました"
 }

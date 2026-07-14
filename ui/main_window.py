@@ -361,10 +361,13 @@ class MainWindow(QMainWindow,
         if app is not None:
             app.setStyleSheet(theme.build_stylesheet())
         self.setStyleSheet(theme.build_stylesheet())
+        theme.repolish_all()
         self._toolbar.retheme()
-        if self._canvas:
-            self._canvas.update()
-        self._status.showMessage(tr("status.theme_restart"), 6000)
+        self._refresh_layers()
+        self._refresh_secondary_panels()
+        for i in range(self._doc_tabs.count()):
+            self._doc_tabs.widget(i).update()
+        self._status.showMessage(tr("status.theme_applied"), 4000)
 
     def _set_language(self, code: str):
         if code == locale_current():
@@ -482,6 +485,7 @@ class MainWindow(QMainWindow,
         canvas.document_changed.connect(self._on_doc_changed)
         canvas.pixels_changed.connect(self._on_pixels_changed)
         canvas.pixels_changed.connect(lambda: setattr(canvas, "is_modified", True))
+        canvas.view_changed.connect(self._update_status)
         canvas.color_picked.connect(self._color_panel.set_fg)
         canvas.tool_state_changed.connect(self._opts_bar.update_tool_state)
         if hasattr(self, "_info_panel"):

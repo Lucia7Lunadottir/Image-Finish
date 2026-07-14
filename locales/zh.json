@@ -1006,5 +1006,6 @@
   "menu.theme_custom": "自定义",
   "menu.theme_configure": "配置自定义…",
   "dlg.theme_main_color": "主题主色",
-  "dlg.theme_base_question": "以深色为基础？\n（否 = 浅色基础）"
+  "dlg.theme_base_question": "以深色为基础？\n（否 = 浅色基础）",
+  "status.theme_applied": "主题已应用"
 }

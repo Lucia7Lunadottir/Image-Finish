@@ -94,6 +94,7 @@ class CanvasWidget(QWidget):
     color_picked     = pyqtSignal(QColor)
     tool_state_changed = pyqtSignal(object)
     cursor_info      = pyqtSignal(int, int, QColor)  # doc x, doc y, pixel color
+    view_changed     = pyqtSignal()  # zoom/pan changed (status bar, navigator)
 
     def __init__(self, parent=None):
         super().__init__(parent)
@@ -319,6 +320,7 @@ class CanvasWidget(QWidget):
         )
         self.zoom = new_zoom
         self.update()
+        self.view_changed.emit()
 
     def _draw_rulers(self, painter: QPainter):
         R = 20

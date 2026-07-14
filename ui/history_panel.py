@@ -72,7 +72,10 @@ class HistoryPanel(QWidget):
         self._list.blockSignals(True)
         self._list.clear()
 
-        history = canvas.history
+        history = getattr(canvas, "history", None)
+        if history is None:
+            self._list.blockSignals(False)
+            return
         undo_stack = history._undo_stack   # oldest … newest
         redo_stack = history._redo_stack   # newest … oldest (redo pops from end)
 

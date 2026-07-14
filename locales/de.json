@@ -1006,5 +1006,6 @@
   "menu.theme_custom": "Benutzerdefiniert",
   "menu.theme_configure": "Benutzerdefiniert einrichten…",
   "dlg.theme_main_color": "Hauptfarbe des Designs",
-  "dlg.theme_base_question": "Auf dunkler Basis aufbauen?\n(Nein = helle Basis)"
+  "dlg.theme_base_question": "Auf dunkler Basis aufbauen?\n(Nein = helle Basis)",
+  "status.theme_applied": "Design angewendet"
 }

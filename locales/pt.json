@@ -1006,5 +1006,6 @@
   "menu.theme_custom": "Personalizado",
   "menu.theme_configure": "Configurar personalizado…",
   "dlg.theme_main_color": "Cor principal do tema",
-  "dlg.theme_base_question": "Construir sobre base escura?\n(Não = base clara)"
+  "dlg.theme_base_question": "Construir sobre base escura?\n(Não = base clara)",
+  "status.theme_applied": "Tema aplicado"
 }

@@ -1006,5 +1006,6 @@
   "menu.theme_custom": "Власна",
   "menu.theme_configure": "Налаштувати власну…",
   "dlg.theme_main_color": "Головний колір теми",
-  "dlg.theme_base_question": "Будувати на темній основі?\n(Ні — світла основа)"
+  "dlg.theme_base_question": "Будувати на темній основі?\n(Ні — світла основа)",
+  "status.theme_applied": "Тему застосовано"
 }

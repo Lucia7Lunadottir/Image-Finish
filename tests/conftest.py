@@ -1,8 +1,19 @@
 import os
 import sys
+import tempfile
 
 os.environ.setdefault("QT_QPA_PLATFORM", "offscreen")
 sys.path.insert(0, os.path.dirname(os.path.dirname(os.path.abspath(__file__))))
+
+# Redirect QSettings to a throwaway directory BEFORE any app module is
+# imported (ui.theme reads settings at import time). Menu fuzzing clicks
+# real actions — without this it overwrites the user's saved theme,
+# recent files and workspace layout.
+from PyQt6.QtCore import QSettings  # noqa: E402
+
+_SETTINGS_DIR = tempfile.mkdtemp(prefix="imagefinish-test-settings-")
+for fmt in (QSettings.Format.NativeFormat, QSettings.Format.IniFormat):
+    QSettings.setPath(fmt, QSettings.Scope.UserScope, _SETTINGS_DIR)
 
 import pytest
 from PyQt6.QtWidgets import QApplication
