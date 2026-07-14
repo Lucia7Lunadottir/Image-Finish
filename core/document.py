@@ -227,11 +227,68 @@ class Document:
     def invalidate_composite(self):
         self._composite_cache_doc = None
 
-    def get_composite(self) -> QImage:
+    def _composite_eligible_for_partial(self) -> bool:
+        """Whether a sub-rect re-render can be safely blitted into the
+        existing cache instead of recomposing the whole canvas.
+
+        Adjustment layers, artboards and clipping groups all rely on
+        canvas-sized numpy buffers (built with self.width/self.height, not
+        rect-relative math) inside the render loop below; those branches
+        are only ever exercised on a full-canvas rect. Excluding documents
+        that use them keeps that invariant true without having to rewrite
+        that arithmetic to be rect-relative.
+
+        Layer styles (shadow/glow/bevel) are excluded too: they can paint
+        pixels well outside the rect that changed on the *source* layer
+        (e.g. a drop shadow offset away from the stroke), and the caller
+        supplying dirty_rect has no general way to know how far a given
+        style spreads. Restricting to documents with no styles anywhere
+        keeps that safe regardless of which caller passes dirty_rect,
+        rather than relying on every caller to reason about style spread.
+        """
+        if getattr(self, "quick_mask_layer", None) is not None:
+            return False
+        for layer in self.layers:
+            lt = getattr(layer, "layer_type", "raster")
+            if lt in ("adjustment", "artboard"):
+                return False
+            if getattr(layer, "clipping", False):
+                return False
+            if getattr(layer, "layer_styles", None):
+                return False
+        return True
+
+    def get_composite(self, dirty_rect: QRect | None = None) -> QImage:
         cached = getattr(self, "_composite_cache_doc", None)
+
+        if (dirty_rect is not None and cached is not None
+                and cached.width() == self.width and cached.height() == self.height
+                and self._composite_eligible_for_partial()):
+            region = dirty_rect.intersected(QRect(0, 0, self.width, self.height))
+            if region.isEmpty():
+                return cached
+            patch = self._render_composite(region)
+            p = QPainter(cached)
+            p.setCompositionMode(QPainter.CompositionMode.CompositionMode_Source)
+            p.drawImage(region.topLeft(), patch)
+            p.end()
+            return cached
+
         if cached is not None:
             return cached
 
+        result = self._render_composite(QRect(0, 0, self.width, self.height))
+        self._composite_cache_doc = result
+        return result
+
+    def _render_composite(self, rect: QRect) -> QImage:
+        """Render layers restricted to `rect` (document coordinates).
+
+        Only ever called with a non-full-canvas rect for documents that
+        passed `_composite_eligible_for_partial()` — i.e. no adjustment
+        layers, artboards, or clipping, so the self.width/self.height-sized
+        numpy buffers further down never execute off a partial rect.
+        """
         # Fast path: single visible raster layer, full opacity, no masks/styles
         visible = [l for l in self.layers if l.visible]
         if len(visible) == 1:
@@ -246,13 +303,13 @@ class Document:
                     and getattr(self, "quick_mask_layer", None) is None
                     and l.offset.x() == 0 and l.offset.y() == 0
                     and l.image.width() == self.width and l.image.height() == self.height):
-                self._composite_cache_doc = l.image.copy()
-                return self._composite_cache_doc
+                return l.image.copy(rect)
 
-        result = QImage(self.width, self.height, QImage.Format.Format_ARGB32_Premultiplied)
+        result = QImage(rect.width(), rect.height(), QImage.Format.Format_ARGB32_Premultiplied)
         result.fill(Qt.GlobalColor.transparent)
 
         painter = QPainter(result)
+        painter.translate(-rect.topLeft())
 
         children_map = {}
         for layer in self.layers:
@@ -616,8 +673,7 @@ class Document:
             
             del arr
             del ptr
-            
-        self._composite_cache_doc = result
+
         return result
 
     # ----------------------------------------------------------------- History

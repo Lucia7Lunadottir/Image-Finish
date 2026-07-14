@@ -1,3 +1,5 @@
+from PyQt6.QtCore import QSettings
+from PyQt6.QtGui import QAction
 from PyQt6.QtWidgets import QFileDialog, QMessageBox
 from core.document import Document
 from core.locale import tr
@@ -136,3 +138,62 @@ class FileActionsMixin:
         c = self._canvas
         if c:
             c.is_modified = False
+
+    # ── Recent files ──────────────────────────────────────────────────────
+
+    def _load_recent_files(self):
+        settings = QSettings("ImageFinish", "RecentFiles")
+        self._recent_files = settings.value("recent", [])
+        if not isinstance(self._recent_files, list):
+            self._recent_files = []
+
+    def _save_recent_files(self):
+        settings = QSettings("ImageFinish", "RecentFiles")
+        settings.setValue("recent", self._recent_files)
+
+    def _add_recent_file(self, path):
+        if path in self._recent_files:
+            self._recent_files.remove(path)
+        self._recent_files.insert(0, path)
+        if len(self._recent_files) > 30:
+            self._recent_files = self._recent_files[:30]
+        self._save_recent_files()
+        self._update_recent_menu()
+        if hasattr(self, "_welcome_panel"):
+            self._welcome_panel.refresh_recent(self._recent_files)
+
+    def _remove_recent_file(self, path):
+        if path in self._recent_files:
+            self._recent_files.remove(path)
+            self._save_recent_files()
+            self._update_recent_menu()
+
+    def _update_recent_menu(self):
+        if not hasattr(self, "_recent_menu"): return
+        self._recent_menu.clear()
+        if not self._recent_files:
+            act = QAction(tr("menu.no_recent"), self)
+            act.setEnabled(False)
+            self._recent_menu.addAction(act)
+        else:
+            for path in self._recent_files:
+                act = QAction(path, self)
+                act.triggered.connect(lambda checked, p=path: self._open_recent(p))
+                self._recent_menu.addAction(act)
+            self._recent_menu.addSeparator()
+            clear_act = QAction(tr("menu.clear_recent"), self)
+            clear_act.triggered.connect(self._clear_recent)
+            self._recent_menu.addAction(clear_act)
+
+    def _clear_recent(self):
+        self._recent_files.clear()
+        self._save_recent_files()
+        self._update_recent_menu()
+
+    def _open_recent(self, path):
+        import os
+        if not os.path.exists(path):
+            QMessageBox.warning(self, tr("err.title.error"), tr("err.could_not_open").format(path=path))
+            self._remove_recent_file(path)
+            return
+        self._open_file_path(path)

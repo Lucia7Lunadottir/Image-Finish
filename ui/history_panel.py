@@ -11,8 +11,8 @@ def ITEM_STYLE():
     return (
     f"QListWidget{{background:{theme.BASE};border:none;color:{theme.TEXT};}}"
                   "QListWidget::item{padding:4px 8px;}"
-                  f"QListWidget::item:selected{{background:{theme.SURFACE0};color:#cba6f7;}}"
-                  "QListWidget::item:hover{background:#282838;}"
+                  f"QListWidget::item:selected{{background:{theme.SURFACE0};color:{theme.ACCENT};}}"
+                  f"QListWidget::item:hover{{background:{theme.SURFACE1};}}"
     )
 def LABEL_STYLE():
     return (f"color:{theme.SUBTEXT};font-size:11px;")
@@ -95,7 +95,7 @@ class HistoryPanel(QWidget):
         font = QFont()
         font.setBold(True)
         cur_item.setFont(font)
-        cur_item.setForeground(QColor("#cba6f7"))
+        cur_item.setForeground(QColor(theme.ACCENT))
         # Make it non-interactive as a selection target by setting flags
         cur_item.setFlags(cur_item.flags() & ~Qt.ItemFlag.ItemIsSelectable)
         self._list.addItem(cur_item)

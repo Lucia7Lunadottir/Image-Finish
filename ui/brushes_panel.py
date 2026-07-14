@@ -54,7 +54,7 @@ class _BrushThumb(QLabel):
     clicked = pyqtSignal(str)   # emits brush mask value or file path
 
     _BORDER_NORMAL   = f"border:2px solid transparent;background:{theme.MANTLE};"
-    _BORDER_SELECTED = f"border:2px solid #cba6f7;background:{theme.MANTLE};"
+    _BORDER_SELECTED = f"border:2px solid {theme.ACCENT};background:{theme.MANTLE};"
 
     def __init__(self, pixmap: QPixmap, mask_value: str, tooltip: str, parent=None):
         super().__init__(parent)

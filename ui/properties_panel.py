@@ -32,14 +32,14 @@ def SPIN_STYLE():
     f"QSpinBox{{background:{theme.SURFACE0};color:{theme.TEXT};border:none;"
                     "padding:2px 4px;border-radius:3px;font-size:11px;}"
                     "QSpinBox::up-button,QSpinBox::down-button{width:14px;}"
-                    "QSpinBox:focus{border:1px solid #cba6f7;}"
+                    f"QSpinBox:focus{{border:1px solid {theme.ACCENT};}}"
     )
 def ALIGN_BTN():
     return (
     f"QPushButton{{background:{theme.SURFACE0};color:{theme.TEXT};border:none;"
                     "border-radius:3px;font-size:11px;padding:3px;}"
                     f"QPushButton:hover{{background:{theme.SURFACE1};}}"
-                    f"QPushButton:pressed{{background:#cba6f7;color:{theme.BASE};}}"
+                    f"QPushButton:pressed{{background:{theme.ACCENT};color:{theme.BASE};}}"
     )
 def SEP_STYLE():
     return (f"background:{theme.SURFACE0};max-height:1px;")

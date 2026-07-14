@@ -203,6 +203,16 @@ class CanvasWidget(QWidget):
         self._check_marching_ants()
         self.update()
 
+    def _recompute_composite(self):
+        """Recompute the document composite, incrementally when the active
+        tool can report the document-space rect it actually touched."""
+        dirty = self.active_tool.get_dirty_rect() if self.active_tool else None
+        if dirty is not None:
+            self._composite_cache = self.document.get_composite(dirty_rect=dirty)
+        else:
+            self.document.invalidate_composite()
+            self._composite_cache = self.document.get_composite()
+
     def _check_marching_ants(self):
         has_sel = (self.document and self.document.selection
                    and not self.document.selection.isEmpty()
@@ -461,8 +471,7 @@ class CanvasWidget(QWidget):
             if self._in_effect_stroke and self._effect_bg_cache is not None:
                 self._composite_cache = self._effect_bg_cache
             else:
-                self.document.invalidate_composite()
-                self._composite_cache = self.document.get_composite()
+                self._recompute_composite()
             self._cache_dirty = False
             self._display_cache = None
             
@@ -942,8 +951,7 @@ class CanvasWidget(QWidget):
                 self._in_effect_stroke = False
                 self._effect_bg_cache = None
                 # Eager composite so paintEvent is instant
-                self.document.invalidate_composite()
-                self._composite_cache = self.document.get_composite()
+                self._recompute_composite()
                 self._cache_dirty = False
                 self._display_cache = None
                 self._check_marching_ants()
@@ -1099,9 +1107,10 @@ class CanvasWidget(QWidget):
                 self._effect_bg_cache = None
 
                 # Eagerly recompute the composite now (stroke already applied to
-                # the layer in on_release above).  This keeps paintEvent cheap.
-                self.document.invalidate_composite()
-                self._composite_cache = self.document.get_composite()
+                # the layer in on_release above). This keeps paintEvent cheap,
+                # and if the tool can report the touched rect, only that rect
+                # is blitted into the existing cache instead of a full redraw.
+                self._recompute_composite()
                 self._cache_dirty = False
                 self._display_cache = None
 

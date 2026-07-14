@@ -20,7 +20,7 @@ def TOGGLE_BTN_STYLE():
     return (
     f"QPushButton{{background:{theme.SURFACE0};color:{theme.TEXT};border:none;padding:4px 8px;"
                         "border-radius:4px;font-weight:bold;}"
-                        f"QPushButton:checked{{background:#cba6f7;color:{theme.BASE};}}"
+                        f"QPushButton:checked{{background:{theme.ACCENT};color:{theme.BASE};}}"
                         f"QPushButton:hover{{background:{theme.SURFACE1};}}"
     )
 def HEADER_STYLE():

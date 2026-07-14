@@ -10,8 +10,8 @@ def ITEM_STYLE():
     return (
     f"QListWidget{{background:{theme.BASE};border:none;color:{theme.TEXT};}}"
                   "QListWidget::item{padding:4px 8px;}"
-                  f"QListWidget::item:selected{{background:{theme.SURFACE0};color:#cba6f7;}}"
-                  "QListWidget::item:hover{background:#282838;}"
+                  f"QListWidget::item:selected{{background:{theme.SURFACE0};color:{theme.ACCENT};}}"
+                  f"QListWidget::item:hover{{background:{theme.SURFACE1};}}"
     )
 def BTN_STYLE():
     return (

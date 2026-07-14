@@ -1,4 +1,5 @@
 from core.locale import tr
+from ui.document_controller import require_document
 
 
 class FilterActionsMixin:
@@ -92,3 +93,169 @@ class FilterActionsMixin:
         from core.filters.blur_filters import LensBlurDialog
         self._push_history(tr("history.before_lens"), modified_index=self._document.active_layer_index)
         LensBlurDialog(layer, self._canvas_refresh, self).exec()
+
+    # ── Galleries (Blur/Specific/Render/Sharpen/Stylize/Other/Pixelate/Noise/Distort) ──
+
+    @require_document
+    def _open_blur_gallery(self, mode: str):
+        layer = self._document.get_active_layer()
+        if not layer or layer.image.isNull() or getattr(layer, "layer_type", "raster") not in ("raster", "smart_object"):
+            return
+
+        pre_state = self._make_history_state(tr("menu.blur_gallery") + f" ({mode})", modified_index=self._document.active_layer_index)
+
+        from ui.blur_gallery_dialog import BlurGalleryDialog
+        dlg = BlurGalleryDialog(layer, mode, self._canvas_refresh, self)
+        if dlg.exec():
+            self._history.push(pre_state)
+            self._canvas_refresh()
+            self._refresh_layers()
+        else:
+            self._canvas_refresh()
+
+    def _blur_field(self): self._open_blur_gallery("field")
+    def _blur_iris(self): self._open_blur_gallery("iris")
+    def _blur_tilt_shift(self): self._open_blur_gallery("tilt_shift")
+    def _blur_path(self): self._open_blur_gallery("path")
+    def _blur_spin(self): self._open_blur_gallery("spin")
+
+    @require_document
+    def _open_specific_filter(self, mode: str):
+        layer = self._document.get_active_layer()
+        if not layer or layer.image.isNull() or getattr(layer, "layer_type", "raster") not in ("raster", "smart_object"):
+            return
+
+        pre_state = self._make_history_state(tr(f"menu.filter.{mode}").replace('…', ''), modified_index=self._document.active_layer_index)
+
+        from ui.specific_filters_dialog import SpecificFiltersDialog
+        dlg = SpecificFiltersDialog(layer, mode, self._canvas_refresh, self)
+        if dlg.exec():
+            self._history.push(pre_state)
+            self._canvas_refresh()
+            self._refresh_layers()
+        else:
+            self._canvas_refresh()
+
+    @require_document
+    def _open_render(self, mode: str):
+        layer = self._document.get_active_layer()
+        if not layer or layer.image.isNull() or getattr(layer, "layer_type", "raster") not in ("raster", "smart_object"):
+            return
+
+        pre_state = self._make_history_state(tr(f"menu.render.{mode}").replace('…', ''), modified_index=self._document.active_layer_index)
+
+        from ui.render_dialog import RenderDialog
+        dlg = RenderDialog(layer, mode, self._canvas_refresh, self)
+        if dlg.exec():
+            self._history.push(pre_state)
+            self._canvas_refresh()
+            self._refresh_layers()
+        else:
+            self._canvas_refresh()
+
+    @require_document
+    def _open_sharpen(self, mode: str):
+        layer = self._document.get_active_layer()
+        if not layer or layer.image.isNull() or getattr(layer, "layer_type", "raster") not in ("raster", "smart_object"):
+            return
+
+        pre_state = self._make_history_state(tr(f"menu.sharpen.{mode}").replace('…', ''), modified_index=self._document.active_layer_index)
+
+        from ui.sharpen_dialog import SharpenDialog
+        dlg = SharpenDialog(layer, mode, self._canvas_refresh, self)
+        if dlg.exec():
+            self._history.push(pre_state)
+            self._canvas_refresh()
+            self._refresh_layers()
+        else:
+            self._canvas_refresh()
+
+    @require_document
+    def _open_stylize(self, mode: str):
+        layer = self._document.get_active_layer()
+        if not layer or layer.image.isNull() or getattr(layer, "layer_type", "raster") not in ("raster", "smart_object"):
+            return
+
+        pre_state = self._make_history_state(tr(f"menu.stylize.{mode}").replace('…', ''), modified_index=self._document.active_layer_index)
+
+        from ui.stylize_dialog import StylizeDialog
+        dlg = StylizeDialog(layer, mode, self._canvas_refresh, self)
+        if dlg.exec():
+            self._history.push(pre_state)
+            self._canvas_refresh()
+            self._refresh_layers()
+        else:
+            self._canvas_refresh()
+
+    @require_document
+    def _open_other(self, mode: str):
+        layer = self._document.get_active_layer()
+        if not layer or layer.image.isNull() or getattr(layer, "layer_type", "raster") not in ("raster", "smart_object"):
+            return
+
+        pre_state = self._make_history_state(tr(f"menu.other.{mode}").replace('…', ''), modified_index=self._document.active_layer_index)
+
+        from ui.other_filters_dialog import OtherFiltersDialog
+        dlg = OtherFiltersDialog(layer, mode, self._canvas_refresh, self)
+        if dlg.exec():
+            self._history.push(pre_state)
+            self._canvas_refresh()
+            self._refresh_layers()
+        else:
+            self._canvas_refresh()
+
+    @require_document
+    def _open_pixelate(self, mode: str):
+        layer = self._document.get_active_layer()
+        if not layer or layer.image.isNull() or getattr(layer, "layer_type", "raster") not in ("raster", "smart_object"):
+            return
+
+        pre_state = self._make_history_state(tr(f"menu.pixelate.{mode}").replace('…', ''), modified_index=self._document.active_layer_index)
+
+        from ui.pixelate_dialog import PixelateDialog
+        dlg = PixelateDialog(layer, mode, self._canvas_refresh, self)
+        if dlg.exec():
+            self._history.push(pre_state)
+            self._canvas_refresh()
+            self._refresh_layers()
+        else:
+            self._canvas_refresh()
+
+    @require_document
+    def _open_noise(self, mode: str):
+        layer = self._document.get_active_layer()
+        if not layer or layer.image.isNull() or getattr(layer, "layer_type", "raster") not in ("raster", "smart_object"):
+            return
+
+        desc_key = "menu.noise.add"
+        if mode == "despeckle": desc_key = "menu.noise.despeckle"
+        elif mode == "dust_scratches": desc_key = "menu.noise.dust"
+        elif mode == "median": desc_key = "menu.noise.median"
+        elif mode == "reduce_noise": desc_key = "menu.noise.reduce"
+
+        pre_state = self._make_history_state(tr(desc_key).replace('…', ''), modified_index=self._document.active_layer_index)
+
+        from ui.noise_dialog import NoiseDialog
+        if NoiseDialog(layer, mode, self._canvas_refresh, self).exec():
+            self._history.push(pre_state)
+            self._canvas_refresh()
+            self._refresh_layers()
+        else:
+            self._canvas_refresh()
+
+    @require_document
+    def _open_distort(self, mode: str):
+        layer = self._document.get_active_layer()
+        if not layer or layer.image.isNull() or getattr(layer, "layer_type", "raster") not in ("raster", "smart_object"):
+            return
+
+        pre_state = self._make_history_state(tr(f"menu.distort.{mode}"), modified_index=self._document.active_layer_index)
+
+        from ui.distort_dialog import DistortDialog
+        dlg = DistortDialog(layer, mode, self._canvas_refresh, self)
+        if dlg.exec():
+            self._history.push(pre_state)
+            self._canvas_refresh()
+            self._refresh_layers()
+        else:
+            self._canvas_refresh()

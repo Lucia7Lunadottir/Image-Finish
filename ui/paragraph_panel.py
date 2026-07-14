@@ -23,7 +23,7 @@ def ALIGN_BTN_STYLE():
     return (
     f"QToolButton{{background:{theme.SURFACE0};color:{theme.TEXT};border:none;"
                        "padding:4px 10px;border-radius:4px;font-size:13px;font-weight:bold;}"
-                       f"QToolButton:checked{{background:#cba6f7;color:{theme.BASE};}}"
+                       f"QToolButton:checked{{background:{theme.ACCENT};color:{theme.BASE};}}"
                        f"QToolButton:hover:!checked{{background:{theme.SURFACE1};}}"
     )
 

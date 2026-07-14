@@ -34,7 +34,7 @@ def CELL_NORMAL_STYLE():
     )
 def CELL_HOVER_STYLE():
     return (
-    f"background:{theme.SURFACE0};color:#cba6f7;border:1px solid {theme.SURFACE1};"
+    f"background:{theme.SURFACE0};color:{theme.ACCENT};border:1px solid {theme.SURFACE1};"
                          "border-radius:2px;font-size:14px;"
     )
 def PREVIEW_STYLE():

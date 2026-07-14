@@ -34,6 +34,12 @@ class BaseTool(ABC):
         """Returns True if the tool should save a history snapshot on press."""
         return True
 
+    def get_dirty_rect(self):
+        """Document-space QRect touched since the stroke began, or None to
+        force a full recomposite (the safe default for tools that don't
+        track this)."""
+        return None
+
     def __repr__(self) -> str:
         return f"<Tool:{self.name}>"
 

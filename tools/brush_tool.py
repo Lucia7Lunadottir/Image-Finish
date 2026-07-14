@@ -102,6 +102,29 @@ class BrushTool(BaseTool):
         self._stroke_img: QImage | None = None
         self._stroke_opacity: float = 1.0
         self._stroke_clip = None  # QPainterPath | None
+        self._stroke_dirty_rect: QRect | None = None  # document-space, accumulated in _paint
+
+    def _track_dirty(self, cx: float, cy: float, size: float, margin: float = 2.0):
+        """Accumulate the document-space bounding box touched by a stamp.
+
+        Half-extent uses 0.75x size (not 0.5x) to cover rotated square/
+        scatter stamps, whose diagonal can exceed their own bounding box.
+        """
+        half = size * 0.75 + margin
+        r = QRect(int(cx - half), int(cy - half), int(2 * half) + 1, int(2 * half) + 1)
+        self._stroke_dirty_rect = r if self._stroke_dirty_rect is None else self._stroke_dirty_rect.united(r)
+
+    def get_dirty_rect(self) -> QRect | None:
+        """Document-space rect touched by the stroke so far, or None if the
+        active layer has styles that can spread changes beyond it (e.g. a
+        drop shadow, or an offset style with wrap/repeat) — in that case
+        the caller must fall back to a full recomposite."""
+        layer = self._stroke_layer
+        if self._stroke_dirty_rect is None or layer is None:
+            return None
+        if getattr(layer, "layer_styles", None):
+            return None
+        return QRect(self._stroke_dirty_rect)
 
     def on_press(self, pos, doc, fg, bg, opts):
         self._last_pos = pos
@@ -110,6 +133,7 @@ class BrushTool(BaseTool):
             return
         self._last_pressure = float(opts.get("_pressure", 1.0))
         self._stroke_layer = layer
+        self._stroke_dirty_rect = None
         self._colored_stamp_cache.clear()
 
         if getattr(layer, "editing_mask", False) and getattr(layer, "mask", None) is not None:
@@ -204,7 +228,10 @@ class BrushTool(BaseTool):
             del layer.active_stroke
 
         self._last_pos = None
-        self._stroke_layer = None
+        # _stroke_layer / _stroke_dirty_rect intentionally survive past
+        # release: the canvas calls get_dirty_rect() right after on_release
+        # to do an incremental recomposite. on_press() resets them for the
+        # next stroke.
         self._target_img = None
         self._stroke_img = None
         self._stroke_clip = None
@@ -365,6 +392,7 @@ class BrushTool(BaseTool):
             
             # dict.fromkeys removes duplicates (e.g. drawing directly on axis), preserving order
             for target_cx, target_cy in list(dict.fromkeys(centers)):
+                self._track_dirty(target_cx, target_cy, cur_size)
                 painter.save()
                 painter.translate(target_cx - layer.offset.x(), target_cy - layer.offset.y())
                 current_angle = random.uniform(0, 360) if angle_random else angle
@@ -439,7 +467,9 @@ class BrushTool(BaseTool):
         pen = QPen(c, size, Qt.PenStyle.SolidLine, Qt.PenCapStyle.RoundCap, Qt.PenJoinStyle.RoundJoin)
         painter.setPen(pen)
         for a, b in list(dict.fromkeys(pairs)):
-            painter.drawLine(QPoint(int(a[0] - layer.offset.x()), int(a[1] - layer.offset.y())), 
+            self._track_dirty(a[0], a[1], size)
+            self._track_dirty(b[0], b[1], size)
+            painter.drawLine(QPoint(int(a[0] - layer.offset.x()), int(a[1] - layer.offset.y())),
                              QPoint(int(b[0] - layer.offset.x()), int(b[1] - layer.offset.y())))
         painter.end()
 
@@ -573,9 +603,10 @@ class CloneStampTool(BrushTool):
             if mirror_y: centers_doc.extend([(c[0], 2 * sym_y - c[1]) for c in centers_doc])
             
             for target_doc_cx, target_doc_cy in list(dict.fromkeys(centers_doc)):
+                self._track_dirty(target_doc_cx, target_doc_cy, cur_size)
                 target_cx = target_doc_cx - layer.offset.x()
                 target_cy = target_doc_cy - layer.offset.y()
-                
+
                 orig_src_doc_cx = target_doc_cx - self._paint_offset.x()
                 orig_src_doc_cy = target_doc_cy - self._paint_offset.y()
                 src_cx = orig_src_doc_cx - self._source_offset.x()
@@ -760,6 +791,7 @@ class HistoryBrushTool(BrushTool):
             if mirror_y: centers_doc.extend([(c[0], 2 * sym_y - c[1]) for c in centers_doc])
             
             for target_doc_cx, target_doc_cy in list(dict.fromkeys(centers_doc)):
+                self._track_dirty(target_doc_cx, target_doc_cy, cur_size)
                 target_cx = target_doc_cx - layer.offset.x()
                 target_cy = target_doc_cy - layer.offset.y()
                 painter.save()
@@ -769,10 +801,10 @@ class HistoryBrushTool(BrushTool):
                     painter.setRenderHint(QPainter.RenderHint.SmoothPixmapTransform)
                     painter.rotate(current_angle)
                 painter.translate(-cur_size / 2.0, -cur_size / 2.0)
-                
+
                 patch = QImage(stamp.size(), QImage.Format.Format_ARGB32_Premultiplied)
                 patch.fill(Qt.GlobalColor.transparent)
-                
+
                 pp = QPainter(patch)
                 pp.drawImage(0, 0, stamp)
                 pp.setCompositionMode(QPainter.CompositionMode.CompositionMode_SourceIn)

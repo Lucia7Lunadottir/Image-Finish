@@ -64,6 +64,11 @@ class LayerNameEdit(QLineEdit):
         self.setReadOnly(True)
         self.setFocusPolicy(Qt.FocusPolicy.NoFocus)
         self.setCursor(Qt.CursorShape.ArrowCursor)
+        # QLineEdit's own built-in Copy/Select-All menu would otherwise eat
+        # the right-click here (and doesn't pick up the app's QSS the same
+        # way a normal QMenu does) — let it bubble up to the row's own
+        # themed context menu (Rename/Duplicate/...) instead.
+        self.setContextMenuPolicy(Qt.ContextMenuPolicy.NoContextMenu)
         self.editingFinished.connect(self.clearFocus)
 
     def mouseDoubleClickEvent(self, ev):
@@ -184,16 +189,16 @@ class LayerItem(QWidget):
             if is_active:
                 if getattr(layer, "editing_mask", False):
                     theme.apply_style(self.thumb_lbl, lambda: f"border: 1px solid {theme.SURFACE1}; background: white;")
-                    self.mask_lbl.setStyleSheet("border: 2px solid #cba6f7; background: white;")
+                    theme.apply_style(self.mask_lbl, lambda: f"border: 2px solid {theme.ACCENT}; background: white;")
                 else:
-                    self.thumb_lbl.setStyleSheet("border: 2px solid #cba6f7; background: white;")
+                    theme.apply_style(self.thumb_lbl, lambda: f"border: 2px solid {theme.ACCENT}; background: white;")
                     theme.apply_style(self.mask_lbl, lambda: f"border: 1px solid {theme.SURFACE1}; background: white;")
             else:
                 theme.apply_style(self.thumb_lbl, lambda: f"border: 1px solid {theme.SURFACE1}; background: white;")
                 theme.apply_style(self.mask_lbl, lambda: f"border: 1px solid {theme.SURFACE1}; background: white;")
         else:
             if is_active:
-                self.thumb_lbl.setStyleSheet("border: 2px solid #cba6f7; background: white;")
+                theme.apply_style(self.thumb_lbl, lambda: f"border: 2px solid {theme.ACCENT}; background: white;")
             else:
                 theme.apply_style(self.thumb_lbl, lambda: f"border: 1px solid {theme.SURFACE1}; background: white;")
 
@@ -232,7 +237,7 @@ class LayerItem(QWidget):
         # Name
         self.name_edit = LayerNameEdit(layer.name)
         if is_active:
-            self.name_edit.setStyleSheet("background: transparent; color: #cba6f7; font-weight: bold;")
+            theme.apply_style(self.name_edit, lambda: f"background: transparent; color: {theme.ACCENT}; font-weight: bold;")
         else:
             theme.apply_style(self.name_edit, lambda: f"background: transparent; color: {theme.TEXT};")
         self.name_edit.editingFinished.connect(lambda: self.name_changed.emit(index, self.name_edit.text()))

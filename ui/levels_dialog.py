@@ -172,7 +172,7 @@ class _HistogramWidget(QWidget):
         gx  = self._gamma_x()
 
         # ── histogram background ──────────────────────────────────────────
-        p.fillRect(0, 0, W, self.HIST_H, QColor(18, 18, 28))
+        p.fillRect(0, 0, W, self.HIST_H, QColor(theme.CRUST))
 
         # bars
         valid_counts = sorted([c for c in self._hist if c > 0])
@@ -189,7 +189,7 @@ class _HistogramWidget(QWidget):
             bh = min(self.HIST_H, int(self.HIST_H * c / max_c))
             x  = int(self.PAD + i * (W - 2 * self.PAD) / 255)
             p.fillRect(x, self.HIST_H - bh, max(1, int(bar_w)), bh,
-                       QColor(150, 150, 190))
+                       QColor(theme.SUBTEXT))
 
         # dim overlay outside [black, white]
         p.fillRect(0,  0, bx,     self.HIST_H, QColor(0, 0, 0, 130))

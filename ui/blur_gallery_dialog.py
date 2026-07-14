@@ -28,7 +28,7 @@ class BlurGalleryCanvas(QWidget):
 
     def paintEvent(self, ev):
         p = QPainter(self)
-        p.fillRect(self.rect(), QColor(30, 30, 40))
+        p.fillRect(self.rect(), QColor(theme.CRUST))
         if not self.dialog.preview_img:
             return
             
