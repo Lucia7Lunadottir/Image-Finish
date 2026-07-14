@@ -349,7 +349,7 @@
 
   "title.untitled":  "ImageFinish — bez tytułu ({mode})",
   "title.with_file": "ImageFinish — {name} ({mode})",
-  "title.canvas":    "LinuxShop — {w}×{h} ({mode})",
+  "title.canvas":    "ImageFinish — {w}×{h} ({mode})",
 
   "history.new_document":       "Nowy dokument",
   "history.add_layer":          "Dodanie warstwy",
@@ -991,5 +991,20 @@
 
   "props.transform":   "TRANSFORMACJA",
   "props.align":       "WYRÓWNAJ DO OBSZARU",
-  "props.info":        "INFO O WARSTWIE"
+  "props.info":        "INFO O WARSTWIE",
+
+  "crash.title": "Błąd wewnętrzny",
+  "crash.message": "Wystąpił błąd wewnętrzny. Aplikacja spróbuje kontynuować.\nSzczegóły zapisano w dzienniku:\n{path}",
+  "crash.continue": "Kontynuuj",
+  "crash.quit": "Zakończ",
+  "status.legacy_format": "Otwarto stary format — zapisz ponownie, aby przekonwertować na nowy",
+  "menu.reset_workspace": "Zresetuj obszar roboczy",
+  "menu.theme": "Motyw",
+  "menu.theme_dark": "Ciemny",
+  "menu.theme_light": "Jasny",
+  "status.theme_restart": "Motyw zastosowany. Niektóre panele odświeżą się po ponownym uruchomieniu",
+  "menu.theme_custom": "Własny",
+  "menu.theme_configure": "Skonfiguruj własny…",
+  "dlg.theme_main_color": "Główny kolor motywu",
+  "dlg.theme_base_question": "Budować na ciemnej bazie?\n(Nie = jasna baza)"
 }

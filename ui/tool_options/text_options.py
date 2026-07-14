@@ -5,6 +5,8 @@ from PyQt6.QtGui import QColor, QFont
 from .base_options import BaseOptions
 from core.locale import tr
 
+from ui import theme
+
 
 class TextOptions(BaseOptions):
     apply_styles_requested = pyqtSignal()
@@ -65,7 +67,7 @@ class TextOptions(BaseOptions):
         apply_btn.clicked.connect(self.apply_styles_requested.emit)
 
         stroke_lbl = QLabel(tr("opts.stroke_abbr"))
-        stroke_lbl.setStyleSheet("color: #a6adc8; font-size: 12px;")
+        theme.apply_style(stroke_lbl, lambda: f"color: {theme.SUBTEXT}; font-size: 12px;")
 
         self.layout.addWidget(font_combo)
         self.layout.addWidget(size_sp)

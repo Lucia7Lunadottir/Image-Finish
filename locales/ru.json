@@ -351,7 +351,7 @@
 
   "title.untitled":  "ImageFinish — без названия ({mode})",
   "title.with_file": "ImageFinish — {name} ({mode})",
-  "title.canvas":    "LinuxShop — {w}×{h} ({mode})",
+  "title.canvas":    "ImageFinish — {w}×{h} ({mode})",
 
   "history.new_document":       "Новый документ",
   "history.add_layer":          "До добавления слоя",
@@ -993,5 +993,20 @@
 
   "props.transform":   "ТРАНСФОРМАЦИЯ",
   "props.align":       "ВЫРОВНЯТЬ ПО ХОЛСТУ",
-  "props.info":        "ИНФОРМАЦИЯ О СЛОЕ"
+  "props.info":        "ИНФОРМАЦИЯ О СЛОЕ",
+
+  "crash.title": "Внутренняя ошибка",
+  "crash.message": "Произошла внутренняя ошибка. Приложение попытается продолжить работу.\nПодробности сохранены в журнал:\n{path}",
+  "crash.continue": "Продолжить",
+  "crash.quit": "Выйти",
+  "status.legacy_format": "Открыт старый формат — пересохраните файл для конвертации в новый",
+  "menu.reset_workspace": "Сбросить рабочее пространство",
+  "menu.theme": "Тема",
+  "menu.theme_dark": "Тёмная",
+  "menu.theme_light": "Светлая",
+  "status.theme_restart": "Тема применена. Некоторые панели полностью обновятся после перезапуска",
+  "menu.theme_custom": "Своя",
+  "menu.theme_configure": "Настроить свою…",
+  "dlg.theme_main_color": "Главный цвет темы",
+  "dlg.theme_base_question": "Строить на тёмной основе?\n(Нет — светлая основа)"
 }

@@ -7,16 +7,28 @@ from core.locale import tr
 
 class FillLayerDialog(QDialog):
 
-    def __init__(self, layer, canvas_refresh, parent=None):
+    def __init__(self, layer, canvas_refresh=None, parent=None):
+        # Callers pass either a Layer (live preview possible) or a plain
+        # settings dict; the second argument may be the parent widget.
+        if canvas_refresh is not None and not callable(canvas_refresh) and parent is None:
+            parent = canvas_refresh
+            canvas_refresh = None
         super().__init__(parent)
         self.setWindowTitle(tr("fill_layer.title"))
         self.setMinimumWidth(300)
 
-        self.layer = layer
+        if hasattr(layer, "fill_data"):
+            self.layer = layer
+            data = layer.fill_data
+        else:
+            self.layer = None
+            data = layer
         self.canvas_refresh = canvas_refresh
-        self._original_data = dict(layer.fill_data) if layer.fill_data else {}
+        self._original_data = dict(data) if data else {}
         self._data = dict(self._original_data) if self._original_data else {"type": "solid",
                                                                             "color": QColor(128, 128, 128)}
+        if not isinstance(self._data.get("type"), str):
+            self._data["type"] = "solid"
 
         lo = QVBoxLayout(self)
         lo.setSpacing(8)
@@ -143,14 +155,19 @@ class FillLayerDialog(QDialog):
         return {"type": "solid", "color": self._color}
 
     def _trigger_preview(self):
-        self.layer.fill_data = self.result_data()
-        self.canvas_refresh()
+        if self.layer is not None:
+            self.layer.fill_data = self.result_data()
+        if self.canvas_refresh is not None:
+            self.canvas_refresh()
 
     def accept(self):
-        self.layer.fill_data = self.result_data()
+        if self.layer is not None:
+            self.layer.fill_data = self.result_data()
         super().accept()
 
     def reject(self):
-        self.layer.fill_data = self._original_data
-        self.canvas_refresh()
+        if self.layer is not None:
+            self.layer.fill_data = self._original_data
+        if self.canvas_refresh is not None:
+            self.canvas_refresh()
         super().reject()

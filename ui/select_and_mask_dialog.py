@@ -13,6 +13,8 @@ from core.locale import tr
 from core.adjustments.hdr_toning import _box_blur_ch
 from ui.adjustments_dialog import _JumpSlider
 
+from ui import theme
+
 def _blur_mask(m, r):
     if r <= 0: return m
     res = _box_blur_ch(m, r)
@@ -192,7 +194,7 @@ class SelectAndMaskDialog(QDialog):
         def add_tool(name, icon):
             b = QPushButton(icon)
             b.setFixedSize(46, 38)
-            b.setStyleSheet("font-size: 18px; border-radius: 4px; background: #313244;")
+            theme.apply_style(b, lambda: f"font-size: 18px; border-radius: 4px; background: {theme.SURFACE0};")
             b.clicked.connect(lambda _, n=name: self._set_tool(n))
             tb.addWidget(b)
             self.btns[name] = b
@@ -207,7 +209,7 @@ class SelectAndMaskDialog(QDialog):
         left_widget = QWidget()
         left_widget.setLayout(tb)
         left_widget.setFixedWidth(62)
-        left_widget.setStyleSheet("background: #181825;")
+        theme.apply_style(left_widget, lambda: f"background: {theme.MANTLE};")
         root.addWidget(left_widget)
         
         # Canvas
@@ -218,15 +220,15 @@ class SelectAndMaskDialog(QDialog):
         # Properties (Right)
         props = QWidget()
         props.setFixedWidth(280)
-        props.setStyleSheet("background: #1e1e2e; border-left: 1px solid #313244;")
+        theme.apply_style(props, lambda: f"background: {theme.BASE}; border-left: 1px solid {theme.SURFACE0};")
         pl = QVBoxLayout(props)
         pl.setContentsMargins(12, 12, 12, 12)
         pl.setSpacing(10)
         
         def lbl(text, bold=False):
             l = QLabel(text)
-            if bold: l.setStyleSheet("color: #cdd6f4; font-weight: bold; font-size: 13px; margin-top: 8px;")
-            else: l.setStyleSheet("color: #a6adc8; font-size: 12px;")
+            if bold: theme.apply_style(l, lambda: f"color: {theme.TEXT}; font-weight: bold; font-size: 13px; margin-top: 8px;")
+            else: theme.apply_style(l, lambda: f"color: {theme.SUBTEXT}; font-size: 12px;")
             return l
             
         pl.addWidget(lbl(tr("sam.view_mode"), True))
@@ -290,7 +292,7 @@ class SelectAndMaskDialog(QDialog):
     def _set_tool(self, name):
         self.active_tool = name
         for n, b in self.btns.items():
-            b.setStyleSheet("font-size: 18px; border-radius: 4px; background: #7c3aed;" if n == name else "font-size: 18px; border-radius: 4px; background: #313244;")
+            b.setStyleSheet(f"font-size: 18px; border-radius: 4px; background: {theme.ACCENT};" if n == name else "font-size: 18px; border-radius: 4px; background: #313244;")
         if name == "hand": self.canvas.setCursor(Qt.CursorShape.OpenHandCursor)
         else: self.canvas.setCursor(Qt.CursorShape.BlankCursor)
 

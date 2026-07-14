@@ -9,6 +9,8 @@ from core.locale import tr
 from ui.adjustments_dialog import _JumpSlider
 from tools.tool_utils import fast_box_blur_np
 
+from ui import theme
+
 def apply_kuwahara(arr, r):
     """Powerful Kuwahara mathematical filter using integral images."""
     if r <= 0: return arr.copy()
@@ -155,7 +157,7 @@ class StylizeDialog(QDialog):
         
         props = QWidget()
         props.setFixedWidth(280)
-        props.setStyleSheet("background: #1e1e2e; border-left: 1px solid #313244;")
+        theme.apply_style(props, lambda: f"background: {theme.BASE}; border-left: 1px solid {theme.SURFACE0};")
         pl = QVBoxLayout(props)
         pl.setContentsMargins(15, 15, 15, 15); pl.setSpacing(15)
         
@@ -200,7 +202,7 @@ class StylizeDialog(QDialog):
             from core.locale import current as locale_current
             msg = "Этот фильтр не имеет\nнастраиваемых параметров." if locale_current() == "ru" else "This filter has no\nadjustable parameters."
             no_param_lbl = QLabel(msg)
-            no_param_lbl.setStyleSheet("color: #a6adc8; font-size: 12px; font-style: italic;")
+            theme.apply_style(no_param_lbl, lambda: f"color: {theme.SUBTEXT}; font-size: 12px; font-style: italic;")
             pl.addWidget(no_param_lbl)
         elif self.mode == "oil_paint":
             self.lbl1.setText(tr("stylize.stylization")); self.sl1.setRange(1, 10); self.sl1.setValue(5)

@@ -9,6 +9,10 @@ from PyQt6.QtCore import Qt, QPoint, QPointF, QRect, QRectF
 from PyQt6.QtGui import (QPainter, QColor, QPen, QBrush, QPainterPath,
                          QPolygon, QPolygonF, QTransform)
 
+from core.app_logging import get_logger
+
+logger = get_logger("overlays")
+
 
 def draw_grid(painter, *, doc, pan, zoom):
     if not getattr(doc, "show_grid", False):
@@ -141,7 +145,7 @@ def draw_subtract_drag(painter, *, active_tool, pan, zoom, SelectTool):
                 painter.drawPath(sub_p)
                 painter.restore()
         except Exception:
-            pass
+            logger.debug("Overlay draw failed", exc_info=True)
     elif isinstance(active_tool, SelectTool):
         try:
             sub_r = active_tool.sub_drag_rect()
@@ -157,7 +161,7 @@ def draw_subtract_drag(painter, *, active_tool, pan, zoom, SelectTool):
                 painter.drawRect(sub_r)
                 painter.restore()
         except Exception:
-            pass
+            logger.debug("Overlay draw failed", exc_info=True)
 
 
 def draw_lasso_preview(painter, *, active_tool, pan, zoom, is_mouse_in):
@@ -190,7 +194,7 @@ def draw_lasso_preview(painter, *, active_tool, pan, zoom, is_mouse_in):
                 painter.drawLine(points[-1], current_pos)
         painter.restore()
     except Exception:
-        pass
+        logger.debug("Overlay draw failed", exc_info=True)
 
 
 def draw_transform_preview(painter, *, active_tool, pan, zoom):
@@ -224,7 +228,7 @@ def draw_transform_preview(painter, *, active_tool, pan, zoom):
             painter.drawImage(tl, img)
             painter.restore()
     except Exception:
-        pass
+        logger.debug("Overlay draw failed", exc_info=True)
 
 
 def draw_brush_stroke(painter, *, active_tool, tool_opts, pan, zoom):
@@ -244,7 +248,7 @@ def draw_brush_stroke(painter, *, active_tool, tool_opts, pan, zoom):
         painter.drawImage(tl, img)
         painter.restore()
     except Exception:
-        pass
+        logger.debug("Overlay draw failed", exc_info=True)
 
 
 def draw_crop_preview(painter, *, active_tool, tool_opts, pan, zoom, doc, CropTool):
@@ -295,7 +299,7 @@ def draw_crop_preview(painter, *, active_tool, tool_opts, pan, zoom, doc, CropTo
             painter.drawRect(QRectF(pt.x() - s, pt.y() - s, s * 2, s * 2))
         painter.restore()
     except Exception:
-        pass
+        logger.debug("Overlay draw failed", exc_info=True)
 
 
 def draw_perspective_crop(painter, *, active_tool, tool_opts, pan, zoom, doc, PerspectiveCropTool):
@@ -353,7 +357,7 @@ def draw_perspective_crop(painter, *, active_tool, tool_opts, pan, zoom, doc, Pe
                     painter.drawLine(pts[i - 1], pts[i])
         painter.restore()
     except Exception:
-        pass
+        logger.debug("Overlay draw failed", exc_info=True)
 
 
 def draw_shapes_preview(painter, *, active_tool, tool_opts, fg_color, pan, zoom, ShapesTool):
@@ -416,7 +420,7 @@ def draw_shapes_preview(painter, *, active_tool, tool_opts, fg_color, pan, zoom,
             painter.drawRect(rect)
         painter.restore()
     except Exception:
-        pass
+        logger.debug("Overlay draw failed", exc_info=True)
 
 
 def draw_gradient_preview(painter, *, active_tool, pan, zoom, GradientTool):
@@ -442,7 +446,7 @@ def draw_gradient_preview(painter, *, active_tool, pan, zoom, GradientTool):
         painter.drawEllipse(QPointF(p1), r, r)
         painter.restore()
     except Exception:
-        pass
+        logger.debug("Overlay draw failed", exc_info=True)
 
 
 def draw_artboard_preview(painter, *, active_tool, pan, zoom):
@@ -460,7 +464,7 @@ def draw_artboard_preview(painter, *, active_tool, pan, zoom):
         painter.drawRect(ar)
         painter.restore()
     except Exception:
-        pass
+        logger.debug("Overlay draw failed", exc_info=True)
 
 
 def draw_clone_stamp(painter, *, active_tool, pan, zoom):

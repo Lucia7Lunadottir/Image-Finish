@@ -9,6 +9,8 @@ from core.locale import tr
 from ui.adjustments_dialog import _JumpSlider
 from tools.tool_utils import fast_box_blur_np
 
+from ui import theme
+
 
 class OtherFiltersCanvas(QWidget):
     def __init__(self, dialog):
@@ -119,7 +121,7 @@ class OtherFiltersDialog(QDialog):
         
         props = QWidget()
         props.setFixedWidth(280)
-        props.setStyleSheet("background: #1e1e2e; border-left: 1px solid #313244;")
+        theme.apply_style(props, lambda: f"background: {theme.BASE}; border-left: 1px solid {theme.SURFACE0};")
         pl = QVBoxLayout(props)
         pl.setContentsMargins(15, 15, 15, 15); pl.setSpacing(15)
         

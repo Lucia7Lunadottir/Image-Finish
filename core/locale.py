@@ -77,7 +77,9 @@ def _save_setting(lang: str) -> None:
         with open(_SETTINGS_FILE, "w", encoding="utf-8") as f:
             json.dump(data, f, ensure_ascii=False, indent=2)
     except Exception:
-        pass
+        import logging
+        logging.getLogger("imagefinish.locale").warning(
+            "Could not save language setting", exc_info=True)
 
 
 def _load_setting() -> str:
@@ -86,7 +88,9 @@ def _load_setting() -> str:
             with open(_SETTINGS_FILE, encoding="utf-8") as f:
                 return json.load(f).get("language", "en")
     except Exception:
-        pass
+        import logging
+        logging.getLogger("imagefinish.locale").warning(
+            "Could not read language setting", exc_info=True)
     return "en"
 
 

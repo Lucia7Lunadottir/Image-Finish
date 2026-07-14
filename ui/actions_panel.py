@@ -4,10 +4,16 @@ from PyQt6.QtCore import Qt, pyqtSignal
 from PyQt6.QtGui import QFont
 from core.locale import tr
 
-BTN_STYLE = ("QPushButton{background:#313244;color:#cdd6f4;border:none;padding:4px 10px;border-radius:4px;}"
-             "QPushButton:hover{background:#45475a;}"
-             "QPushButton:pressed{background:#585b70;}")
-HEADER_STYLE = "color:#7f849c;font-size:10px;font-weight:bold;letter-spacing:1px;background:transparent;padding:8px 10px 4px 10px;"
+from ui import theme
+
+def BTN_STYLE():
+    return (
+    f"QPushButton{{background:{theme.SURFACE0};color:{theme.TEXT};border:none;padding:4px 10px;border-radius:4px;}}"
+                 f"QPushButton:hover{{background:{theme.SURFACE1};}}"
+                 f"QPushButton:pressed{{background:{theme.SURFACE2};}}"
+    )
+def HEADER_STYLE():
+    return (f"color:{theme.MUTED};font-size:10px;font-weight:bold;letter-spacing:1px;background:transparent;padding:8px 10px 4px 10px;")
 
 _BUILTIN_ACTIONS = [
     "Invert",
@@ -33,17 +39,17 @@ class ActionsPanel(QWidget):
         # Section header
         self._title_lbl = QLabel("ACTIONS")
         self._title_lbl.setObjectName("panelTitle")
-        self._title_lbl.setStyleSheet(HEADER_STYLE)
+        theme.apply_style(self._title_lbl, HEADER_STYLE)
         layout.addWidget(self._title_lbl)
 
         # Action list
         self._list = QListWidget()
-        self._list.setStyleSheet(
-            "QListWidget{background:#1e1e2e;border:none;color:#cdd6f4;}"
+        theme.apply_style(self._list, lambda: (
+            f"QListWidget{{background:{theme.BASE};border:none;color:{theme.TEXT};}}"
             "QListWidget::item{padding:4px 8px;}"
-            "QListWidget::item:selected{background:#313244;color:#cba6f7;}"
+            f"QListWidget::item:selected{{background:{theme.SURFACE0};color:#cba6f7;}}"
             "QListWidget::item:hover{background:#282838;}"
-        )
+        ))
         layout.addWidget(self._list, 1)
 
         # Button bar
@@ -53,7 +59,7 @@ class ActionsPanel(QWidget):
         btn_lo.setSpacing(6)
 
         self._play_btn = QPushButton("\u25b6 Play")
-        self._play_btn.setStyleSheet(BTN_STYLE)
+        theme.apply_style(self._play_btn, BTN_STYLE)
         self._play_btn.clicked.connect(self._on_play)
         btn_lo.addWidget(self._play_btn)
         btn_lo.addStretch()

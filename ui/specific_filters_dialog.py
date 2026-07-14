@@ -9,6 +9,8 @@ from PyQt6.QtGui import QImage, QPainter, QColor, QPen
 from core.locale import tr, current as locale_current
 from ui.adjustments_dialog import _JumpSlider
 
+from ui import theme
+
 
 class LiquifyCanvas(QWidget):
     def __init__(self, dialog):
@@ -160,7 +162,7 @@ class SpecificFiltersDialog(QDialog):
         
         props = QWidget()
         props.setFixedWidth(280)
-        props.setStyleSheet("background: #1e1e2e; border-left: 1px solid #313244;")
+        theme.apply_style(props, lambda: f"background: {theme.BASE}; border-left: 1px solid {theme.SURFACE0};")
         pl = QVBoxLayout(props)
         pl.setContentsMargins(15, 15, 15, 15); pl.setSpacing(15)
         

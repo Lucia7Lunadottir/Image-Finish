@@ -7,6 +7,8 @@ from PyQt6.QtGui import QImage, QPainter, QPainterPath, QRegion, QBitmap, QColor
 from core.locale import tr
 from ui.adjustments_dialog import _to_argb32, _const_arr, _SliderRow
 
+from ui import theme
+
 def _lbl(text):
     l = QLabel(text)
     l.setFixedWidth(100)
@@ -197,7 +199,7 @@ class CalculationsDialog(QDialog):
         
         def make_src(title):
             w = QWidget(); l = QVBoxLayout(w); l.setContentsMargins(0,0,0,0)
-            l.addWidget(QLabel(title, styleSheet="color:#a6adc8; font-weight:bold; margin-top:8px;"))
+            l.addWidget(QLabel(title, styleSheet=f"color:{theme.SUBTEXT}; font-weight:bold; margin-top:8px;"))
             
             lay_cb = QComboBox()
             lay_cb.addItem(tr("calc.merged"), -1)

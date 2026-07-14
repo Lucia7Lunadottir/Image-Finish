@@ -9,6 +9,8 @@ from core.locale import tr, current as locale_current
 from ui.adjustments_dialog import _JumpSlider
 from tools.tool_utils import fast_box_blur_np
 
+from ui import theme
+
 def apply_conv3x3(arr, kernel):
     h, w = arr.shape[:2]
     padded = np.pad(arr[..., :3].astype(np.float32), ((1,1),(1,1),(0,0)), mode='edge')
@@ -129,7 +131,7 @@ class SharpenDialog(QDialog):
         
         props = QWidget()
         props.setFixedWidth(280)
-        props.setStyleSheet("background: #1e1e2e; border-left: 1px solid #313244;")
+        theme.apply_style(props, lambda: f"background: {theme.BASE}; border-left: 1px solid {theme.SURFACE0};")
         pl = QVBoxLayout(props)
         pl.setContentsMargins(15, 15, 15, 15); pl.setSpacing(15)
         
@@ -162,7 +164,7 @@ class SharpenDialog(QDialog):
         elif self.mode in ("sharpen", "edges", "more"):
             msg = "Этот фильтр не имеет\nнастраиваемых параметров." if locale_current() == "ru" else "This filter has no\nadjustable parameters."
             lbl = QLabel(msg)
-            lbl.setStyleSheet("color: #a6adc8; font-size: 12px; font-style: italic;")
+            theme.apply_style(lbl, lambda: f"color: {theme.SUBTEXT}; font-size: 12px; font-style: italic;")
             pl.addWidget(lbl)
 
         pl.addStretch()

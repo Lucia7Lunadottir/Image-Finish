@@ -352,7 +352,7 @@
 
   "title.untitled":  "ImageFinish \u2014 untitled ({mode})",
   "title.with_file": "ImageFinish \u2014 {name} ({mode})",
-  "title.canvas":    "LinuxShop \u2014 {w}\u00d7{h} ({mode})",
+  "title.canvas":    "ImageFinish \u2014 {w}\u00d7{h} ({mode})",
 
   "history.new_document":       "New document",
   "history.add_layer":          "Before add layer",
@@ -1000,5 +1000,20 @@
 
   "props.transform":   "TRANSFORM",
   "props.align":       "ALIGN TO CANVAS",
-  "props.info":        "LAYER INFO"
+  "props.info":        "LAYER INFO",
+
+  "crash.title": "Internal Error",
+  "crash.message": "An internal error occurred. The application will try to continue.\nDetails have been saved to the log:\n{path}",
+  "crash.continue": "Continue",
+  "crash.quit": "Quit",
+  "status.legacy_format": "Opened in legacy format — re-save to convert to the new format",
+  "menu.reset_workspace": "Reset Workspace",
+  "menu.theme": "Theme",
+  "menu.theme_dark": "Dark",
+  "menu.theme_light": "Light",
+  "status.theme_restart": "Theme applied. Some panels will update fully after restart",
+  "menu.theme_custom": "Custom",
+  "menu.theme_configure": "Configure Custom…",
+  "dlg.theme_main_color": "Main theme color",
+  "dlg.theme_base_question": "Build on a dark base?\n(No = light base)"
 }

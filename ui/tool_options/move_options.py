@@ -2,12 +2,14 @@ from PyQt6.QtWidgets import QPushButton, QLabel, QHBoxLayout, QWidget, QDoubleSp
 from .base_options import BaseOptions
 from core.locale import tr
 
+from ui import theme
+
 class MoveOptions(BaseOptions):
     def __init__(self, hint_key="opts.move_hint", parent=None):
         super().__init__(parent)
         self._hint_key = hint_key
         self._hint_lbl = QLabel(tr(self._hint_key))
-        self._hint_lbl.setStyleSheet("color: #a6adc8; font-size: 12px; font-weight: bold;")
+        theme.apply_style(self._hint_lbl, lambda: f"color: {theme.SUBTEXT}; font-size: 12px; font-weight: bold;")
         self.layout.addWidget(self._hint_lbl)
         
         self.layout.addSpacing(20)

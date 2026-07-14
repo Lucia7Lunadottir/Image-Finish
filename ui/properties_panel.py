@@ -5,6 +5,8 @@ from PyQt6.QtCore import Qt, pyqtSignal, QPoint
 from PyQt6.QtGui import QFont, QPainter, QColor, QPixmap, QIcon
 from core.locale import tr
 
+from ui import theme
+
 _TYPE_LABELS = {
     "raster":       "Raster",
     "text":         "Text Layer",
@@ -16,31 +18,43 @@ _TYPE_LABELS = {
     "artboard":     "Artboard",
 }
 
-LABEL_STYLE  = "color:#a6adc8;font-size:11px;background:transparent;"
-VALUE_STYLE  = "color:#cdd6f4;font-size:11px;background:transparent;"
-HEADER_STYLE = ("color:#7f849c;font-size:10px;font-weight:bold;"
-                "letter-spacing:1px;background:transparent;padding:6px 0 3px 0;")
-SPIN_STYLE   = ("QSpinBox{background:#313244;color:#cdd6f4;border:none;"
-                "padding:2px 4px;border-radius:3px;font-size:11px;}"
-                "QSpinBox::up-button,QSpinBox::down-button{width:14px;}"
-                "QSpinBox:focus{border:1px solid #cba6f7;}")
-ALIGN_BTN    = ("QPushButton{background:#313244;color:#cdd6f4;border:none;"
-                "border-radius:3px;font-size:11px;padding:3px;}"
-                "QPushButton:hover{background:#45475a;}"
-                "QPushButton:pressed{background:#cba6f7;color:#1e1e2e;}")
-SEP_STYLE    = "background:#313244;max-height:1px;"
+def LABEL_STYLE():
+    return (f"color:{theme.SUBTEXT};font-size:11px;background:transparent;")
+def VALUE_STYLE():
+    return (f"color:{theme.TEXT};font-size:11px;background:transparent;")
+def HEADER_STYLE():
+    return (
+    f"color:{theme.MUTED};font-size:10px;font-weight:bold;"
+                    "letter-spacing:1px;background:transparent;padding:6px 0 3px 0;"
+    )
+def SPIN_STYLE():
+    return (
+    f"QSpinBox{{background:{theme.SURFACE0};color:{theme.TEXT};border:none;"
+                    "padding:2px 4px;border-radius:3px;font-size:11px;}"
+                    "QSpinBox::up-button,QSpinBox::down-button{width:14px;}"
+                    "QSpinBox:focus{border:1px solid #cba6f7;}"
+    )
+def ALIGN_BTN():
+    return (
+    f"QPushButton{{background:{theme.SURFACE0};color:{theme.TEXT};border:none;"
+                    "border-radius:3px;font-size:11px;padding:3px;}"
+                    f"QPushButton:hover{{background:{theme.SURFACE1};}}"
+                    f"QPushButton:pressed{{background:#cba6f7;color:{theme.BASE};}}"
+    )
+def SEP_STYLE():
+    return (f"background:{theme.SURFACE0};max-height:1px;")
 
 
 def _sep():
     f = QFrame()
     f.setFrameShape(QFrame.Shape.HLine)
-    f.setStyleSheet(SEP_STYLE)
+    theme.apply_style(f, SEP_STYLE)
     return f
 
 
 def _header(text):
     l = QLabel(text)
-    l.setStyleSheet(HEADER_STYLE)
+    theme.apply_style(l, HEADER_STYLE)
     return l
 
 
@@ -62,10 +76,10 @@ class PropertiesPanel(QWidget):
         scroll.setWidgetResizable(True)
         scroll.setFrameShape(QFrame.Shape.NoFrame)
         scroll.setHorizontalScrollBarPolicy(Qt.ScrollBarPolicy.ScrollBarAlwaysOff)
-        scroll.setStyleSheet("background:#1e1e2e;border:none;")
+        theme.apply_style(scroll, lambda: f"background:{theme.BASE};border:none;")
 
         body = QWidget()
-        body.setStyleSheet("background:#1e1e2e;")
+        theme.apply_style(body, lambda: f"background:{theme.BASE};")
         v = QVBoxLayout(body)
         v.setContentsMargins(8, 4, 8, 8)
         v.setSpacing(4)
@@ -82,9 +96,9 @@ class PropertiesPanel(QWidget):
         grid.setColumnStretch(1, 1)
         grid.setColumnStretch(3, 1)
 
-        def lbl(t): l = QLabel(t); l.setStyleSheet(LABEL_STYLE); return l
+        def lbl(t): l = QLabel(t); theme.apply_style(l, LABEL_STYLE); return l
         def spin(lo=-99999, hi=99999):
-            s = QSpinBox(); s.setRange(lo, hi); s.setStyleSheet(SPIN_STYLE)
+            s = QSpinBox(); s.setRange(lo, hi); theme.apply_style(s, SPIN_STYLE)
             s.setButtonSymbols(QSpinBox.ButtonSymbols.UpDownArrows); return s
 
         self._x_spin = spin(); self._y_spin = spin()
@@ -110,7 +124,7 @@ class PropertiesPanel(QWidget):
         align_row1.setSpacing(3); align_row2.setSpacing(3)
 
         def abtn(icon_char, tip, slot):
-            b = QPushButton(icon_char); b.setStyleSheet(ALIGN_BTN)
+            b = QPushButton(icon_char); theme.apply_style(b, ALIGN_BTN)
             b.setFixedSize(32, 26); b.setToolTip(tip)
             b.clicked.connect(slot); return b
 
@@ -139,11 +153,11 @@ class PropertiesPanel(QWidget):
         info_grid.setVerticalSpacing(5)
         info_grid.setColumnStretch(1, 1)
 
-        self._lbl_name  = lbl(tr("props.name"));    self._val_name  = QLabel("—"); self._val_name.setStyleSheet(VALUE_STYLE)
-        self._lbl_type  = lbl(tr("props.type"));    self._val_type  = QLabel("—"); self._val_type.setStyleSheet(VALUE_STYLE)
-        self._lbl_blend = lbl(tr("props.blend"));   self._val_blend = QLabel("—"); self._val_blend.setStyleSheet(VALUE_STYLE)
-        self._lbl_op    = lbl(tr("props.opacity")); self._val_op    = QLabel("—"); self._val_op.setStyleSheet(VALUE_STYLE)
-        self._lbl_vis   = lbl(tr("props.visible")); self._val_vis   = QLabel("—"); self._val_vis.setStyleSheet(VALUE_STYLE)
+        self._lbl_name  = lbl(tr("props.name"));    self._val_name  = QLabel("—"); theme.apply_style(self._val_name, VALUE_STYLE)
+        self._lbl_type  = lbl(tr("props.type"));    self._val_type  = QLabel("—"); theme.apply_style(self._val_type, VALUE_STYLE)
+        self._lbl_blend = lbl(tr("props.blend"));   self._val_blend = QLabel("—"); theme.apply_style(self._val_blend, VALUE_STYLE)
+        self._lbl_op    = lbl(tr("props.opacity")); self._val_op    = QLabel("—"); theme.apply_style(self._val_op, VALUE_STYLE)
+        self._lbl_vis   = lbl(tr("props.visible")); self._val_vis   = QLabel("—"); theme.apply_style(self._val_vis, VALUE_STYLE)
 
         for row_i, (lw, vw) in enumerate([
             (self._lbl_name,  self._val_name),

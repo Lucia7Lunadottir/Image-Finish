@@ -5,6 +5,10 @@ from PyQt6.QtCore import QPoint, QRect, Qt
 from PyQt6.QtGui import QPainter, QPen, QBrush, QPolygon, QPainterPath, QTransform
 from tools.base_tool import BaseTool
 
+from core.app_logging import get_logger
+
+logger = get_logger("shapes_tool")
+
 
 class ShapesTool(BaseTool):
     name = "Shapes"
@@ -125,7 +129,8 @@ class ShapesTool(BaseTool):
                         path.cubicTo(d["x"], d["y"], d1["x"], d1["y"], d2["x"], d2["y"])
                     i += 3
                 else: i += 1
-        except Exception: pass
+        except Exception:
+            logger.exception("Failed to parse shape path data")
         return path
 
     # ── Drawing ───────────────────────────────────────────────────────────────

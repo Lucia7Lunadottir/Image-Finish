@@ -66,7 +66,9 @@ class Layer:
         clone.lock_position = getattr(self, "lock_position", False)
         clone.lock_artboard = getattr(self, "lock_artboard", False)
         if getattr(self, "mask", None) is not None:
-            clone.mask = self.mask.copy() if deep_image else self.mask
+            # QImage(other) shares pixel data copy-on-write: later in-place
+            # painting on either side detaches, so snapshots stay intact.
+            clone.mask = self.mask.copy() if deep_image else QImage(self.mask)
         else:
             clone.mask = None
         clone.mask_enabled = getattr(self, "mask_enabled", True)
@@ -81,7 +83,7 @@ class Layer:
         clone.opacity = self.opacity
         clone.blend_mode = self.blend_mode
         clone.offset = QPoint(self.offset)
-        clone.image = self.image.copy() if deep_image else self.image
+        clone.image = self.image.copy() if deep_image else QImage(self.image)
         clone.layer_type = getattr(self, "layer_type", "raster")
         if getattr(self, "artboard_rect", None) is not None:
             clone.artboard_rect = QRect(self.artboard_rect)
@@ -102,7 +104,8 @@ class Layer:
         clone.fill_data = dict(fd) if fd else None
         smd = getattr(self, "smart_data", None)
         if smd:
-            clone.smart_data = {"original": smd["original"].copy() if deep_image else smd["original"]}
+            clone.smart_data = {"original": smd["original"].copy() if deep_image
+                                else QImage(smd["original"])}
         else:
             clone.smart_data = None
 
@@ -120,8 +123,13 @@ class Layer:
             img.save(buf, "PNG")
             return ba.data()
 
+        ar = getattr(self, "artboard_rect", None)
         d = {
             "name": self.name,
+            "layer_id": getattr(self, "layer_id", None),
+            "parent_id": getattr(self, "parent_id", None),
+            "link_id": getattr(self, "link_id", None),
+            "artboard_rect": (ar.x(), ar.y(), ar.width(), ar.height()) if ar is not None else None,
             "layer_type": getattr(self, "layer_type", "raster"),
             "visible": self.visible,
             "locked": self.locked,
@@ -158,6 +166,13 @@ class Layer:
             return img
             
         layer = cls(d["name"], w, h)
+        if d.get("layer_id"):
+            layer.layer_id = d["layer_id"]
+        layer.parent_id = d.get("parent_id", None)
+        layer.link_id = d.get("link_id", None)
+        ar = d.get("artboard_rect")
+        if ar:
+            layer.artboard_rect = QRect(int(ar[0]), int(ar[1]), int(ar[2]), int(ar[3]))
         layer.layer_type = d.get("layer_type", "raster")
         layer.visible = d.get("visible", True)
         layer.locked = d.get("locked", False)

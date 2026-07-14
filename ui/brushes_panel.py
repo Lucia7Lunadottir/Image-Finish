@@ -8,8 +8,12 @@ from PyQt6.QtGui import (QPixmap, QPainter, QBrush, QColor, QPen)
 
 from core.locale import tr
 
-DARK = "background:#1e1e2e;"
-LABEL_STYLE = "color:#a6adc8;font-size:11px;"
+from ui import theme
+
+def DARK():
+    return (f"background:{theme.BASE};")
+def LABEL_STYLE():
+    return (f"color:{theme.SUBTEXT};font-size:11px;")
 
 # directory that holds custom brush images, relative to project root
 _BRUSHES_DIR = os.path.join(os.path.dirname(os.path.dirname(os.path.abspath(__file__))),
@@ -28,7 +32,7 @@ def _make_builtin_pixmap(shape: str, size: int = 64) -> QPixmap:
     px.fill(Qt.GlobalColor.transparent)
     p = QPainter(px)
     p.setRenderHint(QPainter.RenderHint.Antialiasing)
-    p.setBrush(QBrush(QColor("#cdd6f4")))
+    p.setBrush(QBrush(QColor(theme.TEXT)))
     p.setPen(Qt.PenStyle.NoPen)
     if shape == "round":
         p.drawEllipse(4, 4, 56, 56)
@@ -49,8 +53,8 @@ class _BrushThumb(QLabel):
 
     clicked = pyqtSignal(str)   # emits brush mask value or file path
 
-    _BORDER_NORMAL   = "border:2px solid transparent;background:#181825;"
-    _BORDER_SELECTED = "border:2px solid #cba6f7;background:#181825;"
+    _BORDER_NORMAL   = f"border:2px solid transparent;background:{theme.MANTLE};"
+    _BORDER_SELECTED = f"border:2px solid #cba6f7;background:{theme.MANTLE};"
 
     def __init__(self, pixmap: QPixmap, mask_value: str, tooltip: str, parent=None):
         super().__init__(parent)
@@ -99,10 +103,10 @@ class BrushesPanel(QWidget):
         self._scroll = QScrollArea()
         self._scroll.setWidgetResizable(True)
         self._scroll.setHorizontalScrollBarPolicy(Qt.ScrollBarPolicy.ScrollBarAlwaysOff)
-        self._scroll.setStyleSheet("QScrollArea{border:none;background:#1e1e2e;}")
+        theme.apply_style(self._scroll, lambda: f"QScrollArea{{border:none;background:{theme.BASE};}}")
 
         self._grid_widget = QWidget()
-        self._grid_widget.setStyleSheet("background:#1e1e2e;")
+        theme.apply_style(self._grid_widget, lambda: f"background:{theme.BASE};")
         self._grid = QGridLayout(self._grid_widget)
         self._grid.setContentsMargins(4, 4, 4, 4)
         self._grid.setSpacing(4)

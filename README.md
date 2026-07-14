@@ -89,3 +89,17 @@ linuxshop/
 Add a menu action in `MainWindow._build_menu_bar()` and implement it
 using `QPainter` or numpy operations on `layer.image`.
 # ImageFinish
+
+## Development
+
+Run the test suite (requires `pytest`, uses the offscreen Qt platform):
+
+```bash
+QT_QPA_PLATFORM=offscreen python -m pytest tests/
+```
+
+Logs are written to `~/.local/share/ImageFinish/logs/imagefinish.log`;
+unhandled errors show a crash dialog instead of terminating the app.
+Project files use the versioned `.imfn` v2 format (ZIP with `manifest.json`
+and PNG layers); old pickle-based `.imfn` files still open and are converted
+on the next save.

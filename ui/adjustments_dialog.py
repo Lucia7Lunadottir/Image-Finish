@@ -8,13 +8,18 @@ from PyQt6.QtCore import Qt, QTimer
 from PyQt6.QtGui import QImage, QMouseEvent
 
 from core.locale import tr
+from ui.base_dialog import BaseDialog
 
 
 # ── low-level pixel ops ──────────────────────────────────────────────────────
 
 def _to_argb32(img: QImage) -> QImage:
     if img.format() == QImage.Format.Format_ARGB32:
-        return img                          # no-op: skip allocation + copy
+        # Copy-on-write instance: as cheap as returning img itself, but the
+        # in-place writes the apply_* functions do (via bits()) detach first.
+        # Returning img directly let previews corrupt the caller's stored
+        # original — e.g. Gaussian Blur could never *reduce* its radius.
+        return QImage(img)
     return img.convertToFormat(QImage.Format.Format_ARGB32)
 
 
@@ -236,7 +241,7 @@ class _SliderRow(QHBoxLayout):
 
 # ── base adjustment dialog ────────────────────────────────────────────────────
 
-class _AdjustDialog(QDialog):
+class _AdjustDialog(BaseDialog):
     """Modal dialog with real-time preview on the active layer.
 
     Optimisations:

@@ -6,6 +6,11 @@ from PyQt6.QtCore import pyqtSignal, Qt, QSize, QByteArray
 from PyQt6.QtGui import QIcon, QPixmap
 
 from core.locale import tr
+from ui import theme
+
+from core.app_logging import get_logger
+
+logger = get_logger("toolbar")
 
 
 # IMPORTANT: Compute absolute path to project root.
@@ -23,11 +28,15 @@ class _ToolDef:
     tr_key: str
 
 
-def _load_recolored_icon(icon_file: str, color: str = "#FFFFFF") -> QIcon:
+def _load_recolored_icon(icon_file: str, color: str | None = None) -> QIcon:
     """
     Safely loads an SVG file using a hard absolute path,
     replacing the default stroke color (currentColor) with the chosen one.
+    Default follows the theme text color, so icons stay visible in the
+    light theme too.
     """
+    if color is None:
+        color = theme.TEXT
     # FIXED: Path is now built from BASE_DIR, not from the terminal launch directory
     icon_path = os.path.join(BASE_DIR, "assets", "icons", icon_file)
     
@@ -44,20 +53,29 @@ def _load_recolored_icon(icon_file: str, color: str = "#FFFFFF") -> QIcon:
             pixmap.loadFromData(QByteArray(svg_content.encode('utf-8')), "SVG")
             return QIcon(pixmap)
         except Exception as e:
-            print(f"Dynamic recolor error for {icon_file}: {e}")
+            logger.warning("Dynamic recolor error for %s: %s", icon_file, e)
     return QIcon()
+
+
+def _tool_icon(td: _ToolDef) -> QIcon:
+    """Icon fallback chain: SVG file -> drawn built-in icon -> null."""
+    ico = _load_recolored_icon(td.icon_file)
+    if not ico.isNull():
+        return ico
+    from ui.tool_icons import get_tool_icon
+    return get_tool_icon(td.name)
 
 
 def _apply_icon(btn, td: _ToolDef, size: int = 22) -> None:
     """Applies a recolored icon to a toolbar button."""
-    ico = _load_recolored_icon(td.icon_file)
+    ico = _tool_icon(td)
     if not ico.isNull():
         btn.setIcon(ico)
         btn.setIconSize(QSize(size, size))
         btn.setText("")
     else:
-        btn.setIcon(QIcon())  
-        btn.setText(td.fallback_icon)
+        btn.setIcon(QIcon())
+        btn.setText(td.name[:2])
 
 
 class ToolBar(QWidget):
@@ -211,6 +229,19 @@ class ToolBar(QWidget):
         label = tr(key)
         return f"{label}  [{shortcut}]" if shortcut else label
 
+    def retheme(self):
+        """Re-render all icons in the current theme's text color."""
+        for tool_name, w in self._buttons.items():
+            td = self._TOOL_DEFS.get(tool_name)
+            if td:
+                _apply_icon(w, td)
+        for gid, gbtn in self._groups.items():
+            active_tool = self._group_active_tool.get(gid)
+            td = self._TOOL_DEFS.get(active_tool) if active_tool else None
+            if td:
+                _apply_icon(gbtn, td)
+        self.retranslate()  # rebuilds dropdown menus (and their icons)
+
     def retranslate(self):
         """Update localization for context menus and tooltips."""
         for tool_name, w in self._buttons.items():
@@ -229,14 +260,11 @@ class ToolBar(QWidget):
                 menu.clear()
                 for tname in self._group_tools.get(gid, []):
                     tdef = self._TOOL_DEFS[tname]
-                    # FIXED: Menu now also gets dynamically recolored icon
-                    ico = _load_recolored_icon(tdef.icon_file)
-                    
+                    ico = _tool_icon(tdef)
                     if not ico.isNull():
                         act = menu.addAction(ico, tr(tdef.tr_key))
                     else:
-                        act = menu.addAction(tdef.fallback_icon + "  " + tr(tdef.tr_key))
-                    
+                        act = menu.addAction(tr(tdef.tr_key))
                     act.setData(tname)
                     act.triggered.connect(lambda checked=False, n=tname: self._on_click(n))
 
@@ -289,14 +317,11 @@ class ToolBar(QWidget):
         menu = QMenu(btn)
         for tname in tool_names:
             tdef = self._TOOL_DEFS[tname]
-            # FIXED: Menu also gets white recolor on first initialization
-            ico = _load_recolored_icon(tdef.icon_file)
-            
+            ico = _tool_icon(tdef)
             if not ico.isNull():
                 act = menu.addAction(ico, tr(tdef.tr_key))
             else:
-                act = menu.addAction(tdef.fallback_icon + "  " + tr(tdef.tr_key))
-                
+                act = menu.addAction(tr(tdef.tr_key))
             act.setData(tname)
             act.triggered.connect(lambda checked=False, n=tname: self._on_click(n))
         btn.setMenu(menu)

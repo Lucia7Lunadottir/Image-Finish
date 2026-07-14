@@ -5,26 +5,41 @@ from PyQt6.QtCore import Qt, pyqtSignal
 from PyQt6.QtGui import QColor, QFont, QPixmap, QPainter
 from core.locale import tr
 
-LABEL_STYLE = "color:#a6adc8;font-size:11px;background:transparent;"
-SPIN_STYLE = ("QSpinBox,QDoubleSpinBox{background:#313244;color:#cdd6f4;border:none;"
-              "padding:2px 4px;border-radius:3px;}"
-              "QSpinBox::up-button,QSpinBox::down-button,"
-              "QDoubleSpinBox::up-button,QDoubleSpinBox::down-button{width:14px;}")
-TOGGLE_BTN_STYLE = ("QPushButton{background:#313244;color:#cdd6f4;border:none;padding:4px 8px;"
-                    "border-radius:4px;font-weight:bold;}"
-                    "QPushButton:checked{background:#cba6f7;color:#1e1e2e;}"
-                    "QPushButton:hover{background:#45475a;}")
-HEADER_STYLE = ("color:#7f849c;font-size:10px;font-weight:bold;letter-spacing:1px;"
-                "background:transparent;padding:8px 0 4px 0;")
-SLIDER_STYLE = ("QSlider::groove:horizontal{height:4px;background:#313244;border-radius:2px;}"
-                "QSlider::handle:horizontal{background:#a855f7;width:12px;height:12px;margin:-4px 0;border-radius:6px;}"
-                "QSlider::sub-page:horizontal{background:#7c3aed;border-radius:2px;}")
+from ui import theme
+
+def LABEL_STYLE():
+    return (f"color:{theme.SUBTEXT};font-size:11px;background:transparent;")
+def SPIN_STYLE():
+    return (
+    f"QSpinBox,QDoubleSpinBox{{background:{theme.SURFACE0};color:{theme.TEXT};border:none;"
+                  "padding:2px 4px;border-radius:3px;}"
+                  "QSpinBox::up-button,QSpinBox::down-button,"
+                  "QDoubleSpinBox::up-button,QDoubleSpinBox::down-button{width:14px;}"
+    )
+def TOGGLE_BTN_STYLE():
+    return (
+    f"QPushButton{{background:{theme.SURFACE0};color:{theme.TEXT};border:none;padding:4px 8px;"
+                        "border-radius:4px;font-weight:bold;}"
+                        f"QPushButton:checked{{background:#cba6f7;color:{theme.BASE};}}"
+                        f"QPushButton:hover{{background:{theme.SURFACE1};}}"
+    )
+def HEADER_STYLE():
+    return (
+    f"color:{theme.MUTED};font-size:10px;font-weight:bold;letter-spacing:1px;"
+                    "background:transparent;padding:8px 0 4px 0;"
+    )
+def SLIDER_STYLE():
+    return (
+    f"QSlider::groove:horizontal{{height:4px;background:{theme.SURFACE0};border-radius:2px;}}"
+                    f"QSlider::handle:horizontal{{background:{theme.ACCENT_LIGHT};width:12px;height:12px;margin:-4px 0;border-radius:6px;}}"
+                    f"QSlider::sub-page:horizontal{{background:{theme.ACCENT};border-radius:2px;}}"
+    )
 
 
 def _make_sep():
     f = QFrame()
     f.setFrameShape(QFrame.Shape.HLine)
-    f.setStyleSheet("color:#313244;background:#313244;max-height:1px;margin:4px 0;")
+    theme.apply_style(f, lambda: f"color:{theme.SURFACE0};background:{theme.SURFACE0};max-height:1px;margin:4px 0;")
     return f
 
 
@@ -41,13 +56,13 @@ class CharacterPanel(QWidget):
 
         # ---------- Section header ----------
         self._header_lbl = QLabel("CHARACTER")
-        self._header_lbl.setStyleSheet(HEADER_STYLE)
+        theme.apply_style(self._header_lbl, HEADER_STYLE)
         layout.addWidget(self._header_lbl)
         layout.addWidget(_make_sep())
 
         # ---------- Font family ----------
         self._font_family_lbl = QLabel("Font:")
-        self._font_family_lbl.setStyleSheet(LABEL_STYLE)
+        theme.apply_style(self._font_family_lbl, LABEL_STYLE)
         layout.addWidget(self._font_family_lbl)
 
         self._font_combo = QFontComboBox()
@@ -64,14 +79,14 @@ class CharacterPanel(QWidget):
         size_lo.setSpacing(6)
 
         self._size_lbl = QLabel("Size:")
-        self._size_lbl.setStyleSheet(LABEL_STYLE)
+        theme.apply_style(self._size_lbl, LABEL_STYLE)
         size_lo.addWidget(self._size_lbl)
 
         self._size_spin = QSpinBox()
         self._size_spin.setRange(1, 999)
         self._size_spin.setValue(24)
         self._size_spin.setSuffix(" pt")
-        self._size_spin.setStyleSheet(SPIN_STYLE)
+        theme.apply_style(self._size_spin, SPIN_STYLE)
         self._size_spin.setFixedWidth(72)
         self._size_spin.valueChanged.connect(lambda v: self.option_changed.emit("font_size", v))
         size_lo.addWidget(self._size_spin)
@@ -92,7 +107,7 @@ class CharacterPanel(QWidget):
         bold_font.setBold(True)
         self._btn_bold.setFont(bold_font)
         self._btn_bold.setFixedSize(28, 28)
-        self._btn_bold.setStyleSheet(TOGGLE_BTN_STYLE)
+        theme.apply_style(self._btn_bold, TOGGLE_BTN_STYLE)
         self._btn_bold.toggled.connect(lambda v: self.option_changed.emit("font_bold", v))
 
         self._btn_italic = QPushButton("I")
@@ -101,7 +116,7 @@ class CharacterPanel(QWidget):
         ital_font.setItalic(True)
         self._btn_italic.setFont(ital_font)
         self._btn_italic.setFixedSize(28, 28)
-        self._btn_italic.setStyleSheet(TOGGLE_BTN_STYLE)
+        theme.apply_style(self._btn_italic, TOGGLE_BTN_STYLE)
         self._btn_italic.toggled.connect(lambda v: self.option_changed.emit("font_italic", v))
 
         self._btn_underline = QPushButton("U")
@@ -110,7 +125,7 @@ class CharacterPanel(QWidget):
         under_font.setUnderline(True)
         self._btn_underline.setFont(under_font)
         self._btn_underline.setFixedSize(28, 28)
-        self._btn_underline.setStyleSheet(TOGGLE_BTN_STYLE)
+        theme.apply_style(self._btn_underline, TOGGLE_BTN_STYLE)
         self._btn_underline.toggled.connect(lambda v: self.option_changed.emit("font_underline", v))
 
         style_lo.addWidget(self._btn_bold)
@@ -137,13 +152,13 @@ class CharacterPanel(QWidget):
         tracking_lbl_lo.setSpacing(6)
 
         self._tracking_lbl = QLabel("Tracking:")
-        self._tracking_lbl.setStyleSheet(LABEL_STYLE)
+        theme.apply_style(self._tracking_lbl, LABEL_STYLE)
         tracking_lbl_lo.addWidget(self._tracking_lbl)
 
         self._tracking_spin = QSpinBox()
         self._tracking_spin.setRange(-500, 500)
         self._tracking_spin.setValue(0)
-        self._tracking_spin.setStyleSheet(SPIN_STYLE)
+        theme.apply_style(self._tracking_spin, SPIN_STYLE)
         self._tracking_spin.setFixedWidth(64)
         tracking_lbl_lo.addWidget(self._tracking_spin)
         tracking_lbl_lo.addStretch()
@@ -152,7 +167,7 @@ class CharacterPanel(QWidget):
         self._tracking_slider = QSlider(Qt.Orientation.Horizontal)
         self._tracking_slider.setRange(-500, 500)
         self._tracking_slider.setValue(0)
-        self._tracking_slider.setStyleSheet(SLIDER_STYLE)
+        theme.apply_style(self._tracking_slider, SLIDER_STYLE)
 
         # Connect tracking widgets bidirectionally
         self._tracking_slider.valueChanged.connect(self._on_tracking_slider)
@@ -169,7 +184,7 @@ class CharacterPanel(QWidget):
         leading_lo.setSpacing(6)
 
         self._leading_lbl = QLabel("Leading:")
-        self._leading_lbl.setStyleSheet(LABEL_STYLE)
+        theme.apply_style(self._leading_lbl, LABEL_STYLE)
         leading_lo.addWidget(self._leading_lbl)
 
         self._leading_spin = QDoubleSpinBox()
@@ -177,7 +192,7 @@ class CharacterPanel(QWidget):
         self._leading_spin.setSingleStep(0.1)
         self._leading_spin.setValue(1.0)
         self._leading_spin.setDecimals(2)
-        self._leading_spin.setStyleSheet(SPIN_STYLE)
+        theme.apply_style(self._leading_spin, SPIN_STYLE)
         self._leading_spin.setFixedWidth(72)
         self._leading_spin.valueChanged.connect(lambda v: self.option_changed.emit("text_leading", v))
         leading_lo.addWidget(self._leading_spin)

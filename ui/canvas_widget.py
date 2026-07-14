@@ -1,6 +1,11 @@
 import math
 import traceback
 
+from core.app_logging import get_logger
+from ui import theme
+
+logger = get_logger("canvas")
+
 from PyQt6.QtWidgets import QWidget
 from PyQt6.QtCore import Qt, QPoint, QPointF, QRect, QRectF, QTimer, pyqtSignal
 from PyQt6.QtGui import (QPainter, QColor, QPixmap, QBrush, QPen, QImage, QCursor, QInputDevice,
@@ -236,7 +241,7 @@ class CanvasWidget(QWidget):
             if hasattr(self.active_tool, "_stroke_preview_active"):
                 self.active_tool._stroke_preview_active = True
         except Exception as e:
-            print(f"Effect cache safety catch: {e}")
+            logger.exception("Effect cache safety catch")
             self._effect_bg_cache = None
             self._in_effect_stroke = False
 
@@ -318,11 +323,11 @@ class CanvasWidget(QWidget):
     def _draw_rulers(self, painter: QPainter):
         R = 20
         w, h = self.width(), self.height()
-        painter.fillRect(0, 0, w, R, QColor(40, 40, 45))
-        painter.fillRect(0, 0, R, h, QColor(40, 40, 45))
-        painter.fillRect(0, 0, R, R, QColor(30, 30, 35))
-        
-        painter.setPen(QColor(150, 150, 150))
+        painter.fillRect(0, 0, w, R, QColor(theme.MANTLE))
+        painter.fillRect(0, 0, R, h, QColor(theme.MANTLE))
+        painter.fillRect(0, 0, R, R, QColor(theme.CRUST))
+
+        painter.setPen(QColor(theme.SUBTEXT))
         font = painter.font()
         font.setPointSize(8)
         painter.setFont(font)
@@ -363,7 +368,7 @@ class CanvasWidget(QWidget):
             else:
                 painter.setRenderHint(QPainter.RenderHint.SmoothPixmapTransform)
 
-            painter.fillRect(self.rect(), QColor(30, 30, 40))
+            painter.fillRect(self.rect(), QColor(theme.CRUST))
 
             if not self.document:
                 painter.end()
@@ -425,7 +430,7 @@ class CanvasWidget(QWidget):
                         
                     painter.restore()
                 except Exception as e:
-                    print(f"Tool overlay rendering error {getattr(self.active_tool, 'name', '')}: {e}")
+                    logger.exception("Tool overlay rendering error in %s", getattr(self.active_tool, "name", "?"))
 
             if self._show_brush_cursor and not self._panning and not self._space:
                 self._draw_brush_cursor(painter)
@@ -435,7 +440,7 @@ class CanvasWidget(QWidget):
 
             painter.end()
         except Exception as ce:
-            print(f"Critical canvas paint loop failure: {traceback.format_exc()}")
+            logger.exception("Critical canvas paint loop failure")
 
     def _paint_canvas_content(self, painter: QPainter):
         """Internal layer-by-layer rendering of cached images and vectors."""
@@ -727,8 +732,9 @@ class CanvasWidget(QWidget):
                     painter.drawLine(ctx, cty - 3, ctx, cty + 3)
 
             painter.restore()
-        except Exception: pass
-        
+        except Exception:
+            logger.debug("Brush cursor overlay failed", exc_info=True)
+
     def _emit_tool_state(self):
         if hasattr(self.active_tool, "get_transform_params"):
             self.tool_state_changed.emit(self.active_tool.get_transform_params())
@@ -886,7 +892,7 @@ class CanvasWidget(QWidget):
                 try:
                     self.active_tool.on_press(doc_pos, self.document, self.fg_color, self.bg_color, self.tool_opts)
                 except Exception as tool_ex:
-                    print(f"[CanvasWidget] on_press error in {tool_name}:\n{traceback.format_exc()}")
+                    logger.exception("Tool %s failed in on_press", tool_name)
                     if hasattr(self.window(), "_status"):
                         self.window()._status.showMessage(f"Tool {tool_name}: operation failed", 4000)
                     self._stroke_in_progress = False
@@ -904,7 +910,7 @@ class CanvasWidget(QWidget):
 
             self._emit_tool_state()
         except Exception as global_ex:
-            print(f"[CanvasWidget] Critical mouse press error: {traceback.format_exc()}")
+            logger.exception("Critical mouse press error")
             self._stroke_in_progress = False
 
     def mouseMoveEvent(self, ev):
@@ -925,7 +931,8 @@ class CanvasWidget(QWidget):
                 doc_pos = self.to_doc(ev.position())
                 if self.active_tool:
                     try: self.active_tool.on_release(doc_pos, self.document, self.fg_color, self.bg_color, self.tool_opts)
-                    except Exception: pass
+                    except Exception:
+                        logger.exception("Tool %s failed in on_release", getattr(self.active_tool, "name", "?"))
                 self._stroke_in_progress = False
                 self._prev_brush_wp = None
                 if self._in_effect_stroke and self.active_tool and hasattr(self.active_tool, "_stroke_preview_active"):
@@ -990,7 +997,7 @@ class CanvasWidget(QWidget):
                 try:
                     self.active_tool.on_move(doc_pos, self.document, self.fg_color, self.bg_color, self.tool_opts)
                 except Exception as move_ex:
-                    print(f"[CanvasWidget] on_move error in {getattr(self.active_tool, 'name', '')}:\n{traceback.format_exc()}")
+                    logger.exception("Tool %s failed in on_move", getattr(self.active_tool, "name", "?"))
                     if hasattr(self.window(), "_status"):
                         self.window()._status.showMessage("Tool move step failed", 1000)
 
@@ -1017,7 +1024,8 @@ class CanvasWidget(QWidget):
                     try:
                         doc_pos = self.to_doc(ev.position())
                         self.active_tool.on_hover(doc_pos, self.document, self.fg_color, self.bg_color, self.tool_opts)
-                    except Exception: pass
+                    except Exception:
+                        logger.debug("Tool %s failed in on_hover", getattr(self.active_tool, "name", "?"), exc_info=True)
                     self._update_cursor()
             self._emit_tool_state()
 
@@ -1032,7 +1040,7 @@ class CanvasWidget(QWidget):
                         color = QColor(0, 0, 0, 0)
                     self.cursor_info.emit(cx, cy, color)
         except Exception as global_move_ex:
-            print(f"[CanvasWidget] Critical mouse move error: {global_move_ex}")
+            logger.exception("Critical mouse move error")
 
     def mouseReleaseEvent(self, ev):
         """Handles mouse release to finalize strokes."""
@@ -1077,7 +1085,7 @@ class CanvasWidget(QWidget):
                     try:
                         self.active_tool.on_release(doc_pos, self.document, self.fg_color, self.bg_color, self.tool_opts)
                     except Exception as rel_ex:
-                        print(f"[CanvasWidget] on_release error in {tool_name}:\n{traceback.format_exc()}")
+                        logger.exception("Tool %s failed in on_release", tool_name)
                         if hasattr(self.window(), "_status"):
                             self.window()._status.showMessage("Tool release failed", 4000)
 
@@ -1100,7 +1108,7 @@ class CanvasWidget(QWidget):
                 self.document_changed.emit()
             self._emit_tool_state()
         except Exception as global_release_ex:
-            print(f"[CanvasWidget] Critical mouse release error: {global_release_ex}")
+            logger.exception("Critical mouse release error")
             self._stroke_in_progress = False
 
     def enterEvent(self, ev):
@@ -1118,7 +1126,8 @@ class CanvasWidget(QWidget):
                     if hasattr(self.active_tool, attr):
                         setattr(self.active_tool, attr, None)
             self.update()
-        except Exception: pass
+        except Exception:
+            logger.debug("leaveEvent cleanup failed", exc_info=True)
 
     def wheelEvent(self, ev):
         if ev.modifiers() & Qt.KeyboardModifier.ControlModifier:

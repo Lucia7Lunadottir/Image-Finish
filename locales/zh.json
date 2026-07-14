@@ -349,7 +349,7 @@
 
   "title.untitled":  "ImageFinish — 未命名 ({mode})",
   "title.with_file": "ImageFinish — {name} ({mode})",
-  "title.canvas":    "LinuxShop — {w}×{h} ({mode})",
+  "title.canvas":    "ImageFinish — {w}×{h} ({mode})",
 
   "history.new_document":       "新建文档",
   "history.add_layer":          "添加图层",
@@ -991,5 +991,20 @@
 
   "props.transform":   "变换",
   "props.align":       "对齐到画布",
-  "props.info":        "图层信息"
+  "props.info":        "图层信息",
+
+  "crash.title": "内部错误",
+  "crash.message": "发生内部错误。应用程序将尝试继续运行。\n详细信息已保存到日志:\n{path}",
+  "crash.continue": "继续",
+  "crash.quit": "退出",
+  "status.legacy_format": "已打开旧格式 — 重新保存以转换为新格式",
+  "menu.reset_workspace": "重置工作区",
+  "menu.theme": "主题",
+  "menu.theme_dark": "深色",
+  "menu.theme_light": "浅色",
+  "status.theme_restart": "主题已应用。部分面板将在重启后完全更新",
+  "menu.theme_custom": "自定义",
+  "menu.theme_configure": "配置自定义…",
+  "dlg.theme_main_color": "主题主色",
+  "dlg.theme_base_question": "以深色为基础？\n（否 = 浅色基础）"
 }

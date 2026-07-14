@@ -2,6 +2,10 @@ from PyQt6.QtGui import QImage, QPainter, QColor, QPainterPath, QLinearGradient,
 from PyQt6.QtCore import Qt, QRect, QRectF, QPoint, QPointF
 from .layer import Layer
 
+from core.app_logging import get_logger
+
+logger = get_logger("document")
+
 
 def _get_composition_mode(mode_str: str) -> QPainter.CompositionMode:
     mapping = {
@@ -101,7 +105,7 @@ def _apply_layer_adjustment(image: QImage, layer) -> QImage:
             from core.adjustments.hdr_toning import apply_hdr_toning
             return apply_hdr_toning(image, int(get_v(["radius", "rad"], 10)), float(get_v(["strength", "str"], 0.5)), float(get_v(["gamma"], 1.0)), float(get_v(["detail", "det"], 1.0)))
     except Exception as e:
-        print(f"Error applying adjustment layer '{t}':", e)
+        logger.exception("Error applying adjustment layer %r", t)
     return image
 
 
@@ -238,6 +242,8 @@ class Document:
                     and not getattr(l, "mask", None)
                     and not getattr(l, "vector_mask", None)
                     and not getattr(l, "clipping", False)
+                    and not getattr(l, "layer_styles", None)
+                    and getattr(self, "quick_mask_layer", None) is None
                     and l.offset.x() == 0 and l.offset.y() == 0
                     and l.image.width() == self.width and l.image.height() == self.height):
                 self._composite_cache_doc = l.image.copy()
@@ -441,7 +447,31 @@ class Document:
                     current_offset = layer.offset
                     if getattr(layer, "layer_styles", None):
                         from core.layer_styles import apply_layer_styles
-                        img_to_draw, offset_delta = apply_layer_styles(img_to_draw, layer.layer_styles)
+                        # Styles (shadows, glows, bevel) are expensive; reuse
+                        # the rendered result until the source pixels or the
+                        # style settings change. cacheKey() covers the pixels,
+                        # the JSON fingerprint covers the settings.
+                        fp = None
+                        try:
+                            import json
+                            from core.serialization import encode_qt
+                            fp = json.dumps(encode_qt(layer.layer_styles),
+                                            sort_keys=True, default=str)
+                        except Exception:
+                            pass
+                        cache_key = (img_to_draw.cacheKey(), fp)
+                        cached = getattr(layer, "_style_cache", None)
+                        if fp is not None and cached is not None and cached[0] == cache_key:
+                            # Fresh QImage instance: shares pixels COW and has
+                            # no is_copy mark, so later pipeline stages copy
+                            # before painting instead of mutating the cache.
+                            img_to_draw = QImage(cached[1])
+                            offset_delta = cached[2]
+                        else:
+                            src_is_layer_image = img_to_draw is layer.image
+                            img_to_draw, offset_delta = apply_layer_styles(img_to_draw, layer.layer_styles)
+                            if fp is not None and src_is_layer_image:
+                                layer._style_cache = (cache_key, img_to_draw, offset_delta)
                         current_offset = current_offset + offset_delta
                         
                         # Apply the Offset style
@@ -592,18 +622,20 @@ class Document:
 
     # ----------------------------------------------------------------- History
     def snapshot_layers(self, modified_index: int | None = None) -> list[Layer]:
-        """Snapshot layers for undo.  When *modified_index* is given, only
-        that layer's image is deep-copied; the rest share their QImage
-        (safe because brush tools only modify the active layer)."""
-        if modified_index is None:
-            snap = [layer.copy() for layer in self.layers]
-        else:
-            snap = [
-                layer.copy(deep_image=(i == modified_index))
-                for i, layer in enumerate(self.layers)
-            ]
+        """Snapshot layers for undo.
+
+        Pixel data is always shared copy-on-write (`QImage(other)`): every
+        later mutation goes through QPainter/bits(), which detaches the
+        live image first, so snapshots stay intact without deep copies.
+        Snapshots must be taken *before* the mutating code acquires pixel
+        pointers (the press/menu paths already do).
+
+        `modified_index` is kept for call-site documentation only — it no
+        longer changes behavior.
+        """
+        snap = [layer.copy(deep_image=False) for layer in self.layers]
         if getattr(self, "quick_mask_layer", None) is not None:
-            snap.append(self.quick_mask_layer.copy())
+            snap.append(self.quick_mask_layer.copy(deep_image=False))
         return snap
 
     def apply_layer_mask(self, layer):
@@ -629,13 +661,15 @@ class Document:
         layer.editing_mask = False
 
     def restore_layers(self, snapshot: list[Layer]):
+        # deep_image=False: pixel data is shared copy-on-write with the
+        # snapshot, so restore is cheap and later painting detaches safely.
         self.layers = []
         self.quick_mask_layer = None
         for layer in snapshot:
             if getattr(layer, "is_quick_mask", False):
-                self.quick_mask_layer = layer.copy()
+                self.quick_mask_layer = layer.copy(deep_image=False)
             else:
-                self.layers.append(layer.copy())
+                self.layers.append(layer.copy(deep_image=False))
 
     # ------------------------------------------------------------------- Crop
     def apply_crop(self, rect: QRect):
@@ -828,26 +862,13 @@ class Document:
         self.active_layer_index = 0
 
     def save_to_imfn(self, path: str):
-        import pickle, gzip
-        data = {
-            "width": self.width,
-            "height": self.height,
-            "color_mode": self.color_mode,
-            "bit_depth": self.bit_depth,
-            "layers": [l.to_dict() for l in self.layers]
-        }
-        with gzip.open(path, "wb") as f:
-            pickle.dump(data, f)
+        from core.serialization import save_document
+        save_document(self, path)
 
     @classmethod
     def load_from_imfn(cls, path: str):
-        import pickle, gzip
-        with gzip.open(path, "rb") as f:
-            data = pickle.load(f)
-        doc = cls(data["width"], data["height"])
-        doc.color_mode = data.get("color_mode", "RGB")
-        doc.bit_depth = data.get("bit_depth", 8)
-        doc.layers = [Layer.from_dict(ld, doc.width, doc.height) for ld in data.get("layers", [])]
+        from core.serialization import load_document
+        doc, _was_legacy = load_document(path)
         return doc
 
     def __repr__(self) -> str:

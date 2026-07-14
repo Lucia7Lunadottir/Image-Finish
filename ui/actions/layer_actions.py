@@ -1,6 +1,7 @@
 from PyQt6.QtWidgets import QMessageBox
 from PyQt6.QtGui import QPainter, QColor
 from core.locale import tr
+from ui.document_controller import require_document
 
 
 class LayerActionsMixin:
@@ -10,31 +11,44 @@ class LayerActionsMixin:
         self._layers_panel.refresh(self._document)
         self._update_status()
 
+    @require_document
     def _on_layer_selected(self, index: int):
-        self._document.active_layer_index = index
+        if not self._doc_controller.set_active_layer_index(index):
+            return
         self._refresh_layers()
 
+    @require_document
     def _on_layer_visibility(self, index: int, visible: bool):
-        self._document.layers[index].visible = visible
+        layer = self._doc_controller.layer_at(index)
+        if layer is None:
+            return
+        layer.visible = visible
         self._canvas_refresh()
 
+    @require_document
     def _on_layer_opacity(self, index: int, opacity: float):
-        self._document.layers[index].opacity = opacity
+        layer = self._doc_controller.layer_at(index)
+        if layer is None:
+            return
+        layer.opacity = opacity
         self._canvas_refresh()
         self._refresh_layers()
 
+    @require_document
     def _add_layer(self):
         self._push_history(tr("history.add_layer"))
         self._document.add_layer()
         self._refresh_layers()
         self._canvas_refresh()
 
+    @require_document
     def _duplicate_layer(self):
         self._push_history(tr("history.duplicate_layer"))
         self._document.duplicate_layer(self._document.active_layer_index)
         self._refresh_layers()
         self._canvas_refresh()
 
+    @require_document
     def _delete_layer(self):
         if len(self._document.layers) <= 1:
             QMessageBox.warning(self, tr("err.title.delete_layer"), tr("err.delete_last_layer"))
@@ -44,6 +58,7 @@ class LayerActionsMixin:
         self._refresh_layers()
         self._canvas_refresh()
 
+    @require_document
     def _layer_up(self):
         i = self._document.active_layer_index
         self._push_history(tr("history.layer_up"))
@@ -51,6 +66,7 @@ class LayerActionsMixin:
         self._refresh_layers()
         self._canvas_refresh()
 
+    @require_document
     def _layer_down(self):
         i = self._document.active_layer_index
         self._push_history(tr("history.layer_down"))
@@ -58,13 +74,16 @@ class LayerActionsMixin:
         self._refresh_layers()
         self._canvas_refresh()
 
+    @require_document
     def _merge_down(self):
         i = self._document.active_layer_index
         if i == 0:
             return
+        bottom = self._doc_controller.layer_at(i - 1)
+        top    = self._doc_controller.layer_at(i)
+        if bottom is None or top is None:
+            return
         self._push_history(tr("history.merge_down"))
-        bottom = self._document.layers[i - 1]
-        top    = self._document.layers[i]
         p = QPainter(bottom.image)
         p.setOpacity(top.opacity)
         p.drawImage(top.offset, top.image)
@@ -73,6 +92,7 @@ class LayerActionsMixin:
         self._refresh_layers()
         self._canvas_refresh()
 
+    @require_document
     def _flatten(self):
         self._push_history(tr("history.flatten"))
         self._document.flatten()
@@ -81,6 +101,7 @@ class LayerActionsMixin:
 
     # ── Adjustment layers ─────────────────────────────────────────────────
 
+    @require_document
     def _new_adj_layer(self, adj_type: str = "brightness_contrast"):
         from ui.adjustment_layer_dialog import AdjustmentLayerDialog
         from core.layer import Layer
@@ -113,6 +134,7 @@ class LayerActionsMixin:
 
     # ── Fill layers ───────────────────────────────────────────────────────
 
+    @require_document
     def _new_fill_layer(self, fill_type: str = "solid"):
         from ui.fill_layer_dialog import FillLayerDialog
         from core.layer import Layer
@@ -163,8 +185,9 @@ class LayerActionsMixin:
         layer.layer_type = "smart_object"
         self._refresh_layers()
 
+    @require_document
     def _rasterize_layer(self):
-        layer = self._document and self._document.get_active_layer()
+        layer = self._document.get_active_layer()
         if not layer or layer.layer_type == "raster":
             return
         self._push_history(tr("history.rasterize_layer"))

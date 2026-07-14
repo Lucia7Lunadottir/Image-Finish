@@ -5,6 +5,10 @@ from PyQt6.QtGui import QImage, QBitmap, QRegion, QPainterPath
 from tools.base_tool import BaseTool, AbstractAsyncTool
 from tools.lasso_tools import LassoMixin
 
+from core.app_logging import get_logger
+
+logger = get_logger("magic_wand")
+
 class AbstractSelectionTool(AbstractAsyncTool, LassoMixin):
     """
     Intermediate parent class for selection tools.
@@ -27,7 +31,7 @@ class AbstractSelectionTool(AbstractAsyncTool, LassoMixin):
             np_data = np.frombuffer(ptr, dtype=np.uint8).reshape((h, img_rgba.bytesPerLine() // 4, 4))[:, :w, :].copy()
             return img, np_data
         except Exception as e:
-            print(f"Error creating safe memory snapshot: {e}")
+            logger.exception("Error creating safe memory snapshot")
             return None
 
     def _convert_mask_to_path(self, mask: np.ndarray, layer_offset: QPoint) -> QPainterPath:
@@ -99,7 +103,7 @@ class MagicWandTool(AbstractSelectionTool):
                 layer_offset=layer.offset
             )
         except Exception:
-            print(f"MagicWand safety catch: {traceback.format_exc()}")
+            logger.exception("MagicWand safety catch")
 
     @staticmethod
     def _background_flood_fill(*args, **kwargs):
@@ -188,7 +192,7 @@ class QuickSelectionTool(AbstractSelectionTool):
             
             self._process_brush_step(pos, np_data, opts)
         except Exception:
-            print(f"QuickSelection failure: {traceback.format_exc()}")
+            logger.exception("QuickSelection failure")
             self._dragging = False
 
     def on_move(self, pos: QPoint, doc, fg, bg, opts):
@@ -207,7 +211,7 @@ class QuickSelectionTool(AbstractSelectionTool):
                 path = self._convert_mask_to_path(self._live_mask, self._active_layer.offset)
                 self._apply_path(doc, path, opts)
         except Exception:
-            print(f"QuickSelection finalization failure: {traceback.format_exc()}")
+            logger.exception("QuickSelection finalization failure")
         finally:
             self._live_mask = None
             self._active_layer = None
@@ -322,7 +326,7 @@ class ObjectSelectionTool(AbstractSelectionTool):
                 self._apply_path(doc, path, opts)
 
         except Exception:
-            print(f"ObjectSelection failure: {traceback.format_exc()}")
+            logger.exception("ObjectSelection failure")
         finally:
             self._start = None
             self._end = None

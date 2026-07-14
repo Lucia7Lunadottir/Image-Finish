@@ -3,6 +3,10 @@ import traceback
 from PyQt6.QtCore import QPoint, Qt, QObject, pyqtSignal, QRunnable, QThreadPool
 from PyQt6.QtGui import QColor
 
+from core.app_logging import get_logger
+
+logger = get_logger("tools")
+
 class BaseTool(ABC):
     """Abstract base class for all drawing and editing tools.
     Each tool receives coordinates in document space."""
@@ -63,6 +67,13 @@ class AbstractAsyncTool(BaseTool, ABC):
     def __init__(self):
         super().__init__()
         self._is_working = False
+        self._liveness_check = None
+
+    def set_liveness_check(self, predicate):
+        """Inject a callable(doc) -> bool that tells whether the document
+        is still open. Keeps tools decoupled from the window that owns
+        the tabs (dependency inversion)."""
+        self._liveness_check = predicate
 
     def execute_async(self, background_func, on_finished_gui_callback, doc, opts, *args, **kwargs):
         """Wraps the given function and submits it to QThreadPool."""
@@ -84,12 +95,16 @@ class AbstractAsyncTool(BaseTool, ABC):
 
     def _safe_gui_wrapper(self, callback, result, doc, opts):
         try:
+            if self._liveness_check is not None and not self._liveness_check(doc):
+                logger.info("[%s] Result dropped: document was closed "
+                            "before the computation finished", self.name)
+                return
             callback(result, doc, opts)
         except Exception:
-            print(f"[{self.name}] GUI callback error:\n{traceback.format_exc()}")
+            logger.exception("[%s] GUI callback error", self.name)
         finally:
             self._is_working = False
 
     def _safe_error_handler(self, err_trace):
-        print(f"[{self.name}] Background computation error:\n{err_trace}")
+        logger.error("[%s] Background computation error:\n%s", self.name, err_trace)
         self._is_working = False

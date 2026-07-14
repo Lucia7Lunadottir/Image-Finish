@@ -349,7 +349,7 @@
 
   "title.untitled":  "ImageFinish — Unbenannt ({mode})",
   "title.with_file": "ImageFinish — {name} ({mode})",
-  "title.canvas":    "LinuxShop — {w}×{h} ({mode})",
+  "title.canvas":    "ImageFinish — {w}×{h} ({mode})",
 
   "history.new_document":       "Neues Dokument",
   "history.add_layer":          "Ebene hinzugefügt",
@@ -991,5 +991,20 @@
 
   "props.transform":   "TRANSFORMIEREN",
   "props.align":       "AN ARBEITSFLÄCHE AUSRICHTEN",
-  "props.info":        "EBENEN-INFO"
+  "props.info":        "EBENEN-INFO",
+
+  "crash.title": "Interner Fehler",
+  "crash.message": "Ein interner Fehler ist aufgetreten. Die Anwendung versucht fortzufahren.\nDetails wurden im Protokoll gespeichert:\n{path}",
+  "crash.continue": "Fortfahren",
+  "crash.quit": "Beenden",
+  "status.legacy_format": "Altes Format geöffnet — erneut speichern, um ins neue Format zu konvertieren",
+  "menu.reset_workspace": "Arbeitsbereich zurücksetzen",
+  "menu.theme": "Design",
+  "menu.theme_dark": "Dunkel",
+  "menu.theme_light": "Hell",
+  "status.theme_restart": "Design angewendet. Einige Panels werden nach dem Neustart vollständig aktualisiert",
+  "menu.theme_custom": "Benutzerdefiniert",
+  "menu.theme_configure": "Benutzerdefiniert einrichten…",
+  "dlg.theme_main_color": "Hauptfarbe des Designs",
+  "dlg.theme_base_question": "Auf dunkler Basis aufbauen?\n(Nein = helle Basis)"
 }

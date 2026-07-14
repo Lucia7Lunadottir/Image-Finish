@@ -349,7 +349,7 @@
 
   "title.untitled":  "ImageFinish — 名称未設定 ({mode})",
   "title.with_file": "ImageFinish — {name} ({mode})",
-  "title.canvas":    "LinuxShop — {w}×{h} ({mode})",
+  "title.canvas":    "ImageFinish — {w}×{h} ({mode})",
 
   "history.new_document":       "新規書き出し",
   "history.add_layer":          "レイヤーを追加",
@@ -991,5 +991,20 @@
 
   "props.transform":   "変形",
   "props.align":       "キャンバスに合わせて整列",
-  "props.info":        "レイヤー情報"
+  "props.info":        "レイヤー情報",
+
+  "crash.title": "内部エラー",
+  "crash.message": "内部エラーが発生しました。アプリケーションは続行を試みます。\n詳細はログに保存されました:\n{path}",
+  "crash.continue": "続行",
+  "crash.quit": "終了",
+  "status.legacy_format": "旧形式で開きました — 新形式に変換するには再保存してください",
+  "menu.reset_workspace": "ワークスペースをリセット",
+  "menu.theme": "テーマ",
+  "menu.theme_dark": "ダーク",
+  "menu.theme_light": "ライト",
+  "status.theme_restart": "テーマを適用しました。一部のパネルは再起動後に完全に更新されます",
+  "menu.theme_custom": "カスタム",
+  "menu.theme_configure": "カスタムを設定…",
+  "dlg.theme_main_color": "テーマのメインカラー",
+  "dlg.theme_base_question": "ダークベースで作成しますか？\n(いいえ = ライトベース)"
 }

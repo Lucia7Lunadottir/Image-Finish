@@ -4,7 +4,8 @@ from PyQt6.QtWidgets import (QMainWindow, QWidget, QHBoxLayout, QVBoxLayout,
 from PyQt6.QtCore import Qt, QRectF, QRect, QPoint, QPointF, QSettings
 from PyQt6.QtGui import QAction, QKeySequence, QColor, QPainterPath, QPainter, QBrush
 
-from ui.canvas_widget    import CanvasWidget
+from ui.canvas_widget       import CanvasWidget
+from ui.document_controller import DocumentController, require_document
 from ui.toolbar          import ToolBar
 from ui.tool_options_bar import ToolOptionsBar
 from ui.layers_panel     import LayersPanel
@@ -17,9 +18,12 @@ from ui.actions.image_actions      import ImageActionsMixin
 from ui.actions.adjustment_actions import AdjustmentActionsMixin
 from ui.actions.filter_actions     import FilterActionsMixin
 
+from core.app_logging import get_logger
 from core.document import Document
 from core.history  import HistoryManager, HistoryState
 from core.locale   import tr, available_languages, load as locale_load, current as locale_current
+
+logger = get_logger("main_window")
 
 
 # ── Tool registry ──────────────────────────────────────────────────────────────
@@ -127,22 +131,24 @@ class MainWindow(QMainWindow,
 
     @property
     def _canvas(self) -> CanvasWidget:
-        if hasattr(self, "_doc_tabs") and self._doc_tabs.count() > 0:
-            return self._doc_tabs.currentWidget()
+        if hasattr(self, "_doc_controller"):
+            return self._doc_controller.canvas()
         return None
 
     @property
     def _document(self):
-        c = self._canvas
-        return c.document if c else None
+        if hasattr(self, "_doc_controller"):
+            return self._doc_controller.document()
+        return None
 
     @_document.setter
     def _document(self, val): pass
 
     @property
     def _history(self):
-        c = self._canvas
-        return getattr(c, "history", None) if c else None
+        if hasattr(self, "_doc_controller"):
+            return self._doc_controller.history()
+        return None
 
     @_history.setter
     def _history(self, val): pass
@@ -161,7 +167,7 @@ class MainWindow(QMainWindow,
 
     def __init__(self):
         super().__init__()
-        self.setWindowTitle(tr("title.untitled"))
+        self.setWindowTitle(tr("title.untitled", mode="RGB/8"))
 
         self._recent_files = []
         self._load_recent_files()
@@ -176,6 +182,14 @@ class MainWindow(QMainWindow,
 
         self._build_ui()
 
+        from ui import workspace
+        workspace.restore(self)
+
+        from tools.base_tool import AbstractAsyncTool
+        for tool in self._tools.values():
+            if isinstance(tool, AbstractAsyncTool):
+                tool.set_liveness_check(self._doc_controller.is_alive)
+
         self._welcome_panel.refresh_recent(self._recent_files)
 
         self._wire_signals()
@@ -186,8 +200,6 @@ class MainWindow(QMainWindow,
         from ui.styles import DARK_STYLE
         self.setStyleSheet(DARK_STYLE)
         self.resize(1300, 850)
-
-        self._build_menu_bar()
 
         self._status = QStatusBar()
         self.setStatusBar(self._status)
@@ -216,69 +228,11 @@ class MainWindow(QMainWindow,
         self._doc_tabs.tabCloseRequested.connect(self._close_tab)
         self._doc_tabs.currentChanged.connect(self._on_tab_changed)
         self._doc_tabs.setObjectName("docTabs")
-        self._doc_tabs.setStyleSheet("QTabBar::tab { padding: 6px 14px; background: #1e1e2e; color: #a6adc8; border-right: 1px solid #313244; } QTabBar::tab:selected { background: #313244; color: #cdd6f4; font-weight: bold; }")
+        self._doc_controller = DocumentController(self._doc_tabs, parent=self)
 
-        right = QWidget()
-        right.setObjectName("panel")
-        right.setMinimumWidth(220)
-        right_v = QVBoxLayout(right)
-        right_v.setContentsMargins(0, 0, 0, 0)
-        right_v.setSpacing(0)
-
-        self._color_panel  = ColorPanel()
-        self._layers_panel = LayersPanel()
-
-        from ui.channels_panel import ChannelsPanel
-        self._channels_panel = ChannelsPanel()
-
-        from ui.history_panel      import HistoryPanel
-        from ui.navigator_panel    import NavigatorPanel
-        from ui.info_panel         import InfoPanel
-        from ui.histogram_panel    import HistogramPanel
-        from ui.brushes_panel      import BrushesPanel
-        from ui.swatches_panel     import SwatchesPanel
-        from ui.paths_panel        import PathsPanel
-        from ui.properties_panel   import PropertiesPanel
-        from ui.actions_panel      import ActionsPanel
-        from ui.tool_presets_panel import ToolPresetsPanel
-        from ui.character_panel    import CharacterPanel
-        from ui.paragraph_panel    import ParagraphPanel
-        from ui.glyphs_panel       import GlyphsPanel
-
-        self._history_panel       = HistoryPanel()
-        self._navigator_panel     = NavigatorPanel()
-        self._info_panel          = InfoPanel()
-        self._histogram_panel     = HistogramPanel()
-        self._brushes_panel       = BrushesPanel()
-        self._swatches_panel      = SwatchesPanel()
-        self._paths_panel         = PathsPanel()
-        self._properties_panel    = PropertiesPanel()
-        self._actions_panel       = ActionsPanel()
-        self._tool_presets_panel  = ToolPresetsPanel()
-        self._character_panel     = CharacterPanel()
-        self._paragraph_panel     = ParagraphPanel()
-        self._glyphs_panel        = GlyphsPanel()
-
-        self._tabs = QTabWidget()
-        self._tabs.setObjectName("sidebarTabs")
-        self._tabs.tabBar().setUsesScrollButtons(True)
-        self._tabs.addTab(self._layers_panel,      tr("panel.layers"))
-        self._tabs.addTab(self._channels_panel,    tr("panel.channels"))
-        self._tabs.addTab(self._history_panel,     tr("panel.history"))
-        self._tabs.addTab(self._navigator_panel,   tr("panel.navigator"))
-        self._tabs.addTab(self._info_panel,        tr("panel.info"))
-        self._tabs.addTab(self._histogram_panel,   tr("panel.histogram"))
-        self._tabs.addTab(self._brushes_panel,     tr("panel.brushes"))
-        self._tabs.addTab(self._swatches_panel,    tr("panel.swatches_tab"))
-        self._tabs.addTab(self._paths_panel,       tr("panel.paths"))
-        self._tabs.addTab(self._properties_panel,  tr("panel.properties"))
-        self._tabs.addTab(self._actions_panel,     tr("panel.actions"))
-        self._tabs.addTab(self._tool_presets_panel,tr("panel.tool_presets"))
-        self._tabs.addTab(self._character_panel,   tr("panel.character"))
-        self._tabs.addTab(self._paragraph_panel,   tr("panel.paragraph"))
-        self._tabs.addTab(self._glyphs_panel,      tr("panel.glyphs"))
-
-        self._layers_panel._title_lbl.hide()
+        from ui.panel_manager import PanelManager
+        self._panel_manager = PanelManager(self)
+        self._build_menu_bar()
 
         # Connect panel signals
         self._history_panel.jump_requested.connect(self._history_jump)
@@ -301,9 +255,6 @@ class MainWindow(QMainWindow,
         self._properties_panel.transform_changed.connect(self._on_transform_changed)
         self._properties_panel.align_requested.connect(self._do_align_layer)
 
-        right_v.addWidget(self._color_panel)
-        right_v.addWidget(self._tabs, 1)
-
         from ui.welcome_panel import WelcomePanel
         self._welcome_panel = WelcomePanel()
         self._center_stack = QStackedWidget()
@@ -315,332 +266,16 @@ class MainWindow(QMainWindow,
         self._welcome_panel.open_requested.connect(self._open_file)
         self._welcome_panel.open_path_requested.connect(self._open_file_path)
 
-        splitter = QSplitter(Qt.Orientation.Horizontal)
-        splitter.addWidget(self._center_stack)
-        splitter.addWidget(right)
-        splitter.setSizes([self.width() - 260, 260])
-        splitter.setStretchFactor(0, 1) # Canvas stretches
-        splitter.setStretchFactor(1, 0) # Panel does not
-
-        body_h.addWidget(splitter, 1)
+        body_h.addWidget(self._center_stack, 1)
         root_v.addWidget(body, 1)
 
     # ================================================================= Menu Bar
     def _build_menu_bar(self):
-        mb = self.menuBar()
+        from ui.menu_builder import build_menu_bar
+        build_menu_bar(self)
 
-        # File
-        file_m = self._menu(mb, "menu.file")
-        self._act(file_m, "menu.new",        self._new_doc,    QKeySequence.StandardKey.New)
-        self._act(file_m, "menu.open",       self._open_file,  QKeySequence.StandardKey.Open)
-        
-        self._recent_menu = self._menu(file_m, "menu.open_recent")
-        self._update_recent_menu()
-        
-        file_m.addSeparator()
-        self._act(file_m, "menu.save",       self._save,       QKeySequence.StandardKey.Save)
-        self._act(file_m, "menu.save_as",    self._save_as,    QKeySequence("Ctrl+Shift+S"))
-        self._act(file_m, "menu.export_png", self._export_png)
-        self._act(file_m, "menu.export_slices", self._export_slices)
-        file_m.addSeparator()
-        self._act(file_m, "menu.quit",       self.close,       QKeySequence.StandardKey.Quit)
-
-        # Edit
-        edit_m = self._menu(mb, "menu.edit")
-        self._undo_act = self._act(edit_m, "menu.undo", self._undo, QKeySequence("Ctrl+Z"))
-        self._redo_act = self._act(edit_m, "menu.redo", self._redo, QKeySequence("Ctrl+Shift+Z"))
-        edit_m.addSeparator()
-        self._act(edit_m, "menu.cut",             self._cut,   QKeySequence.StandardKey.Cut)
-        self._act(edit_m, "menu.copy",            self._copy,  QKeySequence.StandardKey.Copy)
-        self._act(edit_m, "menu.paste_new_layer", self._paste, QKeySequence.StandardKey.Paste)
-        edit_m.addSeparator()
-        self._act(edit_m, "menu.clear_layer",  self._clear_layer, QKeySequence("Delete"))
-        edit_m.addSeparator()
-        self._act(edit_m, "menu.define_brush", self._define_brush)
-        self._act(edit_m, "menu.define_pattern", self._define_pattern)
-        self._act(edit_m, "menu.define_shape", self._define_shape)
-        # Select
-        select_m = self._menu(mb, "menu.select")
-        self._act(select_m, "menu.select_all", self._select_all, QKeySequence.StandardKey.SelectAll) # Ctrl+A
-        self._act(select_m, "menu.deselect",   self._deselect,   QKeySequence("Ctrl+D"))
-        self._act(select_m, "menu.reselect",   self._reselect,   QKeySequence("Shift+Ctrl+D"))
-        self._act(select_m, "menu.inverse",    self._inverse_selection, QKeySequence("Shift+Ctrl+I"))
-        select_m.addSeparator()
-        self._act(select_m, "menu.color_range", self._color_range)
-        self._act(select_m, "menu.focus_area", self._focus_area)
-        self._act(select_m, "menu.select_subject", self._select_subject)
-        self._act(select_m, "menu.select_sky", self._select_sky)
-        self._act(select_m, "menu.select_and_mask", self._select_and_mask, QKeySequence("Alt+Ctrl+R"))
-        select_m.addSeparator()
-        self._act(select_m, "menu.save_selection", self._save_selection)
-        self._act(select_m, "menu.load_selection", self._load_selection)
-        select_m.addSeparator()
-        
-        modify_m = self._menu(select_m, "menu.modify")
-        self._act(modify_m, "menu.modify.border", lambda: self._modify_selection("border"))
-        self._act(modify_m, "menu.modify.smooth", lambda: self._modify_selection("smooth"))
-        self._act(modify_m, "menu.modify.expand", lambda: self._modify_selection("expand"))
-        self._act(modify_m, "menu.modify.contract", lambda: self._modify_selection("contract"))
-        self._act(modify_m, "menu.modify.feather", lambda: self._modify_selection("feather"), QKeySequence("Shift+F6"))
-        self._act(select_m, "menu.quick_mask", self._toggle_quick_mask, QKeySequence("Q"))
-        edit_m.addSeparator()
-        self._act(edit_m, "menu.fill_fg", self._fill_fg, QKeySequence("Alt+Delete"))
-        self._act(edit_m, "menu.fill_bg", self._fill_bg, QKeySequence("Ctrl+Delete"))
-
-        # Image
-        img_m  = self._menu(mb, "menu.image")
-        adj_m  = self._menu(img_m, "menu.adjustments")
-        self._act(adj_m, "menu.levels",              self._levels,              QKeySequence("Ctrl+L"))
-        self._act(adj_m, "menu.brightness_contrast", self._brightness_contrast)
-        self._act(adj_m, "menu.hue_saturation",      self._hue_saturation)
-        self._act(adj_m, "menu.exposure",            self._exposure)
-        self._act(adj_m, "menu.vibrance",            self._vibrance)
-        adj_m.addSeparator()
-        self._act(adj_m, "menu.black_white",         self._black_white)
-        self._act(adj_m, "menu.posterize",           self._posterize)
-        self._act(adj_m, "menu.threshold",           self._threshold)
-        adj_m.addSeparator()
-        self._act(adj_m, "menu.channel_mixer",       self._channel_mixer)
-        self._act(adj_m, "menu.selective_color",     self._selective_color)
-        self._act(adj_m, "menu.match_color",         self._match_color)
-        adj_m.addSeparator()
-        self._act(adj_m, "menu.shadows_highlights",  self._shadows_highlights)
-        self._act(adj_m, "menu.replace_color",       self._replace_color)
-        adj_m.addSeparator()
-        self._act(adj_m, "menu.photo_filter",        self._photo_filter)
-        self._act(adj_m, "menu.gradient_map",        self._gradient_map)
-        self._act(adj_m, "menu.color_lookup",        self._color_lookup)
-        self._act(adj_m, "menu.equalize",            self._equalize)
-        adj_m.addSeparator()
-        self._act(adj_m, "menu.hdr_toning",          self._hdr_toning)
-        adj_m.addSeparator()
-        self._act(adj_m, "menu.invert",              self._invert, QKeySequence("Ctrl+I"))
-        img_m.addSeparator()
-        self._act(img_m, "menu.flip_h",        self._flip_h)
-        self._act(img_m, "menu.flip_v",        self._flip_v)
-        img_m.addSeparator()
-        mode_m = self._menu(img_m, "menu.mode")
-        self._act_mode_bitmap = self._act(mode_m, "mode.bitmap", lambda: self._change_color_mode("Bitmap"))
-        self._act_mode_gray = self._act(mode_m, "mode.grayscale", lambda: self._change_color_mode("Grayscale"))
-        self._act_mode_duo = self._act(mode_m, "mode.duotone", lambda: self._change_color_mode("Duotone"))
-        self._act_mode_idx = self._act(mode_m, "mode.indexed", lambda: self._change_color_mode("Indexed"))
-        self._act_mode_rgb = self._act(mode_m, "mode.rgb", lambda: self._change_color_mode("RGB"))
-        self._act_mode_cmyk = self._act(mode_m, "mode.cmyk", lambda: self._change_color_mode("CMYK"))
-        self._act_mode_lab = self._act(mode_m, "mode.lab", lambda: self._change_color_mode("Lab"))
-        
-        mode_m.addSeparator()
-        self._act_depth_8 = self._act(mode_m, "mode.8bit", lambda: self._change_bit_depth(8))
-        self._act_depth_16 = self._act(mode_m, "mode.16bit", lambda: self._change_bit_depth(16))
-        self._act_depth_32 = self._act(mode_m, "mode.32bit", lambda: self._change_bit_depth(32))
-        
-        for act in (self._act_mode_bitmap, self._act_mode_gray, self._act_mode_duo, self._act_mode_idx, self._act_mode_rgb, self._act_mode_cmyk, self._act_mode_lab, 
-                    self._act_depth_8, self._act_depth_16, self._act_depth_32):
-            act.setCheckable(True)
-        img_m.addSeparator()
-        self._act(img_m, "menu.apply_image",   self._apply_image)
-        self._act(img_m, "menu.calculations",  self._calculations)
-        img_m.addSeparator()
-        self._act(img_m, "menu.image_size",    self._image_size,    QKeySequence("Ctrl+Alt+I"))
-        self._act(img_m, "menu.resize_canvas", self._resize_canvas)
-        img_m.addSeparator()
-        self._act(img_m, "menu.trim",       self._trim)
-        self._act(img_m, "menu.reveal_all", self._reveal_all)
-        img_m.addSeparator()
-        self._act(img_m, "menu.apply_crop",    self._apply_crop)
-        self._act(img_m, "menu.apply_perspective_crop", self._apply_perspective_crop)
-        img_m.addSeparator()
-        self._act(img_m, "menu.flatten",       self._flatten)
-
-        # Layer
-        layer_m = self._menu(mb, "menu.layer")
-        self._act(layer_m, "menu.new_layer",       self._add_layer,       QKeySequence("Ctrl+Shift+N"))
-        self._act(layer_m, "menu.duplicate_layer", self._duplicate_layer, QKeySequence("Ctrl+J"))
-        self._act(layer_m, "menu.delete_layer",    self._delete_layer)
-        layer_m.addSeparator()
-        self._act(layer_m, "menu.export_layer_png", self._export_layer_png)
-        layer_m.addSeparator()
-        self._act(layer_m, "menu.create_clipping", self._toggle_clipping_mask, QKeySequence("Ctrl+Alt+G"))
-
-        adj_m = self._menu(layer_m, "menu.new_adj_layer")
-        self._act(adj_m, "menu.new_adj_bc",     lambda: self._new_adj_layer("brightness_contrast"))
-        self._act(adj_m, "menu.new_adj_hs",     lambda: self._new_adj_layer("hue_saturation"))
-        self._act(adj_m, "menu.new_adj_invert", lambda: self._new_adj_layer("invert"))
-        adj_m.addSeparator()
-        self._act(adj_m, "menu.levels",       lambda: self._new_adj_layer("levels"))
-        self._act(adj_m, "menu.exposure",     lambda: self._new_adj_layer("exposure"))
-        self._act(adj_m, "menu.vibrance",     lambda: self._new_adj_layer("vibrance"))
-        self._act(adj_m, "menu.black_white",  lambda: self._new_adj_layer("black_white"))
-        self._act(adj_m, "menu.posterize",    lambda: self._new_adj_layer("posterize"))
-        self._act(adj_m, "menu.threshold",    lambda: self._new_adj_layer("threshold"))
-        self._act(adj_m, "menu.photo_filter", lambda: self._new_adj_layer("photo_filter"))
-        self._act(adj_m, "menu.gradient_map", lambda: self._new_adj_layer("gradient_map"))
-        self._act(adj_m, "menu.color_lookup", lambda: self._new_adj_layer("color_lookup"))
-
-        fill_m = self._menu(layer_m, "menu.new_fill_layer")
-        self._act(fill_m, "menu.new_fill_solid",    lambda: self._new_fill_layer("solid"))
-        self._act(fill_m, "menu.new_fill_gradient", lambda: self._new_fill_layer("gradient"))
-
-        layer_m.addSeparator()
-        self._act(layer_m, "menu.smart_object",   self._new_smart_object)
-        self._act(layer_m, "menu.rasterize_layer", self._rasterize_layer)
-        layer_m.addSeparator()
-        self._act(layer_m, "menu.move_up",   self._layer_up,   QKeySequence("Ctrl+]"))
-        self._act(layer_m, "menu.move_down", self._layer_down, QKeySequence("Ctrl+["))
-
-        # Filter
-        filter_m = self._menu(mb, "menu.filter")
-        
-        self._act(filter_m, "menu.filter.camera_raw",      lambda: self._open_specific_filter("camera_raw"), QKeySequence("Shift+Ctrl+A"))
-        self._act(filter_m, "menu.filter.lens_correction", lambda: self._open_specific_filter("lens_correction"), QKeySequence("Shift+Ctrl+R"))
-        self._act(filter_m, "menu.filter.liquify",         lambda: self._open_specific_filter("liquify"), QKeySequence("Shift+Ctrl+X"))
-        filter_m.addSeparator()
-        
-        blur_gallery_m = self._menu(filter_m, "menu.blur_gallery")
-        self._act(blur_gallery_m, "menu.blur.field",      self._blur_field)
-        self._act(blur_gallery_m, "menu.blur.iris",       self._blur_iris)
-        self._act(blur_gallery_m, "menu.blur.tilt_shift", self._blur_tilt_shift)
-        self._act(blur_gallery_m, "menu.blur.path",       self._blur_path)
-        self._act(blur_gallery_m, "menu.blur.spin",       self._blur_spin)
-        filter_m.addSeparator()
-
-        blur_m   = self._menu(filter_m, "menu.blur")
-        self._act(blur_m, "menu.blur.average",  self._blur_average)
-        self._act(blur_m, "menu.blur.blur",     self._blur_simple)
-        self._act(blur_m, "menu.blur.more",     self._blur_more)
-        blur_m.addSeparator()
-        self._act(blur_m, "menu.blur.box",      self._box_blur)
-        self._act(blur_m, "menu.blur.gaussian", self._gaussian_blur)
-        self._act(blur_m, "menu.blur.motion",   self._motion_blur)
-        self._act(blur_m, "menu.blur.radial",   self._radial_blur)
-        self._act(blur_m, "menu.blur.smart",    self._smart_blur)
-        self._act(blur_m, "menu.blur.surface",  self._surface_blur)
-        self._act(blur_m, "menu.blur.shape",    self._shape_blur)
-        self._act(blur_m, "menu.blur.lens",     self._lens_blur)
-        filter_m.addSeparator()
-        
-        sharpen_m = self._menu(filter_m, "menu.sharpen_gallery")
-        self._act(sharpen_m, "menu.sharpen.sharpen", lambda: self._open_sharpen("sharpen"))
-        self._act(sharpen_m, "menu.sharpen.edges",   lambda: self._open_sharpen("edges"))
-        self._act(sharpen_m, "menu.sharpen.more",    lambda: self._open_sharpen("more"))
-        self._act(sharpen_m, "menu.sharpen.smart",   lambda: self._open_sharpen("smart"))
-        self._act(sharpen_m, "menu.sharpen.unsharp", lambda: self._open_sharpen("unsharp"))
-        filter_m.addSeparator()
-
-        distort_m = self._menu(filter_m, "menu.distort")
-        self._act(distort_m, "menu.distort.displace", lambda: self._open_distort("displace"))
-        self._act(distort_m, "menu.distort.pinch",    lambda: self._open_distort("pinch"))
-        self._act(distort_m, "menu.distort.polar",    lambda: self._open_distort("polar"))
-        self._act(distort_m, "menu.distort.ripple",   lambda: self._open_distort("ripple"))
-        self._act(distort_m, "menu.distort.shear",    lambda: self._open_distort("shear"))
-        self._act(distort_m, "menu.distort.spherize", lambda: self._open_distort("spherize"))
-        self._act(distort_m, "menu.distort.twirl",    lambda: self._open_distort("twirl"))
-        self._act(distort_m, "menu.distort.wave",     lambda: self._open_distort("wave"))
-        self._act(distort_m, "menu.distort.zigzag",   lambda: self._open_distort("zigzag"))
-        
-        filter_m.addSeparator()
-        noise_m = self._menu(filter_m, "menu.noise")
-        self._act(noise_m, "menu.noise.add",      lambda: self._open_noise("add_noise"))
-        self._act(noise_m, "menu.noise.despeckle",lambda: self._open_noise("despeckle"))
-        self._act(noise_m, "menu.noise.dust",     lambda: self._open_noise("dust_scratches"))
-        self._act(noise_m, "menu.noise.median",   lambda: self._open_noise("median"))
-        self._act(noise_m, "menu.noise.reduce",   lambda: self._open_noise("reduce_noise"))
-        
-        filter_m.addSeparator()
-        pixelate_m = self._menu(filter_m, "menu.pixelate")
-        self._act(pixelate_m, "menu.pixelate.color_halftone", lambda: self._open_pixelate("color_halftone"))
-        self._act(pixelate_m, "menu.pixelate.crystallize",    lambda: self._open_pixelate("crystallize"))
-        self._act(pixelate_m, "menu.pixelate.facet",          lambda: self._open_pixelate("facet"))
-        self._act(pixelate_m, "menu.pixelate.fragment",       lambda: self._open_pixelate("fragment"))
-        self._act(pixelate_m, "menu.pixelate.mezzotint",      lambda: self._open_pixelate("mezzotint"))
-        self._act(pixelate_m, "menu.pixelate.mosaic",         lambda: self._open_pixelate("mosaic"))
-        self._act(pixelate_m, "menu.pixelate.pointillize",    lambda: self._open_pixelate("pointillize"))
-        
-        filter_m.addSeparator()
-        other_m = self._menu(filter_m, "menu.other")
-        self._act(other_m, "menu.other.custom",    lambda: self._open_other("custom"))
-        self._act(other_m, "menu.other.high_pass", lambda: self._open_other("high_pass"))
-        self._act(other_m, "menu.other.maximum",   lambda: self._open_other("maximum"))
-        self._act(other_m, "menu.other.minimum",   lambda: self._open_other("minimum"))
-        self._act(other_m, "menu.other.offset",    lambda: self._open_other("offset"))
-        
-        filter_m.addSeparator()
-        stylize_m = self._menu(filter_m, "menu.stylize")
-        self._act(stylize_m, "menu.stylize.emboss",       lambda: self._open_stylize("emboss"))
-        self._act(stylize_m, "menu.stylize.extrude",      lambda: self._open_stylize("extrude"))
-        self._act(stylize_m, "menu.stylize.find_edges",   lambda: self._open_stylize("find_edges"))
-        self._act(stylize_m, "menu.stylize.oil_paint",    lambda: self._open_stylize("oil_paint"))
-        self._act(stylize_m, "menu.stylize.solarize",     lambda: self._open_stylize("solarize"))
-        self._act(stylize_m, "menu.stylize.tiles",        lambda: self._open_stylize("tiles"))
-        self._act(stylize_m, "menu.stylize.trace_contour",lambda: self._open_stylize("trace_contour"))
-        self._act(stylize_m, "menu.stylize.wind",         lambda: self._open_stylize("wind"))
-        
-        filter_m.addSeparator()
-        render_m = self._menu(filter_m, "menu.render_gallery")
-        self._act(render_m, "menu.render.clouds",      lambda: self._open_render("clouds"))
-        self._act(render_m, "menu.render.diff_clouds", lambda: self._open_render("diff_clouds"))
-        self._act(render_m, "menu.render.fibers",      lambda: self._open_render("fibers"))
-        self._act(render_m, "menu.render.lens_flare",  lambda: self._open_render("lens_flare"))
-        self._act(render_m, "menu.render.lighting",    lambda: self._open_render("lighting"))
-        self._act(render_m, "menu.render.wood",        lambda: self._open_render("wood"))
-        self._act(render_m, "menu.render.frame",       lambda: self._open_render("frame"))
-        self._act(render_m, "menu.render.flame",       lambda: self._open_render("flame"))
-
-        # View
-        view_m = self._menu(mb, "menu.view")
-        self._act(view_m, "menu.zoom_in",    lambda: self._canvas.zoom_in(),    QKeySequence.StandardKey.ZoomIn)
-        self._act(view_m, "menu.zoom_out",   lambda: self._canvas.zoom_out(),   QKeySequence.StandardKey.ZoomOut)
-        self._act(view_m, "menu.fit_window", lambda: self._canvas.reset_zoom(), QKeySequence("Ctrl+0"))
-        view_m.addSeparator()
-
-        self._act_rulers = self._act(view_m, "menu.rulers", self._toggle_rulers, QKeySequence("Ctrl+R"))
-        self._act_rulers.setCheckable(True)
-        self._act_rulers.setChecked(False)
-
-        show_m = self._menu(view_m, "menu.show")
-        self._act_guides = self._act(show_m, "menu.show_guides", self._toggle_guides, QKeySequence("Ctrl+;"))
-        self._act_guides.setCheckable(True); self._act_guides.setChecked(True)
-        
-        self._act_grid = self._act(show_m, "menu.show_grid", self._toggle_grid, QKeySequence("Ctrl+'"))
-        self._act_grid.setCheckable(True); self._act_grid.setChecked(False)
-        
-        self._act_slices = self._act(show_m, "menu.show_slices", self._toggle_slices)
-        self._act_slices.setCheckable(True); self._act_slices.setChecked(True)
-
-        snap_m = self._menu(view_m, "menu.snap")
-        self._act_snap = self._act(snap_m, "menu.snap", self._toggle_snap, QKeySequence("Shift+Ctrl+;"))
-        self._act_snap.setCheckable(True); self._act_snap.setChecked(True)
-
-        snap_m.addSeparator()
-        self._act_snap_guides = self._act(snap_m, "menu.snap_guides", self._toggle_snap_guides)
-        self._act_snap_guides.setCheckable(True); self._act_snap_guides.setChecked(True)
-        self._act_snap_grid = self._act(snap_m, "menu.snap_grid", self._toggle_snap_grid)
-        self._act_snap_grid.setCheckable(True); self._act_snap_grid.setChecked(False)
-        self._act_snap_bounds = self._act(snap_m, "menu.snap_bounds", self._toggle_snap_bounds)
-        self._act_snap_bounds.setCheckable(True); self._act_snap_bounds.setChecked(True)
-        self._act_snap_layers = self._act(snap_m, "menu.snap_layers", self._toggle_snap_layers)
-        self._act_snap_layers.setCheckable(True); self._act_snap_layers.setChecked(True)
-
-        view_m.addSeparator()
-        self._act(view_m, "menu.clear_guides", self._clear_guides)
-        view_m.addSeparator()
-        self._build_language_menu(view_m)
-
-        # Window — panel visibility
-        win_m = self._menu(mb, "menu.window")
-        self._panel_tab_acts: list[tuple[str, QAction]] = []
-        _panel_keys = [
-            "panel.layers", "panel.channels", "panel.history", "panel.navigator",
-            "panel.info", "panel.histogram", "panel.brushes", "panel.swatches_tab",
-            "panel.paths", "panel.properties", "panel.actions", "panel.tool_presets",
-            "panel.character", "panel.paragraph", "panel.glyphs",
-        ]
-        for idx, key in enumerate(_panel_keys):
-            act = QAction(tr(key), self)
-            act.setCheckable(True)
-            act.setChecked(True)
-            act.toggled.connect(lambda checked, i=idx: self._tabs.tabBar().setTabVisible(i, checked))
-            win_m.addAction(act)
-            self._panel_tab_acts.append((key, act))
+    def _reset_workspace(self):
+        self._panel_manager.apply_default_layout()
 
     def _act(self, menu: QMenu, key: str, slot, shortcut=None) -> QAction:
         act = QAction(tr(key), self)
@@ -667,6 +302,70 @@ class MainWindow(QMainWindow,
             lang_m.addAction(act)
             self._lang_acts[code] = act
 
+    def _build_theme_menu(self, parent_menu):
+        from ui import theme
+        theme_m = self._menu(parent_menu, "menu.theme")
+        self._theme_acts = {}
+        for name, key in (("dark", "menu.theme_dark"),
+                          ("light", "menu.theme_light"),
+                          ("custom", "menu.theme_custom")):
+            act = QAction(tr(key), self)
+            act.setCheckable(True)
+            act.setChecked(theme.current_theme() == name)
+            act.triggered.connect(lambda checked, n=name: self._set_theme(n))
+            theme_m.addAction(act)
+            self._all_acts.append((key, act))
+            self._theme_acts[name] = act
+        theme_m.addSeparator()
+        self._act(theme_m, "menu.theme_configure", self._configure_custom_theme)
+
+    def _set_theme(self, name: str):
+        from ui import theme
+        if name == theme.current_theme():
+            self._theme_acts[name].setChecked(True)
+            return
+        theme.set_theme(name)
+        theme.save_theme(name)
+        self._apply_theme_live()
+
+    def _configure_custom_theme(self):
+        """One main color drives the whole palette (surfaces take its hue,
+        accents are the color itself), on a dark or light lightness base."""
+        from ui import theme
+        from PyQt6.QtWidgets import QColorDialog, QMessageBox
+        from PyQt6.QtCore import QSettings
+        s = QSettings("ImageFinish", "ImageFinish")
+        start = QColor(str(s.value("theme_custom_color", "#7c3aed")))
+        color = QColorDialog.getColor(start, self, tr("dlg.theme_main_color"))
+        if not color.isValid():
+            return
+        base = "dark"
+        reply = QMessageBox.question(
+            self, tr("menu.theme"), tr("dlg.theme_base_question"),
+            QMessageBox.StandardButton.Yes | QMessageBox.StandardButton.No,
+            QMessageBox.StandardButton.Yes)
+        if reply == QMessageBox.StandardButton.No:
+            base = "light"
+        s.setValue("theme_custom_color", color.name())
+        s.setValue("theme_custom_base", base)
+        theme.set_theme("custom")
+        theme.save_theme("custom")
+        self._apply_theme_live()
+
+    def _apply_theme_live(self):
+        from ui import theme
+        for n, act in self._theme_acts.items():
+            act.setChecked(n == theme.current_theme())
+        from PyQt6.QtWidgets import QApplication
+        app = QApplication.instance()
+        if app is not None:
+            app.setStyleSheet(theme.build_stylesheet())
+        self.setStyleSheet(theme.build_stylesheet())
+        self._toolbar.retheme()
+        if self._canvas:
+            self._canvas.update()
+        self._status.showMessage(tr("status.theme_restart"), 6000)
+
     def _set_language(self, code: str):
         if code == locale_current():
             return
@@ -688,21 +387,7 @@ class MainWindow(QMainWindow,
         self._layers_panel.retranslate()
         self._color_panel.retranslate()
         self._channels_panel.retranslate()
-        self._tabs.setTabText(0,  tr("panel.layers"))
-        self._tabs.setTabText(1,  tr("panel.channels"))
-        self._tabs.setTabText(2,  tr("panel.history"))
-        self._tabs.setTabText(3,  tr("panel.navigator"))
-        self._tabs.setTabText(4,  tr("panel.info"))
-        self._tabs.setTabText(5,  tr("panel.histogram"))
-        self._tabs.setTabText(6,  tr("panel.brushes"))
-        self._tabs.setTabText(7,  tr("panel.swatches_tab"))
-        self._tabs.setTabText(8,  tr("panel.paths"))
-        self._tabs.setTabText(9,  tr("panel.properties"))
-        self._tabs.setTabText(10, tr("panel.actions"))
-        self._tabs.setTabText(11, tr("panel.tool_presets"))
-        self._tabs.setTabText(12, tr("panel.character"))
-        self._tabs.setTabText(13, tr("panel.paragraph"))
-        self._tabs.setTabText(14, tr("panel.glyphs"))
+        self._panel_manager.retranslate()
         for panel in (self._history_panel, self._navigator_panel, self._info_panel,
                       self._histogram_panel, self._brushes_panel, self._swatches_panel,
                       self._paths_panel, self._properties_panel, self._actions_panel,
@@ -712,9 +397,6 @@ class MainWindow(QMainWindow,
                 panel.retranslate()
         if hasattr(self, "_welcome_panel"):
             self._welcome_panel.retranslate()
-        if hasattr(self, "_panel_tab_acts"):
-            for key, act in self._panel_tab_acts:
-                act.setText(tr(key))
         self._refresh_layers()
 
     def _canvas_refresh(self):
@@ -858,6 +540,12 @@ class MainWindow(QMainWindow,
                 if reply == QMessageBox.StandardButton.Save:
                     self._doc_tabs.setCurrentIndex(i)
                     self._save()
+        from ui import workspace
+        workspace.save(self)
+        # Drain background workers (histogram/navigator): a QRunnable still
+        # running at interpreter teardown crashes the process on exit.
+        from PyQt6.QtCore import QThreadPool
+        QThreadPool.globalInstance().waitForDone(3000)
         event.accept()
 
     def _on_tab_changed(self, index: int):
@@ -924,18 +612,7 @@ class MainWindow(QMainWindow,
                     if getattr(tool, "_sel_origin", None):
                         self._document.selection = tool._sel_origin
 
-                pre_state = HistoryState(
-                    description=tr("tool.warp") if t_name == "Warp" else tr("tool.move"),
-                    layers_snapshot=self._document.snapshot_layers(),
-                    active_layer_index=self._document.active_layer_index,
-                    doc_width=self._document.width,
-                    doc_height=self._document.height,
-                    selection_snapshot=QPainterPath(self._document.selection) if self._document.selection else None,
-                    work_path_snapshot=clone_work_path(getattr(self._document, "work_path", None)),
-                    alpha_channels_snapshot=list(getattr(self._document, "alpha_channels", [])),
-                    color_mode_snapshot=getattr(self._document, "color_mode", "RGB"),
-                    bit_depth_snapshot=getattr(self._document, "bit_depth", 8)
-                )
+                pre_state = self._make_history_state(tr("tool.warp") if t_name == "Warp" else tr("tool.move"))
                 
                 # Restore the "cut" version back for the final compositing
                 if layer and tmp_img is not None:
@@ -959,7 +636,7 @@ class MainWindow(QMainWindow,
         if self._active_tool_name in ("Move", "Warp") and name != self._active_tool_name:
             self._commit_move_transform()
                 
-        print(f"Activating tool: {name}")
+        logger.debug("Activating tool: %s", name)
         self._active_tool_name = name
         tool = self._tools.get(name)
         if not tool:
@@ -989,9 +666,10 @@ class MainWindow(QMainWindow,
         if hasattr(self, "_on_layer_selected"):
             self._on_layer_selected(index)
 
+    @require_document
     def _open_layer_styles(self, index: int):
-        layer = self._document.layers[index]
-        if getattr(layer, "layer_type", "raster") in ("group", "artboard"):
+        layer = self._doc_controller.layer_at(index)
+        if layer is None or getattr(layer, "layer_type", "raster") in ("group", "artboard"):
             return
         from ui.layer_style_dialog import LayerStyleDialog
         dlg = LayerStyleDialog(layer, self._canvas_refresh, self)
@@ -1001,17 +679,20 @@ class MainWindow(QMainWindow,
         else:
             dlg.reject()
 
+    @require_document
     def _rename_layer(self, index: int, new_name: str):
         if 0 <= index < len(self._document.layers):
             layer = self._document.layers[index]
             if layer.name != new_name:
                 layer.name = new_name
 
+    @require_document
     def _on_layer_expanded_toggled(self, index: int, expanded: bool):
         if 0 <= index < len(self._document.layers):
             self._document.layers[index].expanded = expanded
             self._refresh_layers()
 
+    @require_document
     def _move_layer_exact(self, from_index: int, to_index: int):
         if 0 <= from_index < len(self._document.layers) and 0 <= to_index < len(self._document.layers):
             layer = self._document.layers[from_index]
@@ -1036,6 +717,7 @@ class MainWindow(QMainWindow,
         self._canvas.view_channel = ch
         self._canvas_refresh()
 
+    @require_document
     def _save_selection(self):
         sel = self._document.selection
         if not sel or sel.isEmpty():
@@ -1049,6 +731,7 @@ class MainWindow(QMainWindow,
             self._document.alpha_channels.append({"name": name, "path": QPainterPath(sel)})
             self._channels_panel.refresh(self._document)
 
+    @require_document
     def _load_selection(self):
         if not hasattr(self._document, "alpha_channels") or not self._document.alpha_channels:
             return
@@ -1063,12 +746,14 @@ class MainWindow(QMainWindow,
                     self._canvas_refresh()
                     break
 
+    @require_document
     def _load_selection_btn(self, idx):
         if hasattr(self._document, "alpha_channels") and 0 <= idx < len(self._document.alpha_channels):
             self._document.selection = QPainterPath(self._document.alpha_channels[idx]["path"])
             self._push_history(tr("history.load_selection"))
             self._canvas_refresh()
 
+    @require_document
     def _delete_alpha_channel(self, idx):
         if hasattr(self._document, "alpha_channels") and 0 <= idx < len(self._document.alpha_channels):
             self._push_history(tr("history.delete_layer"))
@@ -1088,6 +773,7 @@ class MainWindow(QMainWindow,
             self._channels_panel.refresh(self._document)
 
     # ================================================================= Events
+    @require_document
     def _toggle_rulers(self):
         self._canvas.show_rulers = self._act_rulers.isChecked(); self._canvas.update()
     def _toggle_guides(self):
@@ -1110,6 +796,7 @@ class MainWindow(QMainWindow,
     def _toggle_snap_layers(self):
         if hasattr(self._document, "snap_to_layers"): self._document.snap_to_layers = self._act_snap_layers.isChecked()
     
+    @require_document
     def _clear_guides(self):
         if hasattr(self._document, "guides_v"): self._document.guides_v.clear()
         if hasattr(self._document, "guides_h"): self._document.guides_h.clear()
@@ -1122,8 +809,10 @@ class MainWindow(QMainWindow,
         self._update_status()
 
     def _on_doc_changed(self):
+        if self._canvas is None:
+            return
         state = getattr(self._canvas, "_pre_stroke_state", None)
-        if state:
+        if state and self._history:
             self._history.push(state)
             self._canvas._pre_stroke_state = None
             if state.doc_width != self._document.width or state.doc_height != self._document.height:
@@ -1151,6 +840,7 @@ class MainWindow(QMainWindow,
         if hasattr(self, "_paths_panel"):
             self._paths_panel.refresh(canvas)
 
+    @require_document
     def _undo(self):
         tool = self._canvas.active_tool
         if hasattr(tool, "is_transforming") and tool.is_transforming:
@@ -1160,6 +850,7 @@ class MainWindow(QMainWindow,
             return
         super()._undo()
 
+    @require_document
     def _redo(self):
         tool = self._canvas.active_tool
         if hasattr(tool, "is_transforming") and tool.is_transforming:
@@ -1169,13 +860,14 @@ class MainWindow(QMainWindow,
             return
         super()._redo()
 
-    def _push_history(self, description: str):
-        if not self._document or not self._history:
-            return
+    def _make_history_state(self, description: str, modified_index: int | None = None) -> HistoryState:
+        """Snapshot the current document. Pass `modified_index` when the
+        operation touches a single layer: unmodified layers then share
+        their QImage with the live document, which keeps undo memory flat."""
         from core.history import clone_work_path
-        self._history.push(HistoryState(
+        return HistoryState(
             description=description,
-            layers_snapshot=self._document.snapshot_layers(),
+            layers_snapshot=self._document.snapshot_layers(modified_index=modified_index),
             active_layer_index=self._document.active_layer_index,
             doc_width=self._document.width,
             doc_height=self._document.height,
@@ -1184,7 +876,12 @@ class MainWindow(QMainWindow,
             alpha_channels_snapshot=list(getattr(self._document, "alpha_channels", [])),
             color_mode_snapshot=getattr(self._document, "color_mode", "RGB"),
             bit_depth_snapshot=getattr(self._document, "bit_depth", 8)
-        ))
+        )
+
+    def _push_history(self, description: str, modified_index: int | None = None):
+        if not self._document or not self._history:
+            return
+        self._history.push(self._make_history_state(description, modified_index))
 
     def _update_status(self, msg: str = ""):
         if not self._document: return
@@ -1212,7 +909,7 @@ class MainWindow(QMainWindow,
         else:
             self.setWindowTitle(tr("title.canvas", w=self._document.width, h=self._document.height, mode=mode_str))
             if hasattr(self, "_doc_tabs") and self._doc_tabs.currentIndex() >= 0:
-                self._doc_tabs.setTabText(self._doc_tabs.currentIndex(), tr("title.untitled"))
+                self._doc_tabs.setTabText(self._doc_tabs.currentIndex(), tr("title.untitled", mode=mode_str))
             
     def _update_mode_menu(self):
         if not hasattr(self, "_act_mode_rgb"): return
@@ -1293,23 +990,13 @@ class MainWindow(QMainWindow,
         for l in linked: l.offset = l.offset + QPoint(int(dx), int(dy))
         self._canvas_refresh()
 
+    @require_document
     def _apply_image(self):
         layer = self._document.get_active_layer()
         if not layer or layer.image.isNull(): return
         
         from core.history import HistoryState, clone_work_path
-        pre_state = HistoryState(
-            description=tr("history.apply_image"),
-            layers_snapshot=self._document.snapshot_layers(),
-            active_layer_index=self._document.active_layer_index,
-            doc_width=self._document.width,
-            doc_height=self._document.height,
-            selection_snapshot=QPainterPath(self._document.selection) if self._document.selection else None,
-            work_path_snapshot=clone_work_path(getattr(self._document, "work_path", None)),
-            alpha_channels_snapshot=list(getattr(self._document, "alpha_channels", [])),
-            color_mode_snapshot=getattr(self._document, "color_mode", "RGB"),
-            bit_depth_snapshot=getattr(self._document, "bit_depth", 8)
-        )
+        pre_state = self._make_history_state(tr("history.apply_image"), modified_index=self._document.active_layer_index)
         
         from ui.calculations_dialog import ApplyImageDialog
         dlg = ApplyImageDialog(self._document, self._canvas_refresh, self)
@@ -1412,6 +1099,7 @@ class MainWindow(QMainWindow,
         for i in range(self._doc_tabs.count()):
             self._doc_tabs.widget(i).tool_opts[key] = value
 
+    @require_document
     def _on_layer_blend_mode(self, mode: str):
         layer = self._document.get_active_layer()
         if layer and getattr(layer, "blend_mode", "SourceOver") != mode:
@@ -1419,6 +1107,7 @@ class MainWindow(QMainWindow,
             self._push_history(tr("history.layer_blend"))
             self._canvas_refresh()
 
+    @require_document
     def _on_layer_lock_changed(self, lock_type: str, locked: bool):
         layer = self._document.get_active_layer()
         if layer:
@@ -1430,6 +1119,7 @@ class MainWindow(QMainWindow,
             self._push_history(tr("history.lock_changed"))
             self._refresh_layers()
 
+    @require_document
     def _group_layer(self):
         idx = self._document.active_layer_index
         group = self._document.add_layer(tr("layer.name.group"), idx + 1)
@@ -1439,6 +1129,7 @@ class MainWindow(QMainWindow,
         self._push_history(tr("history.new_group"))
         self._refresh_layers()
         
+    @require_document
     def _link_layer(self):
         idx = self._document.active_layer_index
         if idx > 0:
@@ -1451,6 +1142,7 @@ class MainWindow(QMainWindow,
             self._push_history(tr("history.link_layers"))
             self._refresh_layers()
 
+    @require_document
     def _on_layer_target_changed(self, index: int, target: str):
         if 0 <= index < len(self._document.layers):
             self._document.active_layer_index = index
@@ -1458,6 +1150,7 @@ class MainWindow(QMainWindow,
             layer.editing_mask = (target == "mask")
             self._refresh_layers()
 
+    @require_document
     def _on_layer_mask_toggled(self, index: int):
         if 0 <= index < len(self._document.layers):
             layer = self._document.layers[index]
@@ -1467,6 +1160,7 @@ class MainWindow(QMainWindow,
                 self._refresh_layers()
                 self._canvas_refresh()
 
+    @require_document
     def _add_vector_mask(self):
         layer = self._document.get_active_layer()
         if layer and getattr(layer, "vector_mask", None) is None:
@@ -1481,6 +1175,7 @@ class MainWindow(QMainWindow,
             self._refresh_layers()
             self._canvas_refresh()
 
+    @require_document
     def _delete_vector_mask(self):
         layer = self._document.get_active_layer()
         if layer and getattr(layer, "vector_mask", None) is not None:
@@ -1489,6 +1184,7 @@ class MainWindow(QMainWindow,
             self._refresh_layers()
             self._canvas_refresh()
 
+    @require_document
     def _on_layer_vmask_toggled(self, index: int):
         if 0 <= index < len(self._document.layers):
             layer = self._document.layers[index]
@@ -1502,6 +1198,7 @@ class MainWindow(QMainWindow,
         if self._document and self._document.get_active_layer():
             self._on_layer_clipping_toggled(self._document.active_layer_index)
             
+    @require_document
     def _on_layer_clipping_toggled(self, index: int):
         if 0 < index < len(self._document.layers): # Cannot apply to the bottom layer
             layer = self._document.layers[index]
@@ -1510,6 +1207,7 @@ class MainWindow(QMainWindow,
             self._refresh_layers()
             self._canvas_refresh()
 
+    @require_document
     def _add_mask(self):
         layer = self._document.get_active_layer()
         if layer and getattr(layer, "mask", None) is None:
@@ -1521,6 +1219,7 @@ class MainWindow(QMainWindow,
             self._refresh_layers()
             self._canvas_refresh()
 
+    @require_document
     def _delete_mask(self):
         layer = self._document.get_active_layer()
         if layer and getattr(layer, "mask", None) is not None:
@@ -1530,6 +1229,7 @@ class MainWindow(QMainWindow,
             self._refresh_layers()
             self._canvas_refresh()
 
+    @require_document
     def _apply_mask(self):
         layer = self._document.get_active_layer()
         if layer and getattr(layer, "mask", None) is not None:
@@ -1538,6 +1238,7 @@ class MainWindow(QMainWindow,
             self._refresh_layers()
             self._canvas_refresh()
 
+    @require_document
     def _invert_mask(self):
         layer = self._document.get_active_layer()
         if layer and getattr(layer, "mask", None) is not None:
@@ -1546,6 +1247,7 @@ class MainWindow(QMainWindow,
             self._refresh_layers()
             self._canvas_refresh()
 
+    @require_document
     def _invert(self):
         layer = self._document.get_active_layer()
         if layer and getattr(layer, "editing_mask", False) and getattr(layer, "mask", None) is not None:
@@ -1557,18 +1259,7 @@ class MainWindow(QMainWindow,
         if not self._document: return
         
         from core.history import HistoryState, clone_work_path
-        pre_state = HistoryState(
-            description=tr("history.quick_mask"),
-            layers_snapshot=self._document.snapshot_layers(),
-            active_layer_index=self._document.active_layer_index,
-            doc_width=self._document.width,
-            doc_height=self._document.height,
-            selection_snapshot=QPainterPath(self._document.selection) if self._document.selection else None,
-            work_path_snapshot=clone_work_path(getattr(self._document, "work_path", None)),
-            alpha_channels_snapshot=list(getattr(self._document, "alpha_channels", [])),
-            color_mode_snapshot=getattr(self._document, "color_mode", "RGB"),
-            bit_depth_snapshot=getattr(self._document, "bit_depth", 8)
-        )
+        pre_state = self._make_history_state(tr("history.quick_mask"))
         
         if getattr(self._document, "quick_mask_layer", None) is not None:
             # Exit Quick Mask mode
@@ -1760,6 +1451,7 @@ class MainWindow(QMainWindow,
             self._canvas_refresh()
             self._refresh_layers()
 
+    @require_document
     def _on_edit_layer(self):
         layer = self._document.get_active_layer()
         if not layer:
@@ -1785,6 +1477,7 @@ class MainWindow(QMainWindow,
         elif hasattr(super(), "_on_edit_layer"):
             super()._on_edit_layer()
             
+    @require_document
     def _new_smart_object(self):
         layer = self._document.get_active_layer()
         if not layer or getattr(layer, "layer_type", "raster") == "smart_object":
@@ -1797,6 +1490,7 @@ class MainWindow(QMainWindow,
         self._refresh_layers()
         self._canvas_refresh()
         
+    @require_document
     def _clear_smart_filters(self):
         layer = self._document.get_active_layer()
         if layer and getattr(layer, "layer_type", "raster") == "smart_object":
@@ -1806,7 +1500,9 @@ class MainWindow(QMainWindow,
                 self._canvas_refresh()
                 self._refresh_layers()
 
+    @require_document
     def _export_slices(self):
+        from core.serialization import save_image_atomic, SerializationError
         slices = getattr(self._document, "slices", [])
         if not slices:
             QMessageBox.information(self, "ImageFinish", tr("err.no_slices"))
@@ -1818,17 +1514,28 @@ class MainWindow(QMainWindow,
         for i, r in enumerate(slices):
             c = r.intersected(comp.rect())
             if not c.isEmpty():
-                comp.copy(c).save(f"{dir_path}/slice_{i+1}.png")
-                count += 1
+                try:
+                    save_image_atomic(comp.copy(c), f"{dir_path}/slice_{i+1}.png")
+                    count += 1
+                except (SerializationError, OSError) as e:
+                    QMessageBox.critical(self, tr("err.title.save_error"),
+                                         tr("err.could_not_save", path=f"slice_{i+1}.png") + f"\n{e}")
+                    return
         self._status.showMessage(tr("status.slices_exported", count=count))
 
+    @require_document
     def _export_layer_png(self):
-        if not self._document: return
+        from core.serialization import save_image_atomic, SerializationError
         layer = self._document.get_active_layer()
         if not layer or layer.image.isNull(): return
         path, _ = QFileDialog.getSaveFileName(self, tr("menu.export_layer_png"), f"{layer.name}.png", "PNG (*.png)")
         if path:
-            layer.image.save(path)
+            try:
+                save_image_atomic(layer.image, path)
+            except (SerializationError, OSError) as e:
+                QMessageBox.critical(self, tr("err.title.save_error"),
+                                     tr("err.could_not_save", path=path) + f"\n{e}")
+                return
             self._status.showMessage(tr("status.saved", path=path))
 
     def _get_define_image(self):
@@ -1839,6 +1546,7 @@ class MainWindow(QMainWindow,
             if not br.isEmpty(): return comp.copy(br)
         return comp.copy()
 
+    @require_document
     def _define_brush(self):
         from PyQt6.QtWidgets import QInputDialog
         import os
@@ -1878,6 +1586,7 @@ class MainWindow(QMainWindow,
         brush_page = self._opts_bar._pages.get("Brush")
         if hasattr(brush_page, "add_custom_brush"): brush_page.add_custom_brush(path, name)
 
+    @require_document
     def _define_pattern(self):
         from PyQt6.QtWidgets import QInputDialog
         import os
@@ -1893,6 +1602,7 @@ class MainWindow(QMainWindow,
         pat_page = self._opts_bar._pages.get("PatternStamp")
         if hasattr(pat_page, "add_custom_pattern"): pat_page.add_custom_pattern(path, name)
 
+    @require_document
     def _define_shape(self):
         from PyQt6.QtWidgets import QInputDialog, QMessageBox
         import os, json
@@ -1964,6 +1674,7 @@ class MainWindow(QMainWindow,
             else:
                 self._open_file_path(path)
 
+    @require_document
     def _apply_text_styles(self):
         from tools.other_tools import _render_text, TextTool
         layer = self._document.get_active_layer()
@@ -1981,24 +1692,14 @@ class MainWindow(QMainWindow,
         self._refresh_layers()
 
     # ================================================================= Blur Gallery
+    @require_document
     def _open_blur_gallery(self, mode: str):
         layer = self._document.get_active_layer()
         if not layer or layer.image.isNull() or getattr(layer, "layer_type", "raster") not in ("raster", "smart_object"):
             return
             
         from core.history import HistoryState, clone_work_path
-        pre_state = HistoryState(
-            description=tr("menu.blur_gallery") + f" ({mode})",
-            layers_snapshot=self._document.snapshot_layers(),
-            active_layer_index=self._document.active_layer_index,
-            doc_width=self._document.width,
-            doc_height=self._document.height,
-            selection_snapshot=QPainterPath(self._document.selection) if self._document.selection else None,
-            work_path_snapshot=clone_work_path(getattr(self._document, "work_path", None)),
-            alpha_channels_snapshot=list(getattr(self._document, "alpha_channels", [])),
-            color_mode_snapshot=getattr(self._document, "color_mode", "RGB"),
-            bit_depth_snapshot=getattr(self._document, "bit_depth", 8)
-        )
+        pre_state = self._make_history_state(tr("menu.blur_gallery") + f" ({mode})", modified_index=self._document.active_layer_index)
             
         from ui.blur_gallery_dialog import BlurGalleryDialog
         dlg = BlurGalleryDialog(layer, mode, self._canvas_refresh, self)
@@ -2010,24 +1711,14 @@ class MainWindow(QMainWindow,
             self._canvas_refresh()
 
     # ================================================================= Specific Filters
+    @require_document
     def _open_specific_filter(self, mode: str):
         layer = self._document.get_active_layer()
         if not layer or layer.image.isNull() or getattr(layer, "layer_type", "raster") not in ("raster", "smart_object"):
             return
             
         from core.history import HistoryState, clone_work_path
-        pre_state = HistoryState(
-            description=tr(f"menu.filter.{mode}").replace('…', ''),
-            layers_snapshot=self._document.snapshot_layers(),
-            active_layer_index=self._document.active_layer_index,
-            doc_width=self._document.width,
-            doc_height=self._document.height,
-            selection_snapshot=QPainterPath(self._document.selection) if self._document.selection else None,
-            work_path_snapshot=clone_work_path(getattr(self._document, "work_path", None)),
-            alpha_channels_snapshot=list(getattr(self._document, "alpha_channels", [])),
-            color_mode_snapshot=getattr(self._document, "color_mode", "RGB"),
-            bit_depth_snapshot=getattr(self._document, "bit_depth", 8)
-        )
+        pre_state = self._make_history_state(tr(f"menu.filter.{mode}").replace('…', ''), modified_index=self._document.active_layer_index)
             
         from ui.specific_filters_dialog import SpecificFiltersDialog
         dlg = SpecificFiltersDialog(layer, mode, self._canvas_refresh, self)
@@ -2039,24 +1730,14 @@ class MainWindow(QMainWindow,
             self._canvas_refresh()
 
     # ================================================================= Render Gallery
+    @require_document
     def _open_render(self, mode: str):
         layer = self._document.get_active_layer()
         if not layer or layer.image.isNull() or getattr(layer, "layer_type", "raster") not in ("raster", "smart_object"):
             return
             
         from core.history import HistoryState, clone_work_path
-        pre_state = HistoryState(
-            description=tr(f"menu.render.{mode}").replace('…', ''),
-            layers_snapshot=self._document.snapshot_layers(),
-            active_layer_index=self._document.active_layer_index,
-            doc_width=self._document.width,
-            doc_height=self._document.height,
-            selection_snapshot=QPainterPath(self._document.selection) if self._document.selection else None,
-            work_path_snapshot=clone_work_path(getattr(self._document, "work_path", None)),
-            alpha_channels_snapshot=list(getattr(self._document, "alpha_channels", [])),
-            color_mode_snapshot=getattr(self._document, "color_mode", "RGB"),
-            bit_depth_snapshot=getattr(self._document, "bit_depth", 8)
-        )
+        pre_state = self._make_history_state(tr(f"menu.render.{mode}").replace('…', ''), modified_index=self._document.active_layer_index)
             
         from ui.render_dialog import RenderDialog
         dlg = RenderDialog(layer, mode, self._canvas_refresh, self)
@@ -2129,24 +1810,14 @@ class MainWindow(QMainWindow,
             self._open_file_path(path)
 
     # ================================================================= Sharpen Gallery
+    @require_document
     def _open_sharpen(self, mode: str):
         layer = self._document.get_active_layer()
         if not layer or layer.image.isNull() or getattr(layer, "layer_type", "raster") not in ("raster", "smart_object"):
             return
             
         from core.history import HistoryState, clone_work_path
-        pre_state = HistoryState(
-            description=tr(f"menu.sharpen.{mode}").replace('…', ''),
-            layers_snapshot=self._document.snapshot_layers(),
-            active_layer_index=self._document.active_layer_index,
-            doc_width=self._document.width,
-            doc_height=self._document.height,
-            selection_snapshot=QPainterPath(self._document.selection) if self._document.selection else None,
-            work_path_snapshot=clone_work_path(getattr(self._document, "work_path", None)),
-            alpha_channels_snapshot=list(getattr(self._document, "alpha_channels", [])),
-            color_mode_snapshot=getattr(self._document, "color_mode", "RGB"),
-            bit_depth_snapshot=getattr(self._document, "bit_depth", 8)
-        )
+        pre_state = self._make_history_state(tr(f"menu.sharpen.{mode}").replace('…', ''), modified_index=self._document.active_layer_index)
             
         from ui.sharpen_dialog import SharpenDialog
         dlg = SharpenDialog(layer, mode, self._canvas_refresh, self)
@@ -2158,24 +1829,14 @@ class MainWindow(QMainWindow,
             self._canvas_refresh()
 
     # ================================================================= Stylize Gallery
+    @require_document
     def _open_stylize(self, mode: str):
         layer = self._document.get_active_layer()
         if not layer or layer.image.isNull() or getattr(layer, "layer_type", "raster") not in ("raster", "smart_object"):
             return
             
         from core.history import HistoryState, clone_work_path
-        pre_state = HistoryState(
-            description=tr(f"menu.stylize.{mode}").replace('…', ''),
-            layers_snapshot=self._document.snapshot_layers(),
-            active_layer_index=self._document.active_layer_index,
-            doc_width=self._document.width,
-            doc_height=self._document.height,
-            selection_snapshot=QPainterPath(self._document.selection) if self._document.selection else None,
-            work_path_snapshot=clone_work_path(getattr(self._document, "work_path", None)),
-            alpha_channels_snapshot=list(getattr(self._document, "alpha_channels", [])),
-            color_mode_snapshot=getattr(self._document, "color_mode", "RGB"),
-            bit_depth_snapshot=getattr(self._document, "bit_depth", 8)
-        )
+        pre_state = self._make_history_state(tr(f"menu.stylize.{mode}").replace('…', ''), modified_index=self._document.active_layer_index)
             
         from ui.stylize_dialog import StylizeDialog
         dlg = StylizeDialog(layer, mode, self._canvas_refresh, self)
@@ -2187,24 +1848,14 @@ class MainWindow(QMainWindow,
             self._canvas_refresh()
 
     # ================================================================= Other Gallery
+    @require_document
     def _open_other(self, mode: str):
         layer = self._document.get_active_layer()
         if not layer or layer.image.isNull() or getattr(layer, "layer_type", "raster") not in ("raster", "smart_object"):
             return
             
         from core.history import HistoryState, clone_work_path
-        pre_state = HistoryState(
-            description=tr(f"menu.other.{mode}").replace('…', ''),
-            layers_snapshot=self._document.snapshot_layers(),
-            active_layer_index=self._document.active_layer_index,
-            doc_width=self._document.width,
-            doc_height=self._document.height,
-            selection_snapshot=QPainterPath(self._document.selection) if self._document.selection else None,
-            work_path_snapshot=clone_work_path(getattr(self._document, "work_path", None)),
-            alpha_channels_snapshot=list(getattr(self._document, "alpha_channels", [])),
-            color_mode_snapshot=getattr(self._document, "color_mode", "RGB"),
-            bit_depth_snapshot=getattr(self._document, "bit_depth", 8)
-        )
+        pre_state = self._make_history_state(tr(f"menu.other.{mode}").replace('…', ''), modified_index=self._document.active_layer_index)
             
         from ui.other_filters_dialog import OtherFiltersDialog
         dlg = OtherFiltersDialog(layer, mode, self._canvas_refresh, self)
@@ -2216,24 +1867,14 @@ class MainWindow(QMainWindow,
             self._canvas_refresh()
 
     # ================================================================= Pixelate Gallery
+    @require_document
     def _open_pixelate(self, mode: str):
         layer = self._document.get_active_layer()
         if not layer or layer.image.isNull() or getattr(layer, "layer_type", "raster") not in ("raster", "smart_object"):
             return
             
         from core.history import HistoryState, clone_work_path
-        pre_state = HistoryState(
-            description=tr(f"menu.pixelate.{mode}").replace('…', ''),
-            layers_snapshot=self._document.snapshot_layers(),
-            active_layer_index=self._document.active_layer_index,
-            doc_width=self._document.width,
-            doc_height=self._document.height,
-            selection_snapshot=QPainterPath(self._document.selection) if self._document.selection else None,
-            work_path_snapshot=clone_work_path(getattr(self._document, "work_path", None)),
-            alpha_channels_snapshot=list(getattr(self._document, "alpha_channels", [])),
-            color_mode_snapshot=getattr(self._document, "color_mode", "RGB"),
-            bit_depth_snapshot=getattr(self._document, "bit_depth", 8)
-        )
+        pre_state = self._make_history_state(tr(f"menu.pixelate.{mode}").replace('…', ''), modified_index=self._document.active_layer_index)
             
         from ui.pixelate_dialog import PixelateDialog
         dlg = PixelateDialog(layer, mode, self._canvas_refresh, self)
@@ -2245,6 +1886,7 @@ class MainWindow(QMainWindow,
             self._canvas_refresh()
 
     # ================================================================= Noise Gallery
+    @require_document
     def _open_noise(self, mode: str):
         layer = self._document.get_active_layer()
         if not layer or layer.image.isNull() or getattr(layer, "layer_type", "raster") not in ("raster", "smart_object"):
@@ -2257,18 +1899,7 @@ class MainWindow(QMainWindow,
         elif mode == "reduce_noise": desc_key = "menu.noise.reduce"
             
         from core.history import HistoryState, clone_work_path
-        pre_state = HistoryState(
-            description=tr(desc_key).replace('…', ''),
-            layers_snapshot=self._document.snapshot_layers(),
-            active_layer_index=self._document.active_layer_index,
-            doc_width=self._document.width,
-            doc_height=self._document.height,
-            selection_snapshot=QPainterPath(self._document.selection) if self._document.selection else None,
-            work_path_snapshot=clone_work_path(getattr(self._document, "work_path", None)),
-            alpha_channels_snapshot=list(getattr(self._document, "alpha_channels", [])),
-            color_mode_snapshot=getattr(self._document, "color_mode", "RGB"),
-            bit_depth_snapshot=getattr(self._document, "bit_depth", 8)
-        )
+        pre_state = self._make_history_state(tr(desc_key).replace('…', ''), modified_index=self._document.active_layer_index)
             
         from ui.noise_dialog import NoiseDialog
         if NoiseDialog(layer, mode, self._canvas_refresh, self).exec():
@@ -2285,24 +1916,14 @@ class MainWindow(QMainWindow,
     def _blur_spin(self): self._open_blur_gallery("spin")
 
     # ================================================================= Distort Gallery
+    @require_document
     def _open_distort(self, mode: str):
         layer = self._document.get_active_layer()
         if not layer or layer.image.isNull() or getattr(layer, "layer_type", "raster") not in ("raster", "smart_object"):
             return
             
         from core.history import HistoryState, clone_work_path
-        pre_state = HistoryState(
-            description=tr(f"menu.distort.{mode}"),
-            layers_snapshot=self._document.snapshot_layers(),
-            active_layer_index=self._document.active_layer_index,
-            doc_width=self._document.width,
-            doc_height=self._document.height,
-            selection_snapshot=QPainterPath(self._document.selection) if self._document.selection else None,
-            work_path_snapshot=clone_work_path(getattr(self._document, "work_path", None)),
-            alpha_channels_snapshot=list(getattr(self._document, "alpha_channels", [])),
-            color_mode_snapshot=getattr(self._document, "color_mode", "RGB"),
-            bit_depth_snapshot=getattr(self._document, "bit_depth", 8)
-        )
+        pre_state = self._make_history_state(tr(f"menu.distort.{mode}"), modified_index=self._document.active_layer_index)
             
         from ui.distort_dialog import DistortDialog
         dlg = DistortDialog(layer, mode, self._canvas_refresh, self)
@@ -2371,7 +1992,7 @@ class MainWindow(QMainWindow,
                     out = QImage(arr.tobytes(), img.width(), img.height(), QImage.Format.Format_ARGB32)
                     layer.image = out.convertToFormat(QImage.Format.Format_ARGB32_Premultiplied)
                 except Exception:
-                    pass
+                    logger.exception("Action %s failed", action_name)
 
         elif action_name == "Flatten Image":
             self._flatten()
@@ -2391,7 +2012,7 @@ class MainWindow(QMainWindow,
                     out = QImage(arr.tobytes(), img.width(), img.height(), QImage.Format.Format_ARGB32)
                     layer.image = out.convertToFormat(QImage.Format.Format_ARGB32_Premultiplied)
                 except Exception:
-                    pass
+                    logger.exception("Action %s failed", action_name)
 
         self._canvas_refresh()
         self._refresh_layers()

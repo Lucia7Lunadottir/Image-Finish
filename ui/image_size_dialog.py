@@ -5,9 +5,10 @@ from PyQt6.QtWidgets import (
 )
 from PyQt6.QtCore import Qt
 from core.locale import tr
+from ui.base_dialog import BaseDialog
 
 
-class ImageSizeDialog(QDialog):
+class ImageSizeDialog(BaseDialog):
 
     _RESAMPLE = (
         ("image_size.nearest",  Qt.TransformationMode.FastTransformation),

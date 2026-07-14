@@ -21,6 +21,8 @@ from PyQt6.QtGui     import (QPainter, QColor, QLinearGradient, QConicalGradient
                              QPainterPath, QScreen, QCursor)
 import math
 
+from ui import theme
+
 
 # Module-level recent colors list (persists across dialog invocations)
 _recent_colors: list[QColor] = []
@@ -537,7 +539,7 @@ def _label(text: str) -> QLabel:
     l = QLabel(text)
     l.setFixedWidth(22)
     l.setAlignment(Qt.AlignmentFlag.AlignRight | Qt.AlignmentFlag.AlignVCenter)
-    l.setStyleSheet("color: #a6adc8; font-size: 12px;")
+    theme.apply_style(l, lambda: f"color: {theme.SUBTEXT}; font-size: 12px;")
     return l
 
 
@@ -592,7 +594,7 @@ class ColorPickerDialog(QDialog):
         self._sv_map = HueSaturationMap()
         self._sv_map.sv_changed.connect(self._on_sv_changed)
         sq_lay.addWidget(self._sv_map)
-        sq_lay.addWidget(QLabel("Hue", styleSheet="color:#a6adc8;font-size:11px;"))
+        sq_lay.addWidget(QLabel("Hue", styleSheet=f"color:{theme.SUBTEXT};font-size:11px;"))
         self._hue_slider = HueSlider()
         self._hue_slider.hue_changed.connect(self._on_hue_changed)
         sq_lay.addWidget(self._hue_slider)
@@ -612,7 +614,7 @@ class ColorPickerDialog(QDialog):
         root.addWidget(self._mode_stack, 1)
 
         # Alpha slider
-        root.addWidget(QLabel("Alpha", styleSheet="color:#a6adc8;font-size:11px;"))
+        root.addWidget(QLabel("Alpha", styleSheet=f"color:{theme.SUBTEXT};font-size:11px;"))
         self._alpha_slider = AlphaSlider()
         self._alpha_slider.alpha_changed.connect(self._on_alpha_changed)
         root.addWidget(self._alpha_slider)
@@ -654,7 +656,7 @@ class ColorPickerDialog(QDialog):
         hex_row.addWidget(self._spin_a)
         hex_row.addSpacing(8)
         hex_label = QLabel("#")
-        hex_label.setStyleSheet("color:#a6adc8; font-size:13px;")
+        theme.apply_style(hex_label, lambda: f"color:{theme.SUBTEXT}; font-size:13px;")
         self._hex_edit = QLineEdit()
         self._hex_edit.setMaxLength(8)
         self._hex_edit.setFixedWidth(80)
@@ -675,7 +677,7 @@ class ColorPickerDialog(QDialog):
         self._recent_layout = QHBoxLayout()
         self._recent_layout.setSpacing(2)
         self._recent_label = QLabel("Recent:")
-        self._recent_label.setStyleSheet("color:#a6adc8;font-size:11px;")
+        theme.apply_style(self._recent_label, lambda: f"color:{theme.SUBTEXT};font-size:11px;")
         self._recent_layout.addWidget(self._recent_label)
         self._rebuild_recent_swatches()
         self._recent_layout.addStretch()

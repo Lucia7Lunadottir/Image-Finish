@@ -3,8 +3,55 @@ import math
 import numpy as np
 import ctypes
 from PyQt6.QtGui import QImage, QPainter, QColor, QBrush, QLinearGradient, QRadialGradient, QPixmap, QTransform
-from PyQt6.QtCore import QPoint
+from PyQt6.QtCore import QPoint, Qt
 from core.adjustments.hdr_toning import _gauss_blur
+
+
+def _box_blur_gray(ch: "np.ndarray", r: int) -> "np.ndarray":
+    """Single-channel box blur via padded cumsum and contiguous slicing —
+    much faster than per-channel fancy indexing on large masks."""
+    h, w = ch.shape
+    r = max(1, min(r, min(h, w) // 2 - 1))
+    k = 2 * r + 1
+    p = np.pad(ch, ((0, 0), (r, r)), mode="edge")
+    s = np.zeros((h, p.shape[1] + 1), dtype=np.float32)
+    np.cumsum(p, axis=1, dtype=np.float32, out=s[:, 1:])
+    ch = (s[:, k:] - s[:, :-k]) / k
+    p = np.pad(ch, ((r, r), (0, 0)), mode="edge")
+    s = np.zeros((p.shape[0] + 1, w), dtype=np.float32)
+    np.cumsum(p, axis=0, dtype=np.float32, out=s[1:, :])
+    return (s[k:, :] - s[:-k, :]) / k
+
+
+def _blur_mask(mask_u8: "np.ndarray", r: int) -> "np.ndarray":
+    """3-pass gaussian-approximation blur of a uint8 mask. Large radii are
+    computed at reduced resolution and smoothly upscaled — visually
+    indistinguishable for soft shadows/glows, an order of magnitude faster."""
+    if r <= 0:
+        return mask_u8
+    h, w = mask_u8.shape
+    scale = 4 if r >= 8 else (2 if r >= 3 else 1)
+    if scale > 1 and min(h, w) > scale * 8:
+        small = mask_u8[::scale, ::scale]
+        rr = max(1, round(r / scale))
+    else:
+        small, rr, scale = mask_u8, r, 1
+    f = small.astype(np.float32)
+    for _ in range(3):
+        f = _box_blur_gray(f, rr)
+    out = np.clip(f, 0, 255).astype(np.uint8)
+    if scale > 1:
+        out = np.ascontiguousarray(out)
+        qi = QImage(out.data, out.shape[1], out.shape[0], out.shape[1],
+                    QImage.Format.Format_Grayscale8)
+        qi = qi.scaled(w, h,
+                       Qt.AspectRatioMode.IgnoreAspectRatio,
+                       Qt.TransformationMode.SmoothTransformation)
+        ptr = qi.constBits()
+        ptr.setsize(qi.sizeInBytes())
+        full = np.frombuffer(ptr, dtype=np.uint8).reshape(h, qi.bytesPerLine())
+        out = full[:, :w].copy()
+    return out
 
 def _get_comp_mode(mode_str):
     from PyQt6.QtGui import QPainter
@@ -115,10 +162,7 @@ def apply_layer_styles(img: QImage, styles: dict) -> tuple[QImage, QPoint]:
         if my1 < my2 and mx1 < mx2:
             mask[my1:my2, mx1:mx2] = alpha_np[ay1:ay2, ax1:ax2]
         if blur_r > 0:
-            mask_f = mask.astype(np.float32) / 255.0
-            mask_3d = mask_f[..., np.newaxis].repeat(3, axis=2)
-            blurred = _gauss_blur(mask_3d, blur_r)
-            mask = (blurred[..., 0] * 255).astype(np.uint8)
+            mask = _blur_mask(mask, int(blur_r))
         return mask
         
     def render_effect_layer(mask, color, opacity, mode):
@@ -189,7 +233,7 @@ def apply_layer_styles(img: QImage, styles: dict) -> tuple[QImage, QPoint]:
         satin_mask = (255.0 - np.abs(mask1 - mask2)) * (orig_mask.astype(np.float32) / 255.0)
         blur_size = int(sat.get("size", 14))
         if blur_size > 0:
-            satin_mask = (_gauss_blur((satin_mask / 255.0)[..., np.newaxis].repeat(3, axis=2), blur_size)[..., 0] * 255.0)
+            satin_mask = _blur_mask(np.clip(satin_mask, 0, 255).astype(np.uint8), blur_size).astype(np.float32)
         render_effect_layer(np.clip(satin_mask, 0, 255).astype(np.uint8), sat.get("color", QColor(0,0,0)), sat.get("opacity", 50), _get_comp_mode(sat.get("blend_mode", "Multiply")))
 
     bevel = styles.get("bevel")

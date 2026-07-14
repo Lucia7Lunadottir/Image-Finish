@@ -1,6 +1,7 @@
 from PyQt6.QtWidgets import QFileDialog, QMessageBox
 from core.document import Document
 from core.locale import tr
+from ui.document_controller import require_document
 
 
 class FileActionsMixin:
@@ -9,7 +10,7 @@ class FileActionsMixin:
         dlg = NewDocumentDialog(self)
         if dlg.exec():
             doc = Document(dlg.get_width(), dlg.get_height(), dlg.get_bg_color())
-            self._add_tab(doc, tr("title.untitled"))
+            self._add_tab(doc, tr("title.untitled", mode="RGB/8"))
             self._push_history(tr("history.new_document"))
 
     def _open_file(self):
@@ -20,13 +21,23 @@ class FileActionsMixin:
             
     def _open_file_path(self, path: str):
         if path.lower().endswith(".imfn"):
+            from core.serialization import load_document, SerializationError
             try:
-                doc = Document.load_from_imfn(path)
-                self._add_tab(doc, path.split("/")[-1], path)
+                doc, was_legacy = load_document(path)
+            except SerializationError as e:
+                QMessageBox.critical(self, tr("err.title.error"),
+                                     tr("err.could_not_open", path=path) + f"\n{e}")
                 return
-            except Exception as e:
-                QMessageBox.critical(self, tr("err.title.error"), f"Failed to load IMFN: {e}")
+            except Exception:
+                from core.app_logging import get_logger
+                get_logger("file_actions").exception("Unexpected error loading %s", path)
+                QMessageBox.critical(self, tr("err.title.error"),
+                                     tr("err.could_not_open", path=path))
                 return
+            self._add_tab(doc, path.split("/")[-1], path)
+            if was_legacy:
+                self._status.showMessage(tr("status.legacy_format"))
+            return
                 
         if path.lower().endswith(".psd"):
             try:
@@ -81,12 +92,14 @@ class FileActionsMixin:
         doc.active_layer_index = 0
         self._add_tab(doc, path.split("/")[-1], path)
 
+    @require_document
     def _save(self):
         if hasattr(self, "_filepath") and self._filepath:
             self._do_save(self._filepath)
         else:
             self._save_as()
 
+    @require_document
     def _save_as(self):
         path, _ = QFileDialog.getSaveFileName(
             self, tr("dlg.save_as"), "untitled.png", tr("dlg.save_filter"))
@@ -94,30 +107,32 @@ class FileActionsMixin:
             self._filepath = path
             self._do_save(path)
 
+    @require_document
     def _export_png(self):
         path, _ = QFileDialog.getSaveFileName(
             self, tr("dlg.export_png"), "export.png", "PNG (*.png)")
         if path:
             self._do_save(path, flatten=True)
 
+    @require_document
     def _do_save(self, path: str, flatten: bool = False):
-        if path.lower().endswith(".imfn"):
-            try:
-                self._document.save_to_imfn(path)
-                self._status.showMessage(tr("status.saved", path=path))
-                c = self._canvas
-                if c:
-                    c.is_modified = False
-            except Exception as e:
-                QMessageBox.critical(self, tr("err.title.save_error"), tr("err.could_not_save", path=path) + f"\n{e}")
+        from core.serialization import save_document, save_image_atomic, SerializationError
+        try:
+            if path.lower().endswith(".imfn"):
+                save_document(self._document, path)
+            else:
+                save_image_atomic(self._document.get_composite(), path)
+        except (SerializationError, OSError) as e:
+            QMessageBox.critical(self, tr("err.title.save_error"),
+                                 tr("err.could_not_save", path=path) + f"\n{e}")
             return
-
-        img = self._document.get_composite()
-        ok = img.save(path)
-        if ok:
-            self._status.showMessage(tr("status.saved", path=path))
-            c = self._canvas
-            if c:
-                c.is_modified = False
-        else:
-            QMessageBox.critical(self, tr("err.title.save_error"), tr("err.could_not_save", path=path))
+        except Exception:
+            from core.app_logging import get_logger
+            get_logger("file_actions").exception("Unexpected error saving %s", path)
+            QMessageBox.critical(self, tr("err.title.save_error"),
+                                 tr("err.could_not_save", path=path))
+            return
+        self._status.showMessage(tr("status.saved", path=path))
+        c = self._canvas
+        if c:
+            c.is_modified = False

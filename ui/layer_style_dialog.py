@@ -4,8 +4,11 @@ from PyQt6.QtCore import Qt, QTimer
 from PyQt6.QtGui import QColor, QIcon
 from ui.gradient_editor import GradientPreviewWidget, GradientEditorDialog
 from core.locale import tr
+from ui.base_dialog import BaseDialog
 from core.adjustments._widgets import _ColorButton
 from ui.adjustments_dialog import _JumpSlider
+
+from ui import theme
 
 def _slider_spin(lo: int, hi: int, val: int):
     sl = _JumpSlider(Qt.Orientation.Horizontal)
@@ -19,7 +22,7 @@ def _slider_spin(lo: int, hi: int, val: int):
     sp.valueChanged.connect(sl.setValue)
     return sl, sp
 
-class LayerStyleDialog(QDialog):
+class LayerStyleDialog(BaseDialog):
     def __init__(self, layer, canvas_refresh, parent=None):
         super().__init__(parent)
         self.setWindowTitle(tr("ls.title"))
@@ -74,7 +77,7 @@ class LayerStyleDialog(QDialog):
             lo = QVBoxLayout(page)
             lo.setContentsMargins(10, 0, 0, 0)
             title = QLabel(name)
-            title.setStyleSheet("font-weight: bold; font-size: 14px; border-bottom: 1px solid #45475a; padding-bottom: 4px;")
+            theme.apply_style(title, lambda: f"font-weight: bold; font-size: 14px; border-bottom: 1px solid {theme.SURFACE1}; padding-bottom: 4px;")
             lo.addWidget(title)
             
             form = QFormLayout()

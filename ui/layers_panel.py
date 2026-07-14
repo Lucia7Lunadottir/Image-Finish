@@ -7,6 +7,8 @@ from PyQt6.QtGui import QColor, QIcon, QPixmap, QPainter, QPen
 from core.locale import tr
 from ui.adjustments_dialog import _JumpSlider
 
+from ui import theme
+
 
 def _make_eye_icon(visible: bool) -> QIcon:
     pix = QPixmap(20, 20)
@@ -123,7 +125,7 @@ class LayerItem(QWidget):
 
         if getattr(layer, "clipping", False):
             clip_lbl = QLabel("↳")
-            clip_lbl.setStyleSheet("color: #a6adc8; font-weight: bold; font-size: 16px;")
+            theme.apply_style(clip_lbl, lambda: f"color: {theme.SUBTEXT}; font-weight: bold; font-size: 16px;")
             clip_lbl.setFixedWidth(18)
             lo.addWidget(clip_lbl)
 
@@ -136,7 +138,7 @@ class LayerItem(QWidget):
         if ltype in ("group", "artboard"):
             self._exp_btn = QPushButton("▼" if getattr(layer, "expanded", True) else "▶")
             self._exp_btn.setFixedSize(16, 16)
-            self._exp_btn.setStyleSheet("border: none; background: transparent; color: #a6adc8; font-size: 10px; padding: 0;")
+            theme.apply_style(self._exp_btn, lambda: f"border: none; background: transparent; color: {theme.SUBTEXT}; font-size: 10px; padding: 0;")
             self._exp_btn.clicked.connect(lambda checked=False, idx=index, l=layer: self.expanded_toggled.emit(idx, not getattr(l, "expanded", True)))
             lo.addWidget(self._exp_btn)
         else:
@@ -146,7 +148,7 @@ class LayerItem(QWidget):
             
         if getattr(layer, "link_id", None):
             link_lbl = QLabel("🔗")
-            link_lbl.setStyleSheet("color: #a6adc8; font-size: 14px;")
+            theme.apply_style(link_lbl, lambda: f"color: {theme.SUBTEXT}; font-size: 14px;")
             link_lbl.setFixedWidth(20)
             lo.addWidget(link_lbl)
 
@@ -181,19 +183,19 @@ class LayerItem(QWidget):
             
             if is_active:
                 if getattr(layer, "editing_mask", False):
-                    self.thumb_lbl.setStyleSheet("border: 1px solid #45475a; background: white;")
+                    theme.apply_style(self.thumb_lbl, lambda: f"border: 1px solid {theme.SURFACE1}; background: white;")
                     self.mask_lbl.setStyleSheet("border: 2px solid #cba6f7; background: white;")
                 else:
                     self.thumb_lbl.setStyleSheet("border: 2px solid #cba6f7; background: white;")
-                    self.mask_lbl.setStyleSheet("border: 1px solid #45475a; background: white;")
+                    theme.apply_style(self.mask_lbl, lambda: f"border: 1px solid {theme.SURFACE1}; background: white;")
             else:
-                self.thumb_lbl.setStyleSheet("border: 1px solid #45475a; background: white;")
-                self.mask_lbl.setStyleSheet("border: 1px solid #45475a; background: white;")
+                theme.apply_style(self.thumb_lbl, lambda: f"border: 1px solid {theme.SURFACE1}; background: white;")
+                theme.apply_style(self.mask_lbl, lambda: f"border: 1px solid {theme.SURFACE1}; background: white;")
         else:
             if is_active:
                 self.thumb_lbl.setStyleSheet("border: 2px solid #cba6f7; background: white;")
             else:
-                self.thumb_lbl.setStyleSheet("border: 1px solid #45475a; background: white;")
+                theme.apply_style(self.thumb_lbl, lambda: f"border: 1px solid {theme.SURFACE1}; background: white;")
 
         vmask = getattr(layer, "vector_mask", None)
         if vmask is not None:
@@ -224,7 +226,7 @@ class LayerItem(QWidget):
             self.vmask_lbl.setFixedSize(26, 26)
             self.vmask_lbl.setToolTip(tr("layer.vmask_tooltip"))
             self.vmask_lbl.clicked.connect(lambda shift: self.vmask_toggled.emit(index) if shift else None)
-            self.vmask_lbl.setStyleSheet("border: 1px solid #45475a; background: white;")
+            theme.apply_style(self.vmask_lbl, lambda: f"border: 1px solid {theme.SURFACE1}; background: white;")
             lo.addWidget(self.vmask_lbl)
 
         # Name
@@ -232,13 +234,13 @@ class LayerItem(QWidget):
         if is_active:
             self.name_edit.setStyleSheet("background: transparent; color: #cba6f7; font-weight: bold;")
         else:
-            self.name_edit.setStyleSheet("background: transparent; color: #cdd6f4;")
+            theme.apply_style(self.name_edit, lambda: f"background: transparent; color: {theme.TEXT};")
         self.name_edit.editingFinished.connect(lambda: self.name_changed.emit(index, self.name_edit.text()))
         lo.addWidget(self.name_edit, 1)
 
         # Opacity
         op_lbl = QLabel(f"{int(layer.opacity * 100)}%")
-        op_lbl.setStyleSheet("color: #7f849c; font-size: 11px;")
+        theme.apply_style(op_lbl, lambda: f"color: {theme.MUTED}; font-size: 11px;")
         op_lbl.setFixedWidth(36)
         lo.addWidget(op_lbl)
 
@@ -250,7 +252,7 @@ class LayerItem(QWidget):
             "adjustment":  ("A", "#fab387", "layer.type.adjustment"),
             "fill":        ("F", "#cba6f7", "layer.type.fill"),
             "smart_object":("S", "#f9e2af", "layer.type.smart_object"),
-            "artboard":    ("◩", "#a6adc8", "layer.type.artboard"),
+            "artboard":    ("◩", theme.SUBTEXT, "layer.type.artboard"),
             "frame":       ("⛶", "#89dceb", "layer.type.frame"),
             "group":       ("📁", "#f9e2af", "layer.type.group"),
         }
@@ -276,7 +278,7 @@ class LayerItem(QWidget):
             
         if getattr(layer, "layer_styles", None):
             fx_lbl = QLabel("fx")
-            fx_lbl.setStyleSheet("color: #a6adc8; font-weight: bold; font-style: italic; font-size: 12px;")
+            theme.apply_style(fx_lbl, lambda: f"color: {theme.SUBTEXT}; font-weight: bold; font-style: italic; font-size: 12px;")
             fx_lbl.setFixedWidth(16)
             lo.addWidget(fx_lbl)
             
@@ -376,7 +378,7 @@ class LayersPanel(QWidget):
         op_lo.addWidget(self._opacity_slider, 1)
         self._opacity_label = QLabel("100%")
         self._opacity_label.setFixedWidth(36)
-        self._opacity_label.setStyleSheet("color: #7f849c; font-size:11px;")
+        theme.apply_style(self._opacity_label, lambda: f"color: {theme.MUTED}; font-size:11px;")
         op_lo.addWidget(self._opacity_label)
         layout.addWidget(op_widget)
 
@@ -385,7 +387,7 @@ class LayersPanel(QWidget):
         locks_lo.setContentsMargins(8, 2, 8, 2)
         locks_lo.setSpacing(4)
         self._lock_lbl = QLabel(tr("panel.lock"))
-        self._lock_lbl.setStyleSheet("color: #a6adc8; font-size:12px;")
+        theme.apply_style(self._lock_lbl, lambda: f"color: {theme.SUBTEXT}; font-size:12px;")
         locks_lo.addWidget(self._lock_lbl)
 
         self._btn_lock_pixels = QPushButton("🖌️")

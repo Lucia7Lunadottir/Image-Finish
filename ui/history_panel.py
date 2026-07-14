@@ -5,11 +5,17 @@ from PyQt6.QtGui import QFont, QColor
 
 from core.locale import tr
 
-ITEM_STYLE = ("QListWidget{background:#1e1e2e;border:none;color:#cdd6f4;}"
-              "QListWidget::item{padding:4px 8px;}"
-              "QListWidget::item:selected{background:#313244;color:#cba6f7;}"
-              "QListWidget::item:hover{background:#282838;}")
-LABEL_STYLE = "color:#a6adc8;font-size:11px;"
+from ui import theme
+
+def ITEM_STYLE():
+    return (
+    f"QListWidget{{background:{theme.BASE};border:none;color:{theme.TEXT};}}"
+                  "QListWidget::item{padding:4px 8px;}"
+                  f"QListWidget::item:selected{{background:{theme.SURFACE0};color:#cba6f7;}}"
+                  "QListWidget::item:hover{background:#282838;}"
+    )
+def LABEL_STYLE():
+    return (f"color:{theme.SUBTEXT};font-size:11px;")
 
 
 class HistoryPanel(QWidget):
@@ -50,7 +56,7 @@ class HistoryPanel(QWidget):
         layout.addWidget(self._title)
 
         self._list = QListWidget()
-        self._list.setStyleSheet(ITEM_STYLE)
+        theme.apply_style(self._list, ITEM_STYLE)
         self._list.setSelectionMode(QListWidget.SelectionMode.SingleSelection)
         self._list.itemClicked.connect(self._on_item_clicked)
         layout.addWidget(self._list, 1)
@@ -75,7 +81,7 @@ class HistoryPanel(QWidget):
             item = QListWidgetItem(state.description)
             item.setData(self._ROLE_KIND, "undo")
             item.setData(self._ROLE_IDX, idx)
-            item.setForeground(QColor("#cdd6f4"))
+            item.setForeground(QColor(theme.TEXT))
             self._list.addItem(item)
 
         # ★ Current sentinel
@@ -99,7 +105,7 @@ class HistoryPanel(QWidget):
             item = QListWidgetItem(state.description)
             item.setData(self._ROLE_KIND, "redo")
             item.setData(self._ROLE_IDX, idx)
-            item.setForeground(QColor("#585b70"))
+            item.setForeground(QColor(theme.SURFACE2))
             self._list.addItem(item)
 
         # scroll so current item is visible

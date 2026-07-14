@@ -4,19 +4,28 @@ from PyQt6.QtGui import QColor, QPainter, QPen, QImage
 
 from core.locale import tr
 
-COMBO_STYLE = ("QComboBox{background:#313244;color:#cdd6f4;border:none;"
-               "padding:3px 6px;border-radius:3px;}"
-               "QComboBox::drop-down{border:none;}")
-LABEL_STYLE = "color:#a6adc8;font-size:11px;"
+from ui import theme
+
+def COMBO_STYLE():
+    return (
+    f"QComboBox{{background:{theme.SURFACE0};color:{theme.TEXT};border:none;"
+                   "padding:3px 6px;border-radius:3px;}"
+                   "QComboBox::drop-down{border:none;}"
+    )
+def LABEL_STYLE():
+    return (f"color:{theme.SUBTEXT};font-size:11px;")
 
 # Channel display colours
-_CH_COLORS = {
-    "R":   ("#f38ba8", False),
-    "G":   ("#a6e3a1", False),
-    "B":   ("#89b4fa", False),
-    "Lum": ("#cdd6f4", False),
-    "RGB": (None,       True),   # special: draw all three with opacity
-}
+def _CH_COLORS():
+    return (
+    {
+        "R":   ("#f38ba8", False),
+        "G":   ("#a6e3a1", False),
+        "B":   ("#89b4fa", False),
+        "Lum": (theme.TEXT, False),
+        "RGB": (None,       True),   # special: draw all three with opacity
+    }
+    )
 
 
 class _HistSignals(QObject):
@@ -76,7 +85,7 @@ class _HistogramView(QWidget):
         p.setRenderHint(QPainter.RenderHint.Antialiasing, False)
 
         # Background
-        p.fillRect(self.rect(), QColor("#181825"))
+        p.fillRect(self.rect(), QColor(theme.MANTLE))
 
         if not self._data:
             p.end()
@@ -106,7 +115,7 @@ class _HistogramView(QWidget):
             self._draw_histogram(p, hist, QColor("#89b4fa"), w, h)
         elif channel == "Luminosity":
             hist = self._data.get("lum", [])
-            self._draw_histogram(p, hist, QColor("#cdd6f4"), w, h)
+            self._draw_histogram(p, hist, QColor(theme.TEXT), w, h)
 
         p.end()
 
@@ -155,7 +164,7 @@ class HistogramPanel(QWidget):
 
         # Channel selector
         self._combo = QComboBox()
-        self._combo.setStyleSheet(COMBO_STYLE)
+        theme.apply_style(self._combo, COMBO_STYLE)
         for i, key in enumerate(self._CHANNEL_KEYS):
             loc = tr(self._CHANNEL_LOC[i])
             text = loc if loc != self._CHANNEL_LOC[i] else self._CHANNEL_FALLBACKS[i]

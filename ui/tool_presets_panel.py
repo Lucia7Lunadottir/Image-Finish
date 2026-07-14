@@ -8,13 +8,19 @@ from PyQt6.QtGui import QColor, QFont
 from PyQt6.QtCore import QSettings
 from core.locale import tr
 
-BTN_STYLE = ("QPushButton{background:#313244;color:#cdd6f4;border:none;padding:4px 10px;border-radius:4px;}"
-             "QPushButton:hover{background:#45475a;}"
-             "QPushButton:pressed{background:#585b70;}")
+from ui import theme
+
+def BTN_STYLE():
+    return (
+    f"QPushButton{{background:{theme.SURFACE0};color:{theme.TEXT};border:none;padding:4px 10px;border-radius:4px;}}"
+                 f"QPushButton:hover{{background:{theme.SURFACE1};}}"
+                 f"QPushButton:pressed{{background:{theme.SURFACE2};}}"
+    )
 DANGER_BTN_STYLE = ("QPushButton{background:#8b1a1a;color:#f38ba8;border:none;padding:4px 10px;border-radius:4px;}"
                     "QPushButton:hover{background:#a03030;}"
                     "QPushButton:pressed{background:#c03030;}")
-HEADER_STYLE = "color:#7f849c;font-size:10px;font-weight:bold;letter-spacing:1px;background:transparent;padding:8px 10px 4px 10px;"
+def HEADER_STYLE():
+    return (f"color:{theme.MUTED};font-size:10px;font-weight:bold;letter-spacing:1px;background:transparent;padding:8px 10px 4px 10px;")
 
 
 class ToolPresetsPanel(QWidget):
@@ -34,17 +40,17 @@ class ToolPresetsPanel(QWidget):
         # Header
         self._title_lbl = QLabel("TOOL PRESETS")
         self._title_lbl.setObjectName("panelTitle")
-        self._title_lbl.setStyleSheet(HEADER_STYLE)
+        theme.apply_style(self._title_lbl, HEADER_STYLE)
         layout.addWidget(self._title_lbl)
 
         # List
         self._list = QListWidget()
-        self._list.setStyleSheet(
-            "QListWidget{background:#1e1e2e;border:none;color:#cdd6f4;}"
+        theme.apply_style(self._list, lambda: (
+            f"QListWidget{{background:{theme.BASE};border:none;color:{theme.TEXT};}}"
             "QListWidget::item{padding:6px 8px;}"
-            "QListWidget::item:selected{background:#313244;color:#cba6f7;}"
+            f"QListWidget::item:selected{{background:{theme.SURFACE0};color:#cba6f7;}}"
             "QListWidget::item:hover{background:#282838;}"
-        )
+        ))
         layout.addWidget(self._list, 1)
 
         # Button bar
@@ -54,11 +60,11 @@ class ToolPresetsPanel(QWidget):
         btn_lo.setSpacing(6)
 
         self._save_btn = QPushButton("Save Current")
-        self._save_btn.setStyleSheet(BTN_STYLE)
+        theme.apply_style(self._save_btn, BTN_STYLE)
         self._save_btn.clicked.connect(self._on_save)
 
         self._load_btn = QPushButton("Load")
-        self._load_btn.setStyleSheet(BTN_STYLE)
+        theme.apply_style(self._load_btn, BTN_STYLE)
         self._load_btn.clicked.connect(self._on_load)
 
         self._del_btn = QPushButton("Delete")
@@ -177,7 +183,9 @@ class ToolPresetsPanel(QWidget):
                 })
             settings.setValue("presets", json.dumps(serializable))
         except Exception:
-            pass
+            import logging
+            logging.getLogger("imagefinish.presets").warning(
+                "Could not save tool presets", exc_info=True)
 
     def retranslate(self):
         self._title_lbl.setText(

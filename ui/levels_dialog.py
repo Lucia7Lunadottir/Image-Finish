@@ -11,7 +11,10 @@ from PyQt6.QtGui import (
     QImage, QPainter, QColor, QLinearGradient, QBrush, QPen, QPolygon,
 )
 from core.locale import tr
+from ui.base_dialog import BaseDialog
 from ui.adjustments_dialog import _to_argb32
+
+from ui import theme
 
 
 # ── pixel math ───────────────────────────────────────────────────────────────
@@ -383,7 +386,7 @@ class _OutputWidget(QWidget):
 
 # ── levels dialog ─────────────────────────────────────────────────────────────
 
-class LevelsDialog(QDialog):
+class LevelsDialog(BaseDialog):
     """Non-destructive Levels dialog with real-time canvas preview."""
 
     _DEBOUNCE_MS = 40
@@ -421,7 +424,7 @@ class LevelsDialog(QDialog):
 
         def _lbl(text):
             l = QLabel(text)
-            l.setStyleSheet("color: #a6adc8; font-size: 12px;")
+            theme.apply_style(l, lambda: f"color: {theme.SUBTEXT}; font-size: 12px;")
             return l
 
         # ── Input spinboxes ────────────────────────────────────────────────

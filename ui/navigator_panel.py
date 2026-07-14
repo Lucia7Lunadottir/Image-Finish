@@ -5,6 +5,8 @@ from PyQt6.QtGui import QPixmap, QImage
 
 from core.locale import tr
 
+from ui import theme
+
 class _ThumbSignals(QObject):
     done = pyqtSignal(QImage)
 
@@ -24,12 +26,17 @@ class _ThumbWorker(QRunnable):
         except Exception:
             self.signals.done.emit(QImage())
 
-DARK = "background:#1e1e2e;"
-BTN_STYLE = ("QPushButton{background:#313244;color:#cdd6f4;border:none;"
-             "padding:4px 10px;border-radius:4px;}"
-             "QPushButton:hover{background:#45475a;}"
-             "QPushButton:pressed{background:#585b70;}")
-LABEL_STYLE = "color:#a6adc8;font-size:11px;"
+def DARK():
+    return (f"background:{theme.BASE};")
+def BTN_STYLE():
+    return (
+    f"QPushButton{{background:{theme.SURFACE0};color:{theme.TEXT};border:none;"
+                 "padding:4px 10px;border-radius:4px;}"
+                 f"QPushButton:hover{{background:{theme.SURFACE1};}}"
+                 f"QPushButton:pressed{{background:{theme.SURFACE2};}}"
+    )
+def LABEL_STYLE():
+    return (f"color:{theme.SUBTEXT};font-size:11px;")
 
 
 class NavigatorPanel(QWidget):
@@ -58,13 +65,13 @@ class NavigatorPanel(QWidget):
         self._thumb = QLabel()
         self._thumb.setFixedHeight(120)
         self._thumb.setAlignment(Qt.AlignmentFlag.AlignCenter)
-        self._thumb.setStyleSheet("background:#181825;border:none;")
+        theme.apply_style(self._thumb, lambda: f"background:{theme.MANTLE};border:none;")
         layout.addWidget(self._thumb)
 
         # Zoom percent label
         self._zoom_label = QLabel("100%")
         self._zoom_label.setAlignment(Qt.AlignmentFlag.AlignCenter)
-        self._zoom_label.setStyleSheet(LABEL_STYLE)
+        theme.apply_style(self._zoom_label, LABEL_STYLE)
         layout.addWidget(self._zoom_label)
 
         # Slider row: [-] [slider] [+]
@@ -75,7 +82,7 @@ class NavigatorPanel(QWidget):
 
         self._btn_minus = QPushButton("−")
         self._btn_minus.setFixedSize(24, 24)
-        self._btn_minus.setStyleSheet(BTN_STYLE)
+        theme.apply_style(self._btn_minus, BTN_STYLE)
         self._btn_minus.setToolTip("Zoom out")
         slider_lo.addWidget(self._btn_minus)
 
@@ -86,7 +93,7 @@ class NavigatorPanel(QWidget):
 
         self._btn_plus = QPushButton("+")
         self._btn_plus.setFixedSize(24, 24)
-        self._btn_plus.setStyleSheet(BTN_STYLE)
+        theme.apply_style(self._btn_plus, BTN_STYLE)
         self._btn_plus.setToolTip("Zoom in")
         slider_lo.addWidget(self._btn_plus)
 

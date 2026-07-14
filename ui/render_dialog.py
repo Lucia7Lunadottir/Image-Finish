@@ -12,6 +12,12 @@ from ui.adjustments_dialog import _JumpSlider
 from core.adjustments._widgets import _ColorButton
 from tools.tool_utils import fast_box_blur_np
 
+from core.app_logging import get_logger
+
+from ui import theme
+
+logger = get_logger("render_dialog")
+
 
 def _generate_noise_image(w, h, octaves=6, seed=None, scale_x=None, scale_y=None):
     """True gradient noise (Perlin Noise) via NumPy for ideal clouds."""
@@ -196,7 +202,7 @@ class RenderDialog(QDialog):
         
         props = QWidget()
         props.setFixedWidth(280)
-        props.setStyleSheet("background: #1e1e2e; border-left: 1px solid #313244;")
+        theme.apply_style(props, lambda: f"background: {theme.BASE}; border-left: 1px solid {theme.SURFACE0};")
         pl = QVBoxLayout(props)
         pl.setContentsMargins(15, 15, 15, 15); pl.setSpacing(15)
         
@@ -266,7 +272,7 @@ class RenderDialog(QDialog):
         elif self.mode in ("clouds", "diff_clouds"):
             msg = "Этот фильтр не имеет\nнастраиваемых параметров." if locale_current() == "ru" else "This filter has no\nadjustable parameters."
             lbl = QLabel(msg)
-            lbl.setStyleSheet("color: #a6adc8; font-size: 12px; font-style: italic;")
+            theme.apply_style(lbl, lambda: f"color: {theme.SUBTEXT}; font-size: 12px; font-style: italic;")
             pl.addWidget(lbl)
 
         pl.addStretch()
@@ -425,7 +431,7 @@ class RenderDialog(QDialog):
                         base_path.moveTo(w/2, h * 0.9)
                         base_path.lineTo(w/2, h * 0.1)
                 except Exception as e:
-                    print("Flame path parsing error:", e)
+                    logger.warning("Flame path parsing error: %s", e)
                     base_path = QPainterPath()
                     base_path.moveTo(w/2, h * 0.9)
                     base_path.lineTo(w/2, h * 0.1)

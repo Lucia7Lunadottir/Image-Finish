@@ -113,6 +113,9 @@ def _box_blur_np(arr, radius: int):
     Used in SharpenTool (_sharpen_np)."""
     from numpy import pad, cumsum
     r     = max(1, radius)
+    if arr.shape[-1] != 4:
+        # Grayscale/mask input: no alpha channel to premultiply.
+        return _box_blur_rgb(arr.astype(np.float32), r)
     arr_f = arr.astype(np.float32)
     alpha = arr_f[..., 3:4] / 255.0
     premult = arr_f.copy()

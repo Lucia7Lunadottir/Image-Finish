@@ -349,7 +349,7 @@
 
   "title.untitled":  "ImageFinish — Sans titre ({mode})",
   "title.with_file": "ImageFinish — {name} ({mode})",
-  "title.canvas":    "LinuxShop — {w}×{h} ({mode})",
+  "title.canvas":    "ImageFinish — {w}×{h} ({mode})",
 
   "history.new_document":       "Nouveau document",
   "history.add_layer":          "Ajout d'un calque",
@@ -991,5 +991,20 @@
 
   "props.transform":   "TRANSFORMATION",
   "props.align":       "ALIGNER SUR ZONE DE TRAVAIL",
-  "props.info":        "INFOS DU CALQUE"
+  "props.info":        "INFOS DU CALQUE",
+
+  "crash.title": "Erreur interne",
+  "crash.message": "Une erreur interne s'est produite. L'application va tenter de continuer.\nLes détails ont été enregistrés dans le journal :\n{path}",
+  "crash.continue": "Continuer",
+  "crash.quit": "Quitter",
+  "status.legacy_format": "Ancien format ouvert — réenregistrez pour convertir au nouveau format",
+  "menu.reset_workspace": "Réinitialiser l'espace de travail",
+  "menu.theme": "Thème",
+  "menu.theme_dark": "Sombre",
+  "menu.theme_light": "Clair",
+  "status.theme_restart": "Thème appliqué. Certains panneaux se mettront à jour après redémarrage",
+  "menu.theme_custom": "Personnalisé",
+  "menu.theme_configure": "Configurer le thème…",
+  "dlg.theme_main_color": "Couleur principale du thème",
+  "dlg.theme_base_question": "Construire sur une base sombre ?\n(Non = base claire)"
 }

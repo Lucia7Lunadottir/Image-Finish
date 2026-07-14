@@ -8,6 +8,8 @@ from PyQt6.QtGui import QFont, QColor, QCursor
 
 from core.locale import tr
 
+from ui import theme
+
 # Default character ranges to show:
 # Latin Basic U+0020..U+007E, Latin-1 Supplement U+00A0..U+00FF,
 # Latin Extended-A U+0100..U+017E
@@ -15,17 +17,33 @@ _DEFAULT_RANGES = list(range(0x0020, 0x007F)) + list(range(0x00A0, 0x0100)) + li
 
 COLUMNS = 16
 
-HEADER_STYLE = ("color:#7f849c;font-size:10px;font-weight:bold;letter-spacing:1px;"
-                "background:transparent;padding:8px 0 4px 0;")
-SEARCH_STYLE = ("QLineEdit{background:#313244;color:#cdd6f4;border:none;"
-                "padding:4px 8px;border-radius:3px;}")
-CELL_NORMAL_STYLE = ("background:#1e1e2e;color:#cdd6f4;border:1px solid #313244;"
-                     "border-radius:2px;font-size:14px;")
-CELL_HOVER_STYLE  = ("background:#313244;color:#cba6f7;border:1px solid #45475a;"
-                     "border-radius:2px;font-size:14px;")
-PREVIEW_STYLE = ("background:#313244;color:#cdd6f4;border:1px solid #45475a;"
-                 "border-radius:4px;font-size:32px;")
-INFO_STYLE = "color:#a6adc8;font-size:11px;background:transparent;"
+def HEADER_STYLE():
+    return (
+    f"color:{theme.MUTED};font-size:10px;font-weight:bold;letter-spacing:1px;"
+                    "background:transparent;padding:8px 0 4px 0;"
+    )
+def SEARCH_STYLE():
+    return (
+    f"QLineEdit{{background:{theme.SURFACE0};color:{theme.TEXT};border:none;"
+                    "padding:4px 8px;border-radius:3px;}"
+    )
+def CELL_NORMAL_STYLE():
+    return (
+    f"background:{theme.BASE};color:{theme.TEXT};border:1px solid {theme.SURFACE0};"
+                         "border-radius:2px;font-size:14px;"
+    )
+def CELL_HOVER_STYLE():
+    return (
+    f"background:{theme.SURFACE0};color:#cba6f7;border:1px solid {theme.SURFACE1};"
+                         "border-radius:2px;font-size:14px;"
+    )
+def PREVIEW_STYLE():
+    return (
+    f"background:{theme.SURFACE0};color:{theme.TEXT};border:1px solid {theme.SURFACE1};"
+                     "border-radius:4px;font-size:32px;"
+    )
+def INFO_STYLE():
+    return (f"color:{theme.SUBTEXT};font-size:11px;background:transparent;")
 
 
 class _GlyphCell(QLabel):
@@ -37,7 +55,7 @@ class _GlyphCell(QLabel):
         self._char = char
         self.setAlignment(Qt.AlignmentFlag.AlignCenter)
         self.setFixedSize(28, 28)
-        self.setStyleSheet(CELL_NORMAL_STYLE)
+        theme.apply_style(self, CELL_NORMAL_STYLE)
         self.setCursor(QCursor(Qt.CursorShape.PointingHandCursor))
 
         cp = ord(char)
@@ -54,11 +72,11 @@ class _GlyphCell(QLabel):
         super().mousePressEvent(ev)
 
     def enterEvent(self, ev):
-        self.setStyleSheet(CELL_HOVER_STYLE)
+        theme.apply_style(self, CELL_HOVER_STYLE)
         super().enterEvent(ev)
 
     def leaveEvent(self, ev):
-        self.setStyleSheet(CELL_NORMAL_STYLE)
+        theme.apply_style(self, CELL_NORMAL_STYLE)
         super().leaveEvent(ev)
 
 
@@ -82,7 +100,7 @@ class GlyphsPanel(QWidget):
 
         # ---------- Header ----------
         self._header_lbl = QLabel("GLYPHS")
-        self._header_lbl.setStyleSheet(HEADER_STYLE)
+        theme.apply_style(self._header_lbl, HEADER_STYLE)
         layout.addWidget(self._header_lbl)
 
         # ---------- Font selector ----------
@@ -97,7 +115,7 @@ class GlyphsPanel(QWidget):
             tr("glyphs.search_hint") if tr("glyphs.search_hint") != "glyphs.search_hint"
             else "Search (name or U+XXXX)..."
         )
-        self._search.setStyleSheet(SEARCH_STYLE)
+        theme.apply_style(self._search, SEARCH_STYLE)
         self._search.textChanged.connect(self._on_search_changed)
         layout.addWidget(self._search)
 
@@ -120,7 +138,7 @@ class GlyphsPanel(QWidget):
         # ---------- Bottom bar: preview + info ----------
         sep = QFrame()
         sep.setFrameShape(QFrame.Shape.HLine)
-        sep.setStyleSheet("color:#313244;background:#313244;max-height:1px;")
+        theme.apply_style(sep, lambda: f"color:{theme.SURFACE0};background:{theme.SURFACE0};max-height:1px;")
         layout.addWidget(sep)
 
         bottom_bar = QWidget()
@@ -131,7 +149,7 @@ class GlyphsPanel(QWidget):
         self._preview_lbl = QLabel("")
         self._preview_lbl.setAlignment(Qt.AlignmentFlag.AlignCenter)
         self._preview_lbl.setFixedSize(52, 52)
-        self._preview_lbl.setStyleSheet(PREVIEW_STYLE)
+        theme.apply_style(self._preview_lbl, PREVIEW_STYLE)
         bottom_lo.addWidget(self._preview_lbl)
 
         info_widget = QWidget()
@@ -140,9 +158,9 @@ class GlyphsPanel(QWidget):
         info_lo.setSpacing(2)
 
         self._info_code = QLabel("")
-        self._info_code.setStyleSheet(INFO_STYLE)
+        theme.apply_style(self._info_code, INFO_STYLE)
         self._info_name = QLabel("")
-        self._info_name.setStyleSheet(INFO_STYLE)
+        theme.apply_style(self._info_name, INFO_STYLE)
         self._info_name.setWordWrap(True)
 
         info_lo.addWidget(self._info_code)

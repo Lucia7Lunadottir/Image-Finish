@@ -8,6 +8,8 @@ from PyQt6.QtGui import QImage, QPainter, QColor
 from core.locale import tr
 from ui.adjustments_dialog import _JumpSlider
 
+from ui import theme
+
 
 class PixelateCanvas(QWidget):
     def __init__(self, dialog):
@@ -118,7 +120,7 @@ class PixelateDialog(QDialog):
         
         props = QWidget()
         props.setFixedWidth(280)
-        props.setStyleSheet("background: #1e1e2e; border-left: 1px solid #313244;")
+        theme.apply_style(props, lambda: f"background: {theme.BASE}; border-left: 1px solid {theme.SURFACE0};")
         pl = QVBoxLayout(props)
         pl.setContentsMargins(15, 15, 15, 15); pl.setSpacing(15)
         
@@ -153,7 +155,7 @@ class PixelateDialog(QDialog):
                 self.type_combo.addItem(tr(f"pixelate.mezzotint.{t}"), t)
         elif self.mode in ("facet", "fragment"):
             no_param_lbl = QLabel("This filter has no\nadjustable parameters.")
-            no_param_lbl.setStyleSheet("color: #a6adc8; font-size: 12px; font-style: italic;")
+            theme.apply_style(no_param_lbl, lambda: f"color: {theme.SUBTEXT}; font-size: 12px; font-style: italic;")
             pl.addWidget(no_param_lbl)
 
         pl.addStretch()

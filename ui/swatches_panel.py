@@ -5,11 +5,17 @@ from PyQt6.QtGui import QColor
 
 from core.locale import tr
 
-BTN_STYLE = ("QPushButton{background:#313244;color:#cdd6f4;border:none;"
-             "padding:4px 10px;border-radius:4px;}"
-             "QPushButton:hover{background:#45475a;}"
-             "QPushButton:pressed{background:#585b70;}")
-LABEL_STYLE = "color:#a6adc8;font-size:11px;"
+from ui import theme
+
+def BTN_STYLE():
+    return (
+    f"QPushButton{{background:{theme.SURFACE0};color:{theme.TEXT};border:none;"
+                 "padding:4px 10px;border-radius:4px;}"
+                 f"QPushButton:hover{{background:{theme.SURFACE1};}}"
+                 f"QPushButton:pressed{{background:{theme.SURFACE2};}}"
+    )
+def LABEL_STYLE():
+    return (f"color:{theme.SUBTEXT};font-size:11px;")
 
 DEFAULT_SWATCHES = [
     "#000000", "#1a1a1a", "#333333", "#4d4d4d", "#666666", "#808080",
@@ -27,7 +33,7 @@ class _SwatchLabel(QLabel):
     left_clicked  = pyqtSignal(QColor)
     right_clicked = pyqtSignal(QColor, object)   # color, global QPoint
 
-    _STYLE_NORMAL   = "border:1px solid #45475a;"
+    _STYLE_NORMAL   = f"border:1px solid {theme.SURFACE1};"
     _STYLE_HOVER    = "border:1px solid #89b4fa;"
 
     def __init__(self, color: QColor, parent=None):
@@ -96,10 +102,10 @@ class SwatchesPanel(QWidget):
         self._scroll = QScrollArea()
         self._scroll.setWidgetResizable(True)
         self._scroll.setHorizontalScrollBarPolicy(Qt.ScrollBarPolicy.ScrollBarAlwaysOff)
-        self._scroll.setStyleSheet("QScrollArea{border:none;background:#1e1e2e;}")
+        theme.apply_style(self._scroll, lambda: f"QScrollArea{{border:none;background:{theme.BASE};}}")
 
         self._grid_widget = QWidget()
-        self._grid_widget.setStyleSheet("background:#1e1e2e;")
+        theme.apply_style(self._grid_widget, lambda: f"background:{theme.BASE};")
         self._grid = QGridLayout(self._grid_widget)
         self._grid.setContentsMargins(4, 4, 4, 4)
         self._grid.setSpacing(3)
@@ -114,7 +120,7 @@ class SwatchesPanel(QWidget):
         bottom_lo.setSpacing(4)
 
         self._add_btn = QPushButton("+")
-        self._add_btn.setStyleSheet(BTN_STYLE)
+        theme.apply_style(self._add_btn, BTN_STYLE)
         self._add_btn.setFixedHeight(24)
         self._add_btn.setToolTip(tr("swatches.add_fg") if tr("swatches.add_fg") != "swatches.add_fg"
                                   else "Add current foreground color")

@@ -2,9 +2,11 @@ import math
 from PyQt6.QtCore import Qt, QRectF, QPoint
 from PyQt6.QtGui import QColor, QPainter, QPainterPath
 from core.locale import tr
+from ui.document_controller import require_document
 
 
 class EditActionsMixin:
+    @require_document
     def _undo(self):
         # If a transform frame is active, Ctrl+Z acts as Escape (cancel transform)
         tool = self._canvas.active_tool
@@ -34,6 +36,7 @@ class EditActionsMixin:
         self._document.selection = QPainterPath(state.selection_snapshot) if state.selection_snapshot else None
         if getattr(state, "work_path_snapshot", None) is not None:
             self._document.work_path = clone_work_path(state.work_path_snapshot)
+        dims_changed = False
         if state.doc_width and state.doc_height:
             dims_changed = (self._document.width != state.doc_width or
                             self._document.height != state.doc_height)
@@ -52,6 +55,7 @@ class EditActionsMixin:
         self._canvas_refresh()
         self._status.showMessage(tr("status.undo", desc=state.description))
 
+    @require_document
     def _redo(self):
         from core.history import HistoryState, clone_work_path
         state = self._history.redo()
@@ -74,6 +78,7 @@ class EditActionsMixin:
         self._document.selection = QPainterPath(state.selection_snapshot) if state.selection_snapshot else None
         if getattr(state, "work_path_snapshot", None) is not None:
             self._document.work_path = clone_work_path(state.work_path_snapshot)
+        dims_changed = False
         if state.doc_width and state.doc_height:
             dims_changed = (self._document.width != state.doc_width or
                             self._document.height != state.doc_height)
@@ -129,6 +134,7 @@ class EditActionsMixin:
             layer.image.fill(Qt.GlobalColor.transparent)
         self._canvas_refresh()
 
+    @require_document
     def _deselect(self):
         # Save the current selection for the Reselect function
         if self._document.selection and not self._document.selection.isEmpty():
@@ -138,6 +144,7 @@ class EditActionsMixin:
         self._document.selection = None
         self._canvas_refresh()
 
+    @require_document
     def _select_all(self):
         self._push_history(tr("history.select_all"))
         p = QPainterPath()
@@ -145,6 +152,7 @@ class EditActionsMixin:
         self._document.selection = p
         self._canvas_refresh()
 
+    @require_document
     def _reselect(self):
         # Restore the last deselected selection
         if hasattr(self, "_last_selection") and self._last_selection:
@@ -152,6 +160,7 @@ class EditActionsMixin:
             self._document.selection = QPainterPath(self._last_selection)
             self._canvas_refresh()
 
+    @require_document
     def _inverse_selection(self):
         self._push_history(tr("history.inverse"))
         sel = self._document.selection
@@ -358,6 +367,7 @@ class EditActionsMixin:
                 self._document.active_layer_index += 1
             self._refresh_layers(); self._canvas_refresh()
 
+    @require_document
     def _modify_selection(self, mode: str):
         if not self._document.selection or self._document.selection.isEmpty():
             return
@@ -481,6 +491,7 @@ class EditActionsMixin:
         else:
             self._clipboard = layer.image.copy()
 
+    @require_document
     def _paste(self):
         if not hasattr(self, "_clipboard") or self._clipboard is None:
             return
@@ -519,9 +530,11 @@ class EditActionsMixin:
         self._refresh_layers()
         self._canvas_refresh()
 
+    @require_document
     def _fill_fg(self):
         self._fill_with(self._canvas.fg_color)
 
+    @require_document
     def _fill_bg(self):
         self._fill_with(self._canvas.bg_color)
 

@@ -30,24 +30,72 @@ class HistoryState:
     bit_depth_snapshot: int = 8
 
 
+def _state_images(state: HistoryState):
+    """Yield every QImage referenced by a snapshot (images, masks, smart originals)."""
+    for layer in state.layers_snapshot or []:
+        img = getattr(layer, "image", None)
+        if img is not None:
+            yield img
+        mask = getattr(layer, "mask", None)
+        if mask is not None:
+            yield mask
+        smd = getattr(layer, "smart_data", None)
+        if smd and smd.get("original") is not None:
+            yield smd["original"]
+
+
 class HistoryManager:
     """
     Command-pattern history for undo / redo.
     Stores full layer snapshots (simple & reliable).
-    Max states prevents unbounded memory use.
+    Bounded both by state count and by estimated memory: snapshots taken
+    with `modified_index` share unmodified QImages, so byte accounting
+    deduplicates by object identity across both stacks.
     """
 
-    def __init__(self, max_states: int = 40):
+    DEFAULT_MAX_BYTES = 1_500_000_000  # ~1.5 GB
+
+    def __init__(self, max_states: int = 40, max_bytes: int | None = None):
         self.max_states = max_states
+        if max_bytes is None:
+            max_bytes = self._max_bytes_from_settings()
+        self.max_bytes = max_bytes
         self._undo_stack: list[HistoryState] = []
         self._redo_stack: list[HistoryState] = []
+
+    @classmethod
+    def _max_bytes_from_settings(cls) -> int:
+        try:
+            from PyQt6.QtCore import QSettings
+            settings = QSettings("ImageFinish", "ImageFinish")
+            return int(settings.value("history/max_bytes", cls.DEFAULT_MAX_BYTES))
+        except Exception:
+            return cls.DEFAULT_MAX_BYTES
+
+    def estimated_bytes(self) -> int:
+        """Total unique image bytes held by both stacks. Snapshots share
+        pixel data copy-on-write, so dedup uses QImage.cacheKey(), which
+        identifies the underlying data rather than the Python wrapper."""
+        seen: set[int] = set()
+        total = 0
+        for state in self._undo_stack + self._redo_stack:
+            for img in _state_images(state):
+                key = img.cacheKey()
+                if key not in seen:
+                    seen.add(key)
+                    total += img.sizeInBytes()
+        return total
 
     # ---------------------------------------------------------------- Push
     def push(self, state: HistoryState):
         self._undo_stack.append(state)
+        self._redo_stack.clear()
         if len(self._undo_stack) > self.max_states:
             self._undo_stack.pop(0)
-        self._redo_stack.clear()
+        # Evict oldest states while over the memory budget. Keep at least
+        # one state so undo of the last operation always works.
+        while len(self._undo_stack) > 1 and self.estimated_bytes() > self.max_bytes:
+            self._undo_stack.pop(0)
 
     # --------------------------------------------------------------- Undo/Redo
     def undo(self) -> HistoryState | None:

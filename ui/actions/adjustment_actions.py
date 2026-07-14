@@ -5,7 +5,7 @@ class AdjustmentActionsMixin:
     def _show_adj_dialog(self, DialogClass, history_desc: str):
         layer = self._document and self._document.get_active_layer()
         if not layer or layer.image.isNull(): return
-        self._push_history(tr(history_desc))
+        self._push_history(tr(history_desc), modified_index=self._document.active_layer_index)
         import inspect
         sig = inspect.signature(DialogClass.__init__)
         params = [p for p in sig.parameters.values() if p.name != 'self']
@@ -33,7 +33,7 @@ class AdjustmentActionsMixin:
         if not layer:
             return
         from ui.adjustments_dialog import apply_invert
-        self._push_history(tr("history.invert"))
+        self._push_history(tr("history.invert"), modified_index=self._document.active_layer_index)
         layer.image = apply_invert(layer.image)
         self._canvas_refresh()
 
@@ -76,7 +76,7 @@ class AdjustmentActionsMixin:
             for i, lyr in enumerate(self._document.layers)
             if i != active_idx
         ]
-        self._push_history(tr("history.before_match_color"))
+        self._push_history(tr("history.before_match_color"), modified_index=self._document.active_layer_index)
         import inspect
         sig = inspect.signature(MatchColorDialog.__init__)
         params = [p for p in sig.parameters.values() if p.name != 'self']
@@ -112,7 +112,7 @@ class AdjustmentActionsMixin:
         if not layer:
             return
         from ui.more_adjustments import apply_equalize
-        self._push_history(tr("history.equalize"))
+        self._push_history(tr("history.equalize"), modified_index=self._document.active_layer_index)
         layer.image = apply_equalize(layer.image)
         self._canvas_refresh()
 

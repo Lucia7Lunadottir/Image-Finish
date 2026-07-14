@@ -349,7 +349,7 @@
 
   "title.untitled":  "ImageFinish — sin título ({mode})",
   "title.with_file": "ImageFinish — {name} ({mode})",
-  "title.canvas":    "LinuxShop — {w}×{h} ({mode})",
+  "title.canvas":    "ImageFinish — {w}×{h} ({mode})",
 
   "history.new_document":       "Nuevo documento",
   "history.add_layer":          "Añadir capa",
@@ -991,5 +991,20 @@
 
   "props.transform":   "TRANSFORMACIÓN",
   "props.align":       "ALINEAR CON LIENZO",
-  "props.info":        "INFORMACIÓN DE CAPA"
+  "props.info":        "INFORMACIÓN DE CAPA",
+
+  "crash.title": "Error interno",
+  "crash.message": "Se produjo un error interno. La aplicación intentará continuar.\nLos detalles se guardaron en el registro:\n{path}",
+  "crash.continue": "Continuar",
+  "crash.quit": "Salir",
+  "status.legacy_format": "Formato antiguo abierto — vuelva a guardar para convertir al nuevo formato",
+  "menu.reset_workspace": "Restablecer espacio de trabajo",
+  "menu.theme": "Tema",
+  "menu.theme_dark": "Oscuro",
+  "menu.theme_light": "Claro",
+  "status.theme_restart": "Tema aplicado. Algunos paneles se actualizarán tras reiniciar",
+  "menu.theme_custom": "Personalizado",
+  "menu.theme_configure": "Configurar personalizado…",
+  "dlg.theme_main_color": "Color principal del tema",
+  "dlg.theme_base_question": "¿Construir sobre base oscura?\n(No = base clara)"
 }

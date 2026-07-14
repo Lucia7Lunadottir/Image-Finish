@@ -4,8 +4,10 @@ from PyQt6.QtWidgets import (QDialog, QVBoxLayout, QHBoxLayout, QLabel,
 from PyQt6.QtCore import Qt
 from PyQt6.QtGui import QColor
 
+from ui.base_dialog import BaseDialog
 
-class NewDocumentDialog(QDialog):
+
+class NewDocumentDialog(BaseDialog):
     """Modal dialog to configure a new document."""
 
     # Preset sizes: (label, width, height)

@@ -4,15 +4,24 @@ from PyQt6.QtCore import Qt, pyqtSignal
 
 from core.locale import tr
 
-ITEM_STYLE = ("QListWidget{background:#1e1e2e;border:none;color:#cdd6f4;}"
-              "QListWidget::item{padding:4px 8px;}"
-              "QListWidget::item:selected{background:#313244;color:#cba6f7;}"
-              "QListWidget::item:hover{background:#282838;}")
-BTN_STYLE = ("QPushButton{background:#313244;color:#cdd6f4;border:none;"
-             "padding:4px 10px;border-radius:4px;}"
-             "QPushButton:hover{background:#45475a;}"
-             "QPushButton:pressed{background:#585b70;}")
-LABEL_STYLE = "color:#a6adc8;font-size:11px;"
+from ui import theme
+
+def ITEM_STYLE():
+    return (
+    f"QListWidget{{background:{theme.BASE};border:none;color:{theme.TEXT};}}"
+                  "QListWidget::item{padding:4px 8px;}"
+                  f"QListWidget::item:selected{{background:{theme.SURFACE0};color:#cba6f7;}}"
+                  "QListWidget::item:hover{background:#282838;}"
+    )
+def BTN_STYLE():
+    return (
+    f"QPushButton{{background:{theme.SURFACE0};color:{theme.TEXT};border:none;"
+                 "padding:4px 10px;border-radius:4px;}"
+                 f"QPushButton:hover{{background:{theme.SURFACE1};}}"
+                 f"QPushButton:pressed{{background:{theme.SURFACE2};}}"
+    )
+def LABEL_STYLE():
+    return (f"color:{theme.SUBTEXT};font-size:11px;")
 
 _NO_PATHS_PLACEHOLDER = "(no paths)"
 
@@ -44,13 +53,14 @@ class PathsPanel(QWidget):
 
         # Path list
         self._list = QListWidget()
-        self._list.setStyleSheet(ITEM_STYLE)
+        theme.apply_style(self._list, ITEM_STYLE)
         self._list.setSelectionMode(QListWidget.SelectionMode.SingleSelection)
         layout.addWidget(self._list, 1)
 
-        # Button row
+        # Button grid (2×2 keeps the panel narrow enough to dock tightly)
+        from PyQt6.QtWidgets import QGridLayout
         btn_bar = QWidget()
-        btn_lo = QHBoxLayout(btn_bar)
+        btn_lo = QGridLayout(btn_bar)
         btn_lo.setContentsMargins(0, 4, 0, 0)
         btn_lo.setSpacing(4)
 
@@ -59,10 +69,12 @@ class PathsPanel(QWidget):
         self._btn_stroke = QPushButton()
         self._btn_delete = QPushButton()
 
-        for btn in (self._btn_sel, self._btn_fill, self._btn_stroke, self._btn_delete):
-            btn.setStyleSheet(BTN_STYLE)
+        for i, btn in enumerate((self._btn_sel, self._btn_fill,
+                                 self._btn_stroke, self._btn_delete)):
+            theme.apply_style(btn, BTN_STYLE)
             btn.setFixedHeight(26)
-            btn_lo.addWidget(btn)
+            btn.setMinimumWidth(40)
+            btn_lo.addWidget(btn, i // 2, i % 2)
 
         self._btn_sel.clicked.connect(self._on_make_selection)
         self._btn_fill.clicked.connect(self._on_fill)

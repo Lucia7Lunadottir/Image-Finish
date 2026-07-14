@@ -1,10 +1,12 @@
 from PyQt6.QtCore import Qt, QPointF
 from PyQt6.QtGui import QPainter, QImage, QPolygonF, QColor
 from core.locale import tr
+from ui.document_controller import require_document
 
 
 class ImageActionsMixin:
 
+    @require_document
     def _image_size(self):
         from ui.image_size_dialog import ImageSizeDialog
         dlg = ImageSizeDialog(self._document.width, self._document.height, self)
@@ -45,6 +47,7 @@ class ImageActionsMixin:
         layer.image = layer.image.mirrored(horizontal=False, vertical=True)
         self._canvas_refresh()
 
+    @require_document
     def _resize_canvas(self):
         from utils.new_document_dialog import NewDocumentDialog
         dlg = NewDocumentDialog(self)
@@ -70,6 +73,7 @@ class ImageActionsMixin:
             self._canvas.reset_zoom()
             self._refresh_layers()
 
+    @require_document
     def _apply_crop(self):
         from tools.other_tools import CropTool
         tool = self._tools.get("Crop")
@@ -81,6 +85,7 @@ class ImageActionsMixin:
             self._canvas.reset_zoom()
             self._refresh_layers()
 
+    @require_document
     def _apply_perspective_crop(self):
         from tools.other_tools import PerspectiveCropTool
         tool = self._tools.get("Perspective Crop")
@@ -93,6 +98,7 @@ class ImageActionsMixin:
             self._canvas.reset_zoom()
             self._refresh_layers()
 
+    @require_document
     def _trim(self):
         self._push_history(tr("history.trim"))
         changed = self._document.trim_transparent()
@@ -101,6 +107,7 @@ class ImageActionsMixin:
             self._canvas.reset_zoom()
             self._refresh_layers()
 
+    @require_document
     def _change_color_mode(self, new_mode: str):
         current_mode = getattr(self._document, "color_mode", "RGB")
         if current_mode == new_mode:
@@ -187,6 +194,7 @@ class ImageActionsMixin:
         self._canvas_refresh()
         self._refresh_layers()
 
+    @require_document
     def _change_bit_depth(self, new_depth: int):
         current_depth = getattr(self._document, "bit_depth", 8)
         if current_depth == new_depth:
@@ -196,6 +204,7 @@ class ImageActionsMixin:
         self._document.bit_depth = new_depth
         self._update_mode_menu()
 
+    @require_document
     def _reveal_all(self):
         self._push_history(tr("history.reveal_all"))
         changed = self._document.reveal_all()
