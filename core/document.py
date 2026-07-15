@@ -54,6 +54,9 @@ def _apply_layer_adjustment(image: QImage, layer) -> QImage:
         elif t == "invert":
             from ui.adjustments_dialog import apply_invert
             return apply_invert(image)
+        elif t == "curves":
+            from core.adjustments.curves import apply_curves
+            return apply_curves(image, d.get("points") or {})
         elif t == "levels":
             from ui.levels_dialog import apply_levels
             in_min = int(get_v(["in_min", "in_black", "in_low", "black_sp"], 0))

@@ -141,6 +141,7 @@ class LayerActionsMixin:
             if not dlg: return d
             for k, v in dlg.__dict__.items():
                 if k == "_lut": d["lut"] = v
+                elif k == "_curve_points": d["points"] = v
                 elif hasattr(v, "value") and callable(v.value):
                     try: d[k.lstrip('_')] = v.value()
                     except TypeError: pass
@@ -171,6 +172,9 @@ class LayerActionsMixin:
         if t == "levels":
             from ui.levels_dialog import LevelsDialog
             dlg = create_dlg(LevelsDialog)
+        elif t == "curves":
+            from ui.curves_dialog import CurvesDialog
+            dlg = create_dlg(CurvesDialog)
         elif t == "exposure":
             from ui.more_adjustments import ExposureDialog
             dlg = create_dlg(ExposureDialog)
@@ -229,14 +233,28 @@ class LayerActionsMixin:
         layer.adjustment_data = {"type": adj_type}
 
         dlg = self._get_adj_dialog(layer, adj_type)
-        if dlg and dlg.exec():
-            self._refresh_layers()
+        if dlg is None:
+            return
+
+        def on_finished(result):
+            if result:
+                self._refresh_layers()
+            else:
+                self._history.undo()  # discard the snapshot we just pushed
+                self._document.layers.remove(layer)
+                self._document.active_layer_index = idx
+                self._canvas_refresh()
+                self._refresh_layers()
+
+        # See AdjustmentActionsMixin._show_adj_dialog: dialogs needing real
+        # canvas clicks (Curves' eyedroppers) can't be shown via .exec(),
+        # which forces modal blocking regardless of setModal().
+        if getattr(dlg, "NON_BLOCKING", False):
+            dlg.setModal(False)
+            dlg.finished.connect(on_finished)
+            dlg.show()
         else:
-            self._history.undo()  # discard the snapshot we just pushed
-            self._document.layers.remove(layer)
-            self._document.active_layer_index = idx
-            self._canvas_refresh()
-            self._refresh_layers()
+            on_finished(dlg.exec())
 
     # ── Fill layers ───────────────────────────────────────────────────────
 
@@ -276,11 +294,22 @@ class LayerActionsMixin:
         elif ltype == "adjustment":
             t = (layer.adjustment_data or {}).get("type", "")
             dlg = self._get_adj_dialog(layer, t)
-            if dlg and dlg.exec():
-                self._push_history(tr("history.edit_adj_layer"))
-                self._refresh_layers()
+            if dlg is None:
+                return
+
+            def on_finished(result):
+                if result:
+                    self._push_history(tr("history.edit_adj_layer"))
+                    self._refresh_layers()
+                else:
+                    self._canvas_refresh()
+
+            if getattr(dlg, "NON_BLOCKING", False):
+                dlg.setModal(False)
+                dlg.finished.connect(on_finished)
+                dlg.show()
             else:
-                self._canvas_refresh()
+                on_finished(dlg.exec())
 
     # ── Smart objects ─────────────────────────────────────────────────────
 

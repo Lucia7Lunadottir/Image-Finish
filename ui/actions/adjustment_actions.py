@@ -14,11 +14,23 @@ class AdjustmentActionsMixin:
         else:
             dlg = DialogClass(layer.image, parent=self)
             dlg._canvas_refresh = self._canvas_refresh
-        dlg.exec()
+        # Dialogs that need real clicks on the main canvas (e.g. Curves'
+        # eyedroppers) opt out of modal .exec(): QDialog.exec() forces
+        # Qt::WA_ShowModal regardless of setModal(), which blocks input to
+        # every other window in the app — including the canvas behind it.
+        if getattr(DialogClass, "NON_BLOCKING", False):
+            dlg.setModal(False)
+            dlg.show()
+        else:
+            dlg.exec()
 
     def _levels(self):
         from ui.levels_dialog import LevelsDialog
         self._show_adj_dialog(LevelsDialog, "history.before_levels")
+
+    def _curves(self):
+        from ui.curves_dialog import CurvesDialog
+        self._show_adj_dialog(CurvesDialog, "history.before_curves")
 
     def _brightness_contrast(self):
         from ui.adjustments_dialog import BrightnessContrastDialog
