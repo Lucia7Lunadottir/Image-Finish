@@ -481,14 +481,35 @@ class EditActionsMixin:
             return
         sel = self._document.selection
         if sel and not sel.isEmpty():
-            local_br = sel.boundingRect().toRect().translated(-layer.offset).intersected(layer.image.rect())
+            canvas_br = sel.boundingRect().toRect()
+            self._clipboard_origin = canvas_br.topLeft()
+            local_br = canvas_br.translated(-layer.offset).intersected(layer.image.rect())
             if local_br.isEmpty():
                 from PyQt6.QtGui import QImage
                 self._clipboard = QImage(1, 1, QImage.Format.Format_ARGB32_Premultiplied)
                 self._clipboard.fill(0)
             else:
                 self._clipboard = layer.image.copy(local_br)
+                # Non-rectangular selections (ellipse, lasso...) must clip the
+                # copied pixels to the selection shape, not just its bbox.
+                # (fillPath() ignores CompositionMode when drawn straight onto
+                # the destination, so the mask has to be rendered separately
+                # and composited in with drawImage.)
+                from PyQt6.QtGui import QImage
+                mask_path = sel.translated(-(layer.offset.x() + local_br.x()),
+                                            -(layer.offset.y() + local_br.y()))
+                mask = QImage(self._clipboard.size(), QImage.Format.Format_ARGB32_Premultiplied)
+                mask.fill(QColor(0, 0, 0, 0))
+                mp = QPainter(mask)
+                mp.setRenderHint(QPainter.RenderHint.Antialiasing, True)
+                mp.fillPath(mask_path, QColor(0, 0, 0, 255))
+                mp.end()
+                p = QPainter(self._clipboard)
+                p.setCompositionMode(QPainter.CompositionMode.CompositionMode_DestinationIn)
+                p.drawImage(0, 0, mask)
+                p.end()
         else:
+            self._clipboard_origin = None
             self._clipboard = layer.image.copy()
 
     @require_document
@@ -520,8 +541,12 @@ class EditActionsMixin:
         from core.layer import Layer
         new_layer = Layer(f"Pasted {len(self._document.layers)+1}",
                           self._document.width, self._document.height)
-        cx = (self._document.width  - self._clipboard.width())  // 2
-        cy = (self._document.height - self._clipboard.height()) // 2
+        origin = getattr(self, "_clipboard_origin", None)
+        if origin is not None:
+            cx, cy = origin.x(), origin.y()
+        else:
+            cx = (self._document.width  - self._clipboard.width())  // 2
+            cy = (self._document.height - self._clipboard.height()) // 2
         p = QPainter(new_layer.image)
         p.drawImage(QPoint(cx, cy), self._clipboard)
         p.end()
