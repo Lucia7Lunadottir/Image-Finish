@@ -92,9 +92,9 @@ def draw_symmetry_axes(painter, *, doc, pan, zoom, tool_opts, tool_name, brush_t
     painter.translate(pan)
     painter.scale(zoom, zoom)
     pw = 1.0 / zoom
-    pen1 = QPen(QColor(0, 0, 0, 100), pw * 3)
+    pen1 = QPen(QColor(0, 0, 0, 100), 3)
     pen1.setCosmetic(True)
-    pen2 = QPen(QColor(100, 200, 255, 180), pw)
+    pen2 = QPen(QColor(100, 200, 255, 180), 1)
     pen2.setCosmetic(True)
     pen2.setStyle(Qt.PenStyle.DashLine)
     w, h = doc.width, doc.height
@@ -106,12 +106,20 @@ def draw_symmetry_axes(painter, *, doc, pan, zoom, tool_opts, tool_name, brush_t
     if mirror_y:
         painter.setPen(pen1); painter.drawLine(QPointF(0, sym_y), QPointF(w, sym_y))
         painter.setPen(pen2); painter.drawLine(QPointF(0, sym_y), QPointF(w, sym_y))
-    r_handle = max(4.0, 6.0 / zoom)
-    pen = QPen(QColor(0, 0, 0, 150), max(2.0, 4.0 / zoom))
-    pen.setCosmetic(True)
-    painter.setPen(pen)
+    
+    # Важно: drawEllipse рисует в координатах документа (которые сейчас отмасштабированы).
+    # Чтобы радиус маркера на экране ВСЕГДА был, например, 6 пикселей,
+    # его геометрию в координатах документа нужно скорректировать на zoom.
+    r_handle = 8.0 / zoom 
+    
+    # Для обводки маркера тоже используем косметическое перо фиксированной толщины
+    pen_handle = QPen(QColor(0, 0, 0, 150), 2.0)
+    pen_handle.setCosmetic(True)
+    
+    painter.setPen(pen_handle)
     painter.setBrush(QColor(100, 200, 255, 200))
     painter.drawEllipse(QPointF(sym_x, sym_y), r_handle, r_handle)
+
     painter.restore()
 
 

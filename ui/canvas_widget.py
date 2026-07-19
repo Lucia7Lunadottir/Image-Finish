@@ -609,6 +609,7 @@ class CanvasWidget(QWidget):
         y2 = int(max(pos.y(), prv.y())) + margin
         self.update(QRect(x1, y1, x2 - x1, y2 - y1))
 
+
     def _draw_brush_cursor(self, painter: QPainter):
         try:
             size   = int(self.tool_opts.get("brush_size", 10))
@@ -630,7 +631,8 @@ class CanvasWidget(QWidget):
             sym_x = w * cx_pct
             sym_y = h * cy_pct
             
-            centers = [(int(self._mouse_pos.x()), int(self._mouse_pos.y()))]
+            # Keep track of whether the cursor center is mirrored: (x, y, is_mirror)
+            centers = [(int(self._mouse_pos.x()), int(self._mouse_pos.y()), False)]
             mirrors = []
             if mirror_x: mirrors.append(QPoint(int(2 * sym_x - doc_pos.x()), doc_pos.y()))
             if mirror_y: mirrors.append(QPoint(doc_pos.x(), int(2 * sym_y - doc_pos.y())))
@@ -638,16 +640,21 @@ class CanvasWidget(QWidget):
             
             for m in mirrors:
                 wp = self.to_widget(m)
-                centers.append((int(wp.x()), int(wp.y())))
+                centers.append((int(wp.x()), int(wp.y()), True))
 
             alt_pressed = bool(self.tool_opts.get("_alt", False))
             if getattr(self.active_tool, "name", "") == "CloneStamp" and alt_pressed:
-                for ctx, cty in centers:
+                for ctx, cty, is_mirror in centers:
                     painter.save()
                     painter.setRenderHint(QPainter.RenderHint.Antialiasing)
-                    painter.setPen(QPen(QColor(0,0,0, 180), 3))
-                    painter.drawEllipse(QPointF(ctx, cty), 8, 8)
-                    painter.setPen(QPen(QColor(255,255,255, 220), 1.5))
+                    if is_mirror:
+                        painter.setPen(QPen(QColor(100, 0, 0, 80), 3))
+                        painter.drawEllipse(QPointF(ctx, cty), 8, 8)
+                        painter.setPen(QPen(QColor(255, 150, 150, 120), 1.5))
+                    else:
+                        painter.setPen(QPen(QColor(0, 0, 0, 180), 3))
+                        painter.drawEllipse(QPointF(ctx, cty), 8, 8)
+                        painter.setPen(QPen(QColor(255, 255, 255, 220), 1.5))
                     painter.drawEllipse(QPointF(ctx, cty), 8, 8)
                     painter.drawLine(ctx-12, cty, ctx+12, cty)
                     painter.drawLine(ctx, cty-12, ctx, cty+12)
@@ -672,8 +679,13 @@ class CanvasWidget(QWidget):
             painter.save()
             painter.setRenderHint(QPainter.RenderHint.Antialiasing)
 
-            outer_pen = QPen(QColor(0, 0, 0, 160), 1.5)
-            inner_pen = QPen(QColor(255, 255, 255, 200), 1)
+            # Default pens for the real cursor
+            outer_pen_real = QPen(QColor(0, 0, 0, 160), 1.5)
+            inner_pen_real = QPen(QColor(255, 255, 255, 200), 1)
+
+            # Reddish and more transparent pens for mirrored cursors
+            outer_pen_mirror = QPen(QColor(120, 0, 0, 70), 1.5)
+            inner_pen_mirror = QPen(QColor(255, 120, 120, 110), 1)
 
             if isinstance(actual_mask, QImage) and not actual_mask.isNull():
                 cache_key = (id(mask) if not isinstance(mask, str) else mask, w_size)
@@ -695,7 +707,7 @@ class CanvasWidget(QWidget):
                     self._custom_cursor_cache_path = path
 
                 br = path.boundingRect()
-                for ctx, cty in centers:
+                for ctx, cty, is_mirror in centers:
                     c_path = QPainterPath(path)
                     c_path.translate(ctx - br.center().x(), cty - br.center().y())
                     painter.save()
@@ -704,13 +716,15 @@ class CanvasWidget(QWidget):
                         painter.rotate(angle)
                         painter.translate(-ctx, -cty)
                     painter.setBrush(Qt.BrushStyle.NoBrush)
-                    painter.setPen(outer_pen)
+                    
+                    # Apply reddish transparent colors if mirrored
+                    painter.setPen(outer_pen_mirror if is_mirror else outer_pen_real)
                     painter.drawPath(c_path)
-                    painter.setPen(inner_pen)
+                    painter.setPen(inner_pen_mirror if is_mirror else inner_pen_real)
                     painter.drawPath(c_path)
                     painter.restore()
             else:
-                for ctx, cty in centers:
+                for ctx, cty, is_mirror in centers:
                     painter.save()
                     if angle != 0.0:
                         painter.translate(ctx, cty)
@@ -719,26 +733,37 @@ class CanvasWidget(QWidget):
                     
                     if hard < 0.8 and actual_mask != "square":
                         grad = QRadialGradient(ctx, cty, r)
-                        grad.setColorAt(0,   QColor(255, 255, 255, 80))
-                        grad.setColorAt(hard, QColor(255, 255, 255, 40))
-                        grad.setColorAt(1,   QColor(255, 255, 255, 0))
+                        if is_mirror:
+                            # Reddish transparent gradient for mirror preview
+                            grad.setColorAt(0,    QColor(255, 100, 100, 80))
+                            grad.setColorAt(hard, QColor(255, 50, 50, 40))
+                            grad.setColorAt(1,    QColor(255, 0, 0, 0))
+                        else:
+                            grad.setColorAt(0,   QColor(255, 255, 255, 100))
+                            grad.setColorAt(hard, QColor(255, 255, 255, 80))
+                            grad.setColorAt(1,   QColor(255, 255, 255, 0))
                         painter.setBrush(grad)
                         painter.setPen(Qt.PenStyle.NoPen)
                         painter.drawEllipse(QPoint(ctx, cty), int(r), int(r))
 
                     painter.setBrush(Qt.BrushStyle.NoBrush)
+                    current_outer = outer_pen_mirror if is_mirror else outer_pen_real
+                    current_inner = inner_pen_mirror if is_mirror else inner_pen_real
+
                     if actual_mask == "square":
                         rect = QRect(int(ctx - r), int(cty - r), w_size, w_size)
-                        painter.setPen(outer_pen); painter.drawRect(rect.adjusted(1, 1, -1, -1))
-                        painter.setPen(inner_pen); painter.drawRect(rect)
+                        painter.setPen(current_outer); painter.drawRect(rect.adjusted(1, 1, -1, -1))
+                        painter.setPen(current_inner); painter.drawRect(rect)
                     else:
-                        painter.setPen(outer_pen); painter.drawEllipse(QPoint(ctx, cty), int(r) + 1, int(r) + 1)
-                        painter.setPen(inner_pen); painter.drawEllipse(QPoint(ctx, cty), int(r), int(r))
+                        painter.setPen(current_outer); painter.drawEllipse(QPoint(ctx, cty), int(r) + 1, int(r) + 1)
+                        painter.setPen(current_inner); painter.drawEllipse(QPoint(ctx, cty), int(r), int(r))
                     painter.restore()
 
             if w_size > 16:
-                for ctx, cty in centers:
-                    painter.setPen(QPen(QColor(255, 255, 255, 180), 1))
+                for ctx, cty, is_mirror in centers:
+                    # Adjust center crosshair transparency/color for mirror cursors
+                    cross_color = QColor(255, 150, 150, 100) if is_mirror else QColor(255, 255, 255, 180)
+                    painter.setPen(QPen(cross_color, 1))
                     painter.drawLine(ctx - 3, cty, ctx + 3, cty)
                     painter.drawLine(ctx, cty - 3, ctx, cty + 3)
 
