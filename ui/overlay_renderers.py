@@ -61,7 +61,9 @@ def draw_slices(painter, *, doc, pan, zoom):
     painter.translate(pan)
     painter.scale(zoom, zoom)
     pw = 1.0 / zoom
-    painter.setPen(QPen(QColor(0, 150, 255, 200), pw))
+    pen1 = QPen(QColor(0, 150, 255, 200), pw)
+    pen1.setCosmetic(True)
+    painter.setPen(pen1)
     font = painter.font()
     font.setPointSizeF(max(8.0, 10.0 / zoom))
     painter.setFont(font)
@@ -72,7 +74,10 @@ def draw_slices(painter, *, doc, pan, zoom):
         painter.fillRect(badge_rect, QColor(0, 150, 255, 200))
         painter.setPen(QColor(255, 255, 255))
         painter.drawText(badge_rect, Qt.AlignmentFlag.AlignCenter, str(i + 1))
-        painter.setPen(QPen(QColor(0, 150, 255, 200), pw))
+
+        pen2 = QPen(QColor(0, 150, 255, 200), pw)
+        pen2.setCosmetic(True)
+        painter.setPen(pen2)
     painter.restore()
 
 
@@ -88,7 +93,9 @@ def draw_symmetry_axes(painter, *, doc, pan, zoom, tool_opts, tool_name, brush_t
     painter.scale(zoom, zoom)
     pw = 1.0 / zoom
     pen1 = QPen(QColor(0, 0, 0, 100), pw * 3)
+    pen1.setCosmetic(True)
     pen2 = QPen(QColor(100, 200, 255, 180), pw)
+    pen2.setCosmetic(True)
     pen2.setStyle(Qt.PenStyle.DashLine)
     w, h = doc.width, doc.height
     sym_x = w * cx_pct
@@ -100,7 +107,9 @@ def draw_symmetry_axes(painter, *, doc, pan, zoom, tool_opts, tool_name, brush_t
         painter.setPen(pen1); painter.drawLine(QPointF(0, sym_y), QPointF(w, sym_y))
         painter.setPen(pen2); painter.drawLine(QPointF(0, sym_y), QPointF(w, sym_y))
     r_handle = max(4.0, 6.0 / zoom)
-    painter.setPen(QPen(QColor(0, 0, 0, 150), max(1.0, 2.0 / zoom)))
+    pen = QPen(QColor(0, 0, 0, 150), max(2.0, 4.0 / zoom))
+    pen.setCosmetic(True)
+    painter.setPen(pen)
     painter.setBrush(QColor(100, 200, 255, 200))
     painter.drawEllipse(QPointF(sym_x, sym_y), r_handle, r_handle)
     painter.restore()
@@ -114,18 +123,25 @@ def draw_selection(painter, *, doc, pan, zoom, march_offset):
     painter.save()
     painter.translate(pan)
     painter.scale(zoom, zoom)
-    pw = 1.0 / zoom
+    
     painter.setBrush(Qt.BrushStyle.NoBrush)
-    pen = QPen(QColor(0, 0, 0, 160), pw * 1.5)
+    
+    # First pen (black ants)
+    pen = QPen(QColor(0, 0, 0, 160), 1.5)
+    pen.setCosmetic(True)  # Keep selection border size pixel-perfect on screen
     pen.setStyle(Qt.PenStyle.DashLine)
     pen.setDashOffset(march_offset)
     painter.setPen(pen)
     painter.drawPath(sel)
-    pen2 = QPen(QColor(255, 255, 255, 220), pw)
+    
+    # Second pen (white background ants)
+    pen2 = QPen(QColor(255, 255, 255, 220), 1.0)
+    pen2.setCosmetic(True)  # Keep selection border size pixel-perfect on screen
     pen2.setStyle(Qt.PenStyle.DashLine)
     pen2.setDashOffset(march_offset + 4)
     painter.setPen(pen2)
     painter.drawPath(sel)
+    
     painter.restore()
 
 
@@ -137,8 +153,8 @@ def draw_subtract_drag(painter, *, active_tool, pan, zoom, SelectTool):
                 painter.save()
                 painter.translate(pan)
                 painter.scale(zoom, zoom)
-                pw = 1.0 / zoom
-                pen = QPen(QColor(220, 60, 60), pw)
+                pen = QPen(QColor(220, 60, 60), 1.0)
+                pen.setCosmetic(True)
                 pen.setStyle(Qt.PenStyle.DashLine)
                 painter.setPen(pen)
                 painter.setBrush(Qt.BrushStyle.NoBrush)
@@ -153,8 +169,8 @@ def draw_subtract_drag(painter, *, active_tool, pan, zoom, SelectTool):
                 painter.save()
                 painter.translate(pan)
                 painter.scale(zoom, zoom)
-                pw = 1.0 / zoom
-                pen = QPen(QColor(220, 60, 60), pw)
+                pen = QPen(QColor(220, 60, 60), 1.0)
+                pen.setCosmetic(True)
                 pen.setStyle(Qt.PenStyle.DashLine)
                 painter.setPen(pen)
                 painter.setBrush(Qt.BrushStyle.NoBrush)
@@ -175,10 +191,13 @@ def draw_lasso_preview(painter, *, active_tool, pan, zoom, is_mouse_in):
         painter.translate(pan)
         painter.scale(zoom, zoom)
         painter.setRenderHint(QPainter.RenderHint.Antialiasing)
-        pw = 1.0 / zoom
-        pen1 = QPen(QColor(0, 0, 0), pw)
-        pen2 = QPen(QColor(255, 255, 255), pw)
+        
+        pen1 = QPen(QColor(0, 0, 0), 1.0)
+        pen1.setCosmetic(True)
+        pen2 = QPen(QColor(255, 255, 255), 1.0)
+        pen2.setCosmetic(True)
         pen2.setStyle(Qt.PenStyle.DashLine)
+        
         points = preview_data[0] if isinstance(preview_data, tuple) else preview_data
         current_pos = preview_data[1] if isinstance(preview_data, tuple) else None
         if len(points) > 0:
@@ -266,13 +285,19 @@ def draw_crop_preview(painter, *, active_tool, tool_opts, pan, zoom, doc, CropTo
         path.setFillRule(Qt.FillRule.OddEvenFill)
         painter.fillPath(path, QColor(0, 0, 0, 100))
 
-        painter.setPen(QPen(QColor(255, 200, 0), max(1, 1 / zoom)))
+        border_pen = QPen(QColor(255, 200, 0), 1.5)
+        border_pen.setCosmetic(True)
+
+        painter.setPen(border_pen)
         painter.setBrush(Qt.BrushStyle.NoBrush)
         painter.drawRect(cr)
 
         overlay = tool_opts.get("crop_overlay", "thirds")
         if overlay != "none":
-            painter.setPen(QPen(QColor(255, 255, 255, 150), 1.0 / zoom, Qt.PenStyle.DashLine))
+            # Using cosmetic pen for helper lines
+            grid_pen = QPen(QColor(255, 255, 255, 150), 1.0, Qt.PenStyle.DashLine)
+            grid_pen.setCosmetic(True)
+            painter.setPen(grid_pen)
             w, h = cr.width(), cr.height()
             if overlay == "thirds":
                 painter.drawLine(QPointF(cr.left(), cr.top() + h / 3), QPointF(cr.right(), cr.top() + h / 3))
@@ -287,16 +312,42 @@ def draw_crop_preview(painter, *, active_tool, tool_opts, pan, zoom, doc, CropTo
                 painter.drawLine(cr.topLeft(), cr.bottomRight())
                 painter.drawLine(cr.topRight(), cr.bottomLeft())
 
-        painter.setBrush(QColor(255, 255, 255))
-        pw = 1.0 / zoom
-        painter.setPen(QPen(QColor(0, 0, 0), pw))
-        s = 3 * pw
+        # Configure cosmetic handles pen
+        handle_pen = QPen(QColor(0, 0, 0), 1.0)
+        handle_pen.setCosmetic(True)
+        
         pts = [cr.topLeft(), QPointF(cr.center().x(), cr.top()), cr.topRight(),
                QPointF(cr.right(), cr.center().y()), cr.bottomRight(),
-               QPointF(cr.center().x(), cr.bottom()), cr.bottomLeft(),
-               QPointF(cr.left(), cr.center().y())]
+               QPointF(cr.center().x(), doc.height if math.isclose(cr.bottom(), doc.height) else cr.bottom()),
+               cr.bottomLeft(), QPointF(cr.left(), cr.center().y())]
+               
         for pt in pts:
-            painter.drawRect(QRectF(pt.x() - s, pt.y() - s, s * 2, s * 2))
+            painter.save()
+            
+            # Map the raw geometric point to screen widget coordinates directly
+            screen_pos = painter.combinedTransform().map(pt)
+            
+            # Switch to pure screen space to completely prevent scale/zoom distortions[cite: 2]
+            painter.setTransform(QTransform())
+            painter.setBrush(QColor(255, 255, 255))
+            painter.setPen(handle_pen)
+            
+            # Sub-pixel math alignment to fix the X-axis shifting caused by painter.scale() rounding
+            cx = math.floor(screen_pos.x()) + 0.5
+            cy = round(screen_pos.y())
+            
+            # Set fixed size in screen pixels (4.0 means 8x8 pixels handle box)
+            s_pixels = 4.0 
+            handle_rect = QRectF(
+                cx - s_pixels,
+                cy - s_pixels,
+                s_pixels * 2.0,
+                s_pixels * 2.0
+            )
+            
+            painter.drawRect(handle_rect)
+            painter.restore()
+            
         painter.restore()
     except Exception:
         logger.debug("Overlay draw failed", exc_info=True)
@@ -318,13 +369,17 @@ def draw_perspective_crop(painter, *, active_tool, tool_opts, pan, zoom, doc, Pe
             path.setFillRule(Qt.FillRule.OddEvenFill)
             painter.fillPath(path, QColor(0, 0, 0, 100))
 
-            painter.setPen(QPen(QColor(255, 200, 0), max(1, 1 / zoom)))
+            quad_pen = QPen(QColor(255, 200, 0), 1.5)
+            quad_pen.setCosmetic(True)
+            painter.setPen(quad_pen)
             painter.setBrush(Qt.BrushStyle.NoBrush)
             painter.drawPolygon(quad)
 
             overlay = tool_opts.get("crop_overlay", "thirds")
             if overlay != "none" and len(quad) == 4:
-                painter.setPen(QPen(QColor(255, 255, 255, 150), 1.0 / zoom, Qt.PenStyle.DashLine))
+                grid_pen = QPen(QColor(255, 255, 255, 150), 1.0, Qt.PenStyle.DashLine)
+                grid_pen.setCosmetic(True)
+                painter.setPen(grid_pen)
                 pts = [QPointF(quad[i]) for i in range(4)]
                 p0, p1, p2, p3 = pts
 
@@ -345,16 +400,35 @@ def draw_perspective_crop(painter, *, active_tool, tool_opts, pan, zoom, doc, Pe
 
         if active_tool.points:
             painter.setRenderHint(QPainter.RenderHint.Antialiasing)
-            pen = QPen(QColor(255, 255, 255), max(1.0, 1.5 / zoom))
-            pen.setStyle(Qt.PenStyle.DashLine)
-            painter.setPen(pen)
-            painter.setBrush(QColor(255, 255, 255, 180))
+            
+            circle_pen = QPen(QColor(255, 255, 255), 1.5)
+            circle_pen.setCosmetic(True)
+            
             pts = active_tool.points
-            r = max(4.0, 6.0 / zoom)
-            for i, p in enumerate(pts):
-                painter.drawEllipse(QPointF(p), r, r)
+            
+            # 1. Draw connecting dashed lines first (with cosmetic pen)
+            line_pen = QPen(QColor(255, 255, 255), 1.0, Qt.PenStyle.DashLine)
+            line_pen.setCosmetic(True)
+            painter.setPen(line_pen)
+            for i in range(len(pts)):
                 if i > 0 and not active_tool.pending_quad:
                     painter.drawLine(pts[i - 1], pts[i])
+            
+            # 2. Draw circles in pure screen space to keep sizes unified
+            for p in pts:
+                painter.save()
+                screen_pos = painter.combinedTransform().map(QPointF(p))
+                
+                # Switch to pure screen space
+                painter.setTransform(QTransform())
+                painter.setBrush(QColor(255, 255, 255, 180))
+                painter.setPen(circle_pen)
+                
+                # Unified radius in screen pixels
+                r_pixels = 5.0
+                painter.drawEllipse(screen_pos, r_pixels, r_pixels)
+                painter.restore()
+                
         painter.restore()
     except Exception:
         logger.debug("Overlay draw failed", exc_info=True)
@@ -371,12 +445,26 @@ def draw_shapes_preview(painter, *, active_tool, tool_opts, fg_color, pan, zoom,
         painter.translate(pan)
         painter.scale(zoom, zoom)
         painter.setRenderHint(QPainter.RenderHint.Antialiasing)
+        
         stroke = max(1, int(tool_opts.get("brush_size", 3)))
         shape_color = tool_opts.get("shape_color", fg_color)
+        
+        # Real solid contour (without setCosmetic as requested)
         pen = QPen(shape_color, stroke)
-        pen.setStyle(Qt.PenStyle.DashLine)
+        pen.setStyle(Qt.PenStyle.SolidLine)
         painter.setPen(pen)
-        painter.setBrush(Qt.BrushStyle.NoBrush)
+        
+        is_fill_enabled = (
+            tool_opts.get("shape_fill", False) or 
+            tool_opts.get("use_fill", False) or 
+            tool_opts.get("fill", False)
+        )
+        
+        if is_fill_enabled:
+            painter.setBrush(QBrush(shape_color))
+        else:
+            painter.setBrush(Qt.BrushStyle.NoBrush)
+
         shape = ps["shape"]
         rect = ps["rect"]
         angle = ps.get("angle", 0)
@@ -434,14 +522,20 @@ def draw_gradient_preview(painter, *, active_tool, pan, zoom, GradientTool):
         painter.save()
         painter.translate(pan)
         painter.scale(zoom, zoom)
-        pw = 1.0 / zoom
-        pen = QPen(QColor(255, 255, 255, 200), pw * 1.5)
+        
+        pen = QPen(QColor(255, 255, 255, 200), 1.5)
+        pen.setCosmetic(True)
         pen.setStyle(Qt.PenStyle.DashLine)
         painter.setPen(pen)
         painter.drawLine(p0, p1)
+        
         painter.setBrush(QBrush(QColor(255, 255, 255, 200)))
-        painter.setPen(QPen(QColor(0, 0, 0, 160), pw))
-        r = pw * 3
+        
+        marker_pen = QPen(QColor(0, 0, 0, 160), 1.0)
+        marker_pen.setCosmetic(True)
+        painter.setPen(marker_pen)
+        
+        r = 3.0 / zoom
         painter.drawEllipse(QPointF(p0), r, r)
         painter.drawEllipse(QPointF(p1), r, r)
         painter.restore()
@@ -459,7 +553,10 @@ def draw_artboard_preview(painter, *, active_tool, pan, zoom):
         painter.save()
         painter.translate(pan)
         painter.scale(zoom, zoom)
-        painter.setPen(QPen(QColor(100, 160, 255), max(1.5, 2.0 / zoom)))
+        
+        pen = QPen(QColor(100, 160, 255), 2.0)
+        pen.setCosmetic(True)
+        painter.setPen(pen)
         painter.setBrush(QColor(255, 255, 255, 50))
         painter.drawRect(ar)
         painter.restore()
@@ -474,10 +571,13 @@ def draw_clone_stamp(painter, *, active_tool, pan, zoom):
     painter.save()
     painter.translate(pan)
     painter.scale(zoom, zoom)
-    pw = 1.0 / zoom
-    pen1 = QPen(QColor(0, 0, 0, 180), pw * 3)
-    pen2 = QPen(QColor(255, 255, 255, 220), pw)
-    r = 6 * pw
+    
+    pen1 = QPen(QColor(0, 0, 0, 180), 3.0)
+    pen1.setCosmetic(True)
+    pen2 = QPen(QColor(255, 255, 255), 1.0)
+    pen2.setCosmetic(True)
+    
+    r = 6.0 / zoom
     painter.setPen(pen1)
     painter.drawLine(QPointF(crosshair.x() - r, crosshair.y()), QPointF(crosshair.x() + r, crosshair.y()))
     painter.drawLine(QPointF(crosshair.x(), crosshair.y() - r), QPointF(crosshair.x(), crosshair.y() + r))
@@ -497,14 +597,20 @@ def draw_measurements(painter, *, active_tool, pan, zoom, composite_cache, to_wi
         painter.save()
         painter.translate(pan)
         painter.scale(zoom, zoom)
-        pw = 1.0 / zoom
+        
+        pen1 = QPen(QColor(0, 0, 0, 180), 3.0)
+        pen1.setCosmetic(True)
+        pen2 = QPen(QColor(255, 255, 255), 1.0)
+        pen2.setCosmetic(True)
+        
+        r = 6.0 / zoom
         for pt in active_tool.markers:
-            painter.setPen(QPen(QColor(0, 0, 0, 180), pw * 3))
-            painter.drawLine(QPointF(pt.x() - 6 * pw, pt.y()), QPointF(pt.x() + 6 * pw, pt.y()))
-            painter.drawLine(QPointF(pt.x(), pt.y() - 6 * pw), QPointF(pt.x(), pt.y() + 6 * pw))
-            painter.setPen(QPen(QColor(255, 255, 255), pw))
-            painter.drawLine(QPointF(pt.x() - 6 * pw, pt.y()), QPointF(pt.x() + 6 * pw, pt.y()))
-            painter.drawLine(QPointF(pt.x(), pt.y() - 6 * pw), QPointF(pt.x(), pt.y() + 6 * pw))
+            painter.setPen(pen1)
+            painter.drawLine(QPointF(pt.x() - r, pt.y()), QPointF(pt.x() + r, pt.y()))
+            painter.drawLine(QPointF(pt.x(), pt.y() - r), QPointF(pt.x(), pt.y() + r))
+            painter.setPen(pen2)
+            painter.drawLine(QPointF(pt.x() - r, pt.y()), QPointF(pt.x() + r, pt.y()))
+            painter.drawLine(QPointF(pt.x(), pt.y() - r), QPointF(pt.x(), pt.y() + r))
         painter.restore()
         painter.save()
         painter.setRenderHint(QPainter.RenderHint.TextAntialiasing)
@@ -527,14 +633,20 @@ def draw_measurements(painter, *, active_tool, pan, zoom, composite_cache, to_wi
             painter.save()
             painter.translate(pan)
             painter.scale(zoom, zoom)
-            pw = 1.0 / zoom
+            
+            pen1 = QPen(QColor(0, 0, 0, 180), 3.0)
+            pen1.setCosmetic(True)
+            pen2 = QPen(QColor(255, 255, 255), 1.0)
+            pen2.setCosmetic(True)
+            
+            r = 3.0 / zoom
             for p1, p2 in lines:
-                painter.setPen(QPen(QColor(0, 0, 0, 180), pw * 3))
+                painter.setPen(pen1)
                 painter.drawLine(p1, p2)
-                painter.setPen(QPen(QColor(255, 255, 255), pw))
+                painter.setPen(pen2)
                 painter.drawLine(p1, p2)
-                painter.drawEllipse(QPointF(p1), 3 * pw, 3 * pw)
-                painter.drawEllipse(QPointF(p2), 3 * pw, 3 * pw)
+                painter.drawEllipse(QPointF(p1), r, r)
+                painter.drawEllipse(QPointF(p2), r, r)
             painter.restore()
             painter.save()
             for p1, p2 in lines:

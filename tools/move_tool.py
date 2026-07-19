@@ -52,8 +52,19 @@ class MoveTool(BaseTool):
             'bl': pts[3],
             'l':  (pts[3] + pts[0]) / 2.0,
         }
-        hit_dist = 8 / max(0.01, opts.get("_zoom", 1.0))
-        rot_dist = 24 / max(0.01, opts.get("_zoom", 1.0))
+        
+        # Get the current zoom factor from options to calculate accurate screen distances
+        current_zoom = max(0.01, opts.get("_zoom", 1.0))
+        
+        # Define accurate click distances in screen pixels directly
+        # hit_dist_screen defines how close the mouse cursor needs to be to hit a handle square
+        # rot_dist_screen defines the outer zone for the rotation cursor trigger
+        hit_dist_screen = 14.0 
+        rot_dist_screen = 28.0
+        
+        # Convert screen distances back to canvas coordinates to match the 'pos' parameter
+        hit_dist = hit_dist_screen / current_zoom
+        rot_dist = rot_dist_screen / current_zoom
         
         min_d = float('inf')
         best_h = None
@@ -492,9 +503,13 @@ class MoveTool(BaseTool):
     def draw_overlays(self, painter: QPainter, pw: float, doc):
         if not self.is_transforming: return
         
+        # 1. Draw smart guides if active
         if hasattr(self, "_smart_guides") and self._smart_guides:
             painter.save()
-            painter.setPen(QPen(QColor(255, 0, 255, 200), max(1.0, pw)))
+            # Set smart guides pen as cosmetic so they don't scale up or down
+            guide_pen = QPen(QColor(255, 0, 255, 200), 1.0)
+            guide_pen.setCosmetic(True)
+            painter.setPen(guide_pen)
             for gtype, val in self._smart_guides:
                 if gtype == 'v': painter.drawLine(QPointF(val, -10000), QPointF(val, 10000))
                 elif gtype == 'h': painter.drawLine(QPointF(-10000, val), QPointF(10000, val))
@@ -505,21 +520,64 @@ class MoveTool(BaseTool):
         pts = [QPointF(poly[i]) for i in range(4)]
             
         painter.save()
-        painter.setPen(QPen(QColor(0, 0, 0, 180), pw))
+        
+        # 2. Configure cosmetic pens for the bounding box
+        outer_pen = QPen(QColor(0, 0, 0, 180), 1.0)
+        outer_pen.setCosmetic(True)
+        painter.setPen(outer_pen)
         painter.setBrush(Qt.BrushStyle.NoBrush)
         painter.drawPolygon(poly)
-        painter.setPen(QPen(QColor(255, 255, 255, 200), pw, Qt.PenStyle.DashLine))
+        
+        inner_pen = QPen(QColor(255, 255, 255, 200), 1.0, Qt.PenStyle.DashLine)
+        inner_pen.setCosmetic(True)
+        painter.setPen(inner_pen)
         painter.drawPolygon(poly)
         
+        # 3. Draw transform handles with uniform screen size
         painter.setBrush(QColor(255, 255, 255))
-        painter.setPen(QPen(QColor(0, 0, 0), pw))
-        s = 3 * pw
+        
+        handle_border_pen = QPen(QColor(0, 0, 0), 1.0)
+        handle_border_pen.setCosmetic(True)
+        painter.setPen(handle_border_pen)
+        
+        # Set fixed handle radius in screen pixels (e.g., 3.5 pixels from center)
+        # We counter the global painter transformation matrix by dividing by pw
+        # Note: pw in CanvasWidget is passed as 1.0 / zoom
+        s = 3.5
+        
         handles = [
             pts[0], (pts[0]+pts[1])/2, pts[1], (pts[1]+pts[2])/2,
             pts[2], (pts[2]+pts[3])/2, pts[3], (pts[3]+pts[0])/2
         ]
+        
         for pt in handles:
-            painter.drawRect(QRectF(pt.x() - s, pt.y() - s, s*2, s*2))
+            # 1. Save the current painter state before geometry resetting
+            painter.save()
+            
+            # 2. Get the exact screen (widget) coordinates for the handle center
+            # combinedTransform combines pan, zoom and total_transform matrices
+            screen_pos = painter.combinedTransform().map(pt)
+            
+            # 3. Completely reset the painter matrix to screen pixel space
+            painter.setTransform(QTransform())
+            
+            # 4. Set the fixed size in actual screen pixels (e.g. 7x7 pixels window)
+            s_pixels = 5
+            handle_rect = QRectF(
+                screen_pos.x() - s_pixels,
+                screen_pos.y() - s_pixels,
+                s_pixels * 2.0,
+                s_pixels * 2.0
+            )
+            
+            # 5. Draw the handle in pure screen space
+            painter.drawRect(handle_rect)
+            
+            # 6. Restore the painter transformation for the next points
+            painter.restore()
+            
+        painter.restore()
+            
         painter.restore()
         
     def apply_transform(self, doc):
