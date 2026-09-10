@@ -498,6 +498,35 @@ class MainWindow(QMainWindow,
         self._doc_tabs.setCurrentIndex(idx)
         if hasattr(self, "_center_stack"):
             self._center_stack.setCurrentIndex(1)
+        # The Welcome screen's recent-file thumbnails set PointingHandCursor
+        # on themselves; swapping them out for the canvas at the same screen
+        # position doesn't happen via a mouse move, so nothing tells Qt (and
+        # the Wayland compositor underneath it) to re-poll which widget is
+        # now under the pointer — the thumbnail's hand cursor visually stays
+        # put. Just calling canvas.setCursor() isn't enough to fix that: Qt
+        # only forwards a cursor change to the platform for the widget it
+        # currently considers "entered", and that bookkeeping is normally
+        # only updated by a real mouse-move reaching the window. Posting a
+        # synthetic MouseMove at the pointer's actual current position forces
+        # Qt to re-run its own hit-testing and hand the canvas its hover/
+        # cursor state for real, instead of just poking canvas's cursor
+        # property from the outside. Deferred via singleShot so it runs once
+        # the stack-switch above has actually been applied.
+        canvas._update_cursor()
+
+        def _resync_cursor():
+            from PyQt6.QtCore import QEvent
+            from PyQt6.QtGui import QMouseEvent, QCursor
+            from PyQt6.QtWidgets import QApplication
+            gpos = QCursor.pos()
+            lpos = canvas.mapFromGlobal(gpos)
+            ev = QMouseEvent(QEvent.Type.MouseMove, QPointF(lpos), QPointF(gpos),
+                              Qt.MouseButton.NoButton, Qt.MouseButton.NoButton,
+                              Qt.KeyboardModifier.NoModifier)
+            QApplication.sendEvent(canvas, ev)
+            canvas._update_cursor()
+        from PyQt6.QtCore import QTimer
+        QTimer.singleShot(0, _resync_cursor)
         # Sync tool options bar with canvas defaults
         page = self._opts_bar._pages.get(self._active_tool_name)
         if page and hasattr(page, "update_from_opts"):

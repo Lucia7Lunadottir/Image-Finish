@@ -20,7 +20,10 @@ def _build_font(opts: dict) -> QFont:
 
 
 def _text_bounding_rect(td: dict, padding: int = 4):
-    """Returns QRect bounding box of text from text_data (in layer coordinates)."""
+    """Returns QRect bounding box of text from text_data (in layer
+    coordinates), matching exactly what `_render_text` draws: `td["y"]` is
+    the top of the block (baseline of the first line sits at y + ascent),
+    not the baseline itself."""
     from PyQt6.QtCore import QRect
     text = td.get("text", "")
     if not text:
@@ -32,8 +35,28 @@ def _text_bounding_rect(td: dict, padding: int = 4):
     line_h = metrics.lineSpacing()
     total_h = metrics.ascent() + metrics.descent() + line_h * (len(lines) - 1)
     x, y = int(td.get("x", 0)), int(td.get("y", 0))
-    return QRect(x - padding, y - metrics.ascent() - padding,
+    return QRect(x - padding, y - padding,
                  max_w + padding * 2, total_h + padding * 2)
+
+
+def _text_bounding_rect_vertical(td: dict, padding: int = 4):
+    """Same as `_text_bounding_rect` but for `_render_text_vertical`'s
+    column layout (one text line per column, one character per row)."""
+    from PyQt6.QtCore import QRect
+    text = td.get("text", "")
+    if not text:
+        return None
+    font = _build_font(td)
+    metrics = QFontMetrics(font)
+    cols = text.split("\n")
+    col_w = metrics.maxWidth() + 4
+    char_h = metrics.height()
+    max_rows = max((len(c) for c in cols), default=0)
+    total_w = col_w * max(1, len(cols))
+    total_h = char_h * max(1, max_rows)
+    x, y = int(td.get("x", 0)), int(td.get("y", 0))
+    return QRect(x - padding, y - padding,
+                 total_w + padding * 2, total_h + padding * 2)
 
 
 def _render_text(image, x: int, y: int, text: str, opts: dict, clip_path=None, angle: float = 0.0):
@@ -267,7 +290,9 @@ class TextTool(BaseTool):
     name = "Text"
     icon = "T"
     shortcut = "T"
-    needs_immediate_commit = True
+    # The overlay commits asynchronously on its own schedule, not on this
+    # mouse press — see needs_history_push().
+    needs_immediate_commit = False
 
     def __init__(self):
         self._parent_widget = None
@@ -293,35 +318,16 @@ class TextTool(BaseTool):
                     re_edit = True
                     break
 
-        layer_name = layer.name if re_edit else None
-        initial    = layer.text_data.get("text", "") if re_edit else ""
-
-        dlg = _TextDialog(initial, opts, layer_name, self._parent_widget)
-        if dlg.exec() != QDialog.DialogCode.Accepted:
+        canvas = getattr(self._parent_widget, "_canvas", None)
+        if canvas is None:
             return
-        text = dlg.get_text().strip()
-        if not text:
-            return
-
-        opts.update(dlg.get_font_opts())
 
         if re_edit:
-            layer.image.fill(Qt.GlobalColor.transparent)
             td = layer.text_data
-            _render_text(layer.image, td["x"], td["y"], text, opts,
-                         doc.selection if (doc.selection and not doc.selection.isEmpty()) else None)
-            layer.text_data = {**td, "text": text, **self._snap_opts(opts)}
+            anchor = QPoint(int(td.get("x", 0)), int(td.get("y", 0)))
+            canvas.begin_text_edit(doc, layer, td.get("text", ""), anchor, vertical=False)
         else:
-            from core.layer import Layer as _Layer
-            n = sum(1 for l in doc.layers if l.text_data) + 1
-            new_layer = _Layer(f"Text {n}", doc.width, doc.height)
-            new_layer.layer_type = "text"
-            _render_text(new_layer.image, pos.x(), pos.y(), text, opts,
-                         doc.selection if (doc.selection and not doc.selection.isEmpty()) else None)
-            new_layer.text_data = {"text": text, "x": pos.x(), "y": pos.y(),
-                                   **self._snap_opts(opts)}
-            doc.layers.append(new_layer)
-            doc.active_layer_index = len(doc.layers) - 1
+            canvas.begin_text_edit(doc, None, "", pos_pt, vertical=False)
 
     @staticmethod
     def _snap_opts(opts: dict) -> dict:
@@ -334,7 +340,10 @@ class TextTool(BaseTool):
         ) if k in opts}
 
     def needs_history_push(self) -> bool:
-        return True
+        # The on-canvas editor owns its own undo push on commit (see
+        # MainWindow._commit_text_edit), since a typing session isn't
+        # bounded by a single mouse press/release like a brush stroke.
+        return False
 
     def cursor(self):
         return Qt.CursorShape.IBeamCursor
@@ -344,7 +353,7 @@ class VerticalTypeTool(BaseTool):
     name = "TextV"
     icon = "Tv"
     shortcut = ""
-    needs_immediate_commit = True
+    needs_immediate_commit = False
 
     def __init__(self):
         self._parent_widget = None
@@ -372,38 +381,21 @@ class VerticalTypeTool(BaseTool):
                     re_edit = True
                     break
 
-        layer_name = layer.name if re_edit else None
-        initial    = layer.text_data.get("text", "") if re_edit else ""
-
-        dlg = _TextDialog(initial, opts, layer_name, self._parent_widget)
-        if dlg.exec() != QDialog.DialogCode.Accepted:
+        canvas = getattr(self._parent_widget, "_canvas", None)
+        if canvas is None:
             return
-        text = dlg.get_text().strip()
-        if not text:
-            return
-
-        opts.update(dlg.get_font_opts())
-        clip = doc.selection if (doc.selection and not doc.selection.isEmpty()) else None
 
         if re_edit:
-            layer.image.fill(Qt.GlobalColor.transparent)
             td = layer.text_data
-            _render_text_vertical(layer.image, td["x"], td["y"], text, opts, clip)
-            layer.text_data = {**td, "text": text, "vertical": True,
-                               **TextTool._snap_opts(opts)}
+            anchor = QPoint(int(td.get("x", 0)), int(td.get("y", 0)))
+            canvas.begin_text_edit(doc, layer, td.get("text", ""), anchor, vertical=True)
         else:
-            from core.layer import Layer as _Layer
-            n = sum(1 for l in doc.layers if l.text_data) + 1
-            new_layer = _Layer(f"Text {n}", doc.width, doc.height)
-            new_layer.layer_type = "text"
-            _render_text_vertical(new_layer.image, pos.x(), pos.y(), text, opts, clip)
-            new_layer.text_data = {"text": text, "x": pos.x(), "y": pos.y(),
-                                   "vertical": True, **TextTool._snap_opts(opts)}
-            doc.layers.append(new_layer)
-            doc.active_layer_index = len(doc.layers) - 1
+            canvas.begin_text_edit(doc, None, "", pos_pt, vertical=True)
 
     def needs_history_push(self):
-        return True
+        # See TextTool.needs_history_push — the on-canvas editor commits
+        # its own undo state.
+        return False
 
     def cursor(self):
         return Qt.CursorShape.IBeamCursor

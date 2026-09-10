@@ -28,11 +28,19 @@ _BRUSH_TOOLS = {"Brush", "Eraser", "BackgroundEraser", "Blur", "Sharpen", "Smudg
                 "Dodge", "Burn", "Sponge",
                 "QuickSelection"}
 
+# Plain color-painting tools where Alt has no other meaning yet — eligible
+# for Photoshop-style "hold Alt = temporary eyedropper". CloneStamp/Patch/
+# HealingBrush already use Alt to set their source point, and Select/Lasso/
+# Move/PuppetWarp already use Alt for their own modifiers, so those are
+# deliberately excluded.
+_ALT_EYEDROPPER_TOOLS = {"Brush", "Pencil", "ColorReplacement", "MixerBrush", "PatternStamp"}
+
 _SELECTION_TOOLS = {
     "Select", "EllipseSelect",
     "Lasso", "PolygonalLasso", "MagneticLasso",
     "MagicWand", "ObjectSelection",
 }
+
 
 _sel_cursor_cache: dict = {}
 
@@ -101,6 +109,17 @@ class CanvasWidget(QWidget):
 
         self.document    = None
         self.active_tool = None
+        self._alt_prev_tool = None  # tool stashed while the temporary Alt-eyedropper is active
+        self._alt_picker = None     # the temporary EyedropperTool instance itself
+        # Brush is always the first tool applied to a freshly opened document
+        # (see MainWindow.__init__), so give this widget its blank-cursor +
+        # circle-guide look right at construction time instead of waiting for
+        # a later _update_cursor() call: setting it upfront, well before the
+        # widget is ever shown, sidesteps whatever timing/staleness causes a
+        # previously-shown widget's cursor (e.g. the Welcome screen's
+        # PointingHandCursor thumbnails) to visually stick after this canvas
+        # replaces it on screen.
+        self.setCursor(Qt.CursorShape.BlankCursor)
         self.view_channel = "RGB"
 
         self.fg_color = QColor(0, 0, 0)
@@ -153,7 +172,7 @@ class CanvasWidget(QWidget):
         self._pre_stroke_state = None
 
         self._mouse_pos: QPointF = QPointF(-100, -100)
-        self._show_brush_cursor: bool = False
+        self._show_brush_cursor: bool = True
         self._is_mouse_in: bool = False
 
         self._composite_cache: QImage | None = None
@@ -176,6 +195,9 @@ class CanvasWidget(QWidget):
         self.setAttribute(Qt.WidgetAttribute.WA_OpaquePaintEvent, False)
 
         self._checker = self._build_checker()
+
+        from ui.text_edit_overlay import TextEditOverlay
+        self._text_overlay = TextEditOverlay(self)
 
     @staticmethod
     def _build_checker(tile: int = 16) -> QPixmap:
@@ -298,6 +320,24 @@ class CanvasWidget(QWidget):
             y = dx * math.sin(a) + dy * math.cos(a) + cy
         return QPointF(x, y)
 
+    def begin_text_edit(self, doc, layer, initial_text: str, doc_anchor: QPoint, vertical: bool = False):
+        """Opens the in-place text editor for TextTool/VerticalTypeTool.
+        `layer` is the text layer being re-edited, or None to create a new
+        one at `doc_anchor` on commit. Font/size/color come live from the
+        Text tool's options-bar controls (`self.tool_opts`), the same
+        source `TextOptions` writes to — not a snapshot, so changing them
+        mid-edit updates the on-canvas preview immediately."""
+        if self._text_overlay.is_active():
+            self._text_overlay.commit()
+
+        def on_commit(text):
+            win = self.window()
+            if hasattr(win, "_commit_text_edit"):
+                win._commit_text_edit(layer, text, dict(self.tool_opts), doc_anchor, vertical)
+
+        self._text_overlay.start(doc_anchor, lambda: self.tool_opts, initial_text, on_commit, lambda: None,
+                                 vertical=vertical)
+
     def _doc_rect_in_widget(self) -> QRect:
         if not self.document:
             return QRect()
@@ -373,6 +413,8 @@ class CanvasWidget(QWidget):
 
     def paintEvent(self, _event):
         """Render the scene, guarded against internal script failures."""
+        if self._text_overlay.isVisible():
+            self._text_overlay.reposition()
         try:
             painter = QPainter(self)
             if self.zoom > 0.9:
@@ -785,7 +827,10 @@ class CanvasWidget(QWidget):
         """Handles mouse press with error isolation for tool initialization."""
         if not self.document:
             return
-            
+
+        if self._text_overlay.is_active() and not self._text_overlay.geometry().contains(ev.position().toPoint()):
+            self._text_overlay.commit()
+
         try:
             if getattr(self, "show_rulers", False):
                 R = 20
@@ -1172,12 +1217,45 @@ class CanvasWidget(QWidget):
         else:
             super().wheelEvent(ev)
 
+    def _start_alt_eyedropper(self):
+        if (self._alt_prev_tool is not None or self._stroke_in_progress
+                or self.active_tool is None
+                or getattr(self.active_tool, "name", None) not in _ALT_EYEDROPPER_TOOLS):
+            return
+        from tools.eyedropper_tool import EyedropperTool
+        mw = self.window()
+        picker = EyedropperTool()
+        if hasattr(mw, "_color_panel") and hasattr(mw, "_on_fg_changed"):
+            picker.color_picked_callback = lambda c: (mw._color_panel.set_fg(c), mw._on_fg_changed(c))
+        else:
+            picker.color_picked_callback = lambda c: setattr(self, "fg_color", c)
+        self._alt_prev_tool = self.active_tool
+        self._alt_picker = picker
+        self.active_tool = picker
+        self._update_cursor()
+        self.update()
+
+    def _stop_alt_eyedropper(self):
+        if self._alt_prev_tool is None:
+            return
+        prev, self._alt_prev_tool = self._alt_prev_tool, None
+        # Only restore if nothing else changed the active tool in the
+        # meantime (e.g. the user clicked a different tool on the toolbar
+        # while Alt was still held).
+        if self.active_tool is self._alt_picker:
+            self.active_tool = prev
+        self._alt_picker = None
+        self._update_cursor()
+        self.update()
+
     def keyPressEvent(self, ev):
         k = ev.key()
         if k == Qt.Key.Key_Control: self.tool_opts["_ctrl"] = True
         if k == Qt.Key.Key_Shift: self.tool_opts["_shift"] = True
         if k == Qt.Key.Key_Alt: self.tool_opts["_alt"] = True
-        
+        if k == Qt.Key.Key_Alt and not ev.isAutoRepeat():
+            self._start_alt_eyedropper()
+
         if k == Qt.Key.Key_Space and not ev.isAutoRepeat():
             self._space = True
             self._update_cursor()
@@ -1206,7 +1284,9 @@ class CanvasWidget(QWidget):
         if k == Qt.Key.Key_Control: self.tool_opts["_ctrl"] = False
         if k == Qt.Key.Key_Shift: self.tool_opts["_shift"] = False
         if k == Qt.Key.Key_Alt: self.tool_opts["_alt"] = False
-        
+        if k == Qt.Key.Key_Alt and not ev.isAutoRepeat():
+            self._stop_alt_eyedropper()
+
         if k == Qt.Key.Key_Space and not ev.isAutoRepeat():
             self._space = False
             self._update_cursor()
@@ -1239,7 +1319,16 @@ class CanvasWidget(QWidget):
                 return
 
             tool_name = getattr(self.active_tool, "name", "") if self.active_tool else ""
-            if tool_name in _BRUSH_TOOLS:
+            # The temporary Alt-eyedropper keeps the brush's own blank-cursor
+            # + circle-guide look instead of switching to a real CrossCursor:
+            # some window managers only redraw the system cursor icon on the
+            # next mouse-originated event, so a setCursor() driven purely by
+            # keyPressEvent/keyReleaseEvent can visually stick (old shape
+            # bleeds through, stacking with the newly (correctly) repainted
+            # brush-circle overlay). Keeping the cursor shape unchanged across
+            # the whole Alt hold/release avoids relying on that redraw at all.
+            is_alt_picker = self.active_tool is not None and self.active_tool is getattr(self, "_alt_picker", None)
+            if tool_name in _BRUSH_TOOLS or is_alt_picker:
                 mirror_x = bool(self.tool_opts.get("brush_mirror_x", False))
                 mirror_y = bool(self.tool_opts.get("brush_mirror_y", False))
                 is_hovering_sym = False

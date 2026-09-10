@@ -1,5 +1,6 @@
 from PyQt6.QtWidgets import QMessageBox
 from PyQt6.QtGui import QPainter, QColor
+from PyQt6.QtCore import Qt
 from core.locale import tr
 from ui.document_controller import require_document
 
@@ -40,6 +41,51 @@ class LayerActionsMixin:
         self._document.add_layer()
         self._refresh_layers()
         self._canvas_refresh()
+
+    @require_document
+    def _commit_text_edit(self, layer, text: str, font_opts: dict, doc_anchor, vertical: bool = False):
+        """Bakes the CanvasWidget's on-canvas text editor result into a text
+        layer's pixels and records one undo step. `layer` is None when the
+        editor was creating a brand-new text layer."""
+        from tools.text_tool import _render_text, _render_text_vertical, TextTool
+
+        doc = self._document
+        text = text.strip()
+        if layer is None and not text:
+            return
+
+        idx = doc.layers.index(layer) if layer is not None and layer in doc.layers else None
+        self._push_history(tr("history.edit_text") if layer is not None else tr("history.add_text"), idx)
+
+        render = _render_text_vertical if vertical else _render_text
+        clip = doc.selection if (doc.selection and not doc.selection.isEmpty()) else None
+
+        if layer is not None:
+            if not text:
+                doc.remove_layer(idx)
+            else:
+                layer.image.fill(Qt.GlobalColor.transparent)
+                td = layer.text_data
+                render(layer.image, td["x"], td["y"], text, font_opts, clip)
+                merged = {**td, "text": text, **TextTool._snap_opts(font_opts)}
+                if vertical:
+                    merged["vertical"] = True
+                layer.text_data = merged
+        else:
+            from core.layer import Layer
+            n = sum(1 for l in doc.layers if l.text_data) + 1
+            new_layer = Layer(f"Text {n}", doc.width, doc.height)
+            new_layer.layer_type = "text"
+            render(new_layer.image, doc_anchor.x(), doc_anchor.y(), text, font_opts, clip)
+            new_layer.text_data = {"text": text, "x": doc_anchor.x(), "y": doc_anchor.y(),
+                                   **TextTool._snap_opts(font_opts)}
+            if vertical:
+                new_layer.text_data["vertical"] = True
+            doc.layers.append(new_layer)
+            doc.active_layer_index = len(doc.layers) - 1
+
+        self._canvas_refresh()
+        self._refresh_layers()
 
     @require_document
     def _duplicate_layer(self):

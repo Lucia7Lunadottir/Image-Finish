@@ -737,17 +737,38 @@ class Document:
         tl = rect.topLeft()
         all_layers = self.layers + ([self.quick_mask_layer] if getattr(self, "quick_mask_layer", None) else [])
         for layer in all_layers:
+            old_offset = layer.offset
             new_img = QImage(rect.width(), rect.height(), QImage.Format.Format_ARGB32_Premultiplied)
             new_img.fill(Qt.GlobalColor.transparent)
             p = QPainter(new_img)
             # Re-render layer into the cropped coordinate system (doc-space aware)
-            p.drawImage(layer.offset - tl, layer.image)
+            p.drawImage(old_offset - tl, layer.image)
             p.end()
             layer.image = new_img
             layer.offset = QPoint(0, 0)
+            self._shift_layer_content_data(layer, old_offset - tl)
         self.width = rect.width()
         self.height = rect.height()
         self.selection = None
+
+    @staticmethod
+    def _shift_layer_content_data(layer: Layer, shift: QPoint):
+        """Keep cached local-space anchors (text/shape origin) in sync when a
+        layer's image is re-baked into a new local coordinate origin (crop).
+        Without this, re-editing a text/shape layer after a crop redraws it
+        at its stale pre-crop position."""
+        td = getattr(layer, "text_data", None)
+        if td:
+            td["x"] = td.get("x", 0) + shift.x()
+            td["y"] = td.get("y", 0) + shift.y()
+        sd = getattr(layer, "shape_data", None)
+        if sd:
+            rx, ry, rw, rh = sd.get("rect", (0, 0, 0, 0))
+            sd["rect"] = (rx + shift.x(), ry + shift.y(), rw, rh)
+            sx, sy = sd.get("start", (0, 0))
+            sd["start"] = (sx + shift.x(), sy + shift.y())
+            ex, ey = sd.get("end", (0, 0))
+            sd["end"] = (ex + shift.x(), ey + shift.y())
 
     def apply_perspective_crop(self, quad: QPolygonF):
         if quad.isEmpty() or quad.count() < 4:
@@ -811,6 +832,15 @@ class Document:
             p.end()
             layer.image = new_img
             layer.offset = QPoint(0, 0)
+            # A perspective warp invalidates any stored text/shape anchor —
+            # unlike a plain crop this isn't a pure translation, so the
+            # anchor can't be corrected. Demote to plain raster so a later
+            # re-edit creates a fresh layer instead of redrawing at a stale,
+            # now-meaningless position.
+            if getattr(layer, "text_data", None) or getattr(layer, "shape_data", None):
+                layer.layer_type = "raster"
+                layer.text_data = None
+                layer.shape_data = None
 
         # Update the document dimensions
         self.width = new_w
