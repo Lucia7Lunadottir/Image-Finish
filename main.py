@@ -44,7 +44,7 @@ _APP_DIR   = os.path.dirname(os.path.abspath(__file__))
 FONTS_DIR  = os.path.join(_APP_DIR, "fonts")
 BRUSHES_DIR = os.path.join(_APP_DIR, "brushes")
 PATTERNS_DIR = os.path.join(_APP_DIR, "patterns")
-ICON_PATH  = os.path.join(_APP_DIR, "imagefinish.png")
+ICON_PATH  = os.path.join(_APP_DIR, "packaging", "imagefinish.png")
 
 
 def _load_custom_fonts():

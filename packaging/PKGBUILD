@@ -29,14 +29,14 @@ package() {
 
     install -m644 main.py         "$pkgdir/usr/share/$pkgname/"
     install -m644 settings.json   "$pkgdir/usr/share/$pkgname/"
-    install -m644 $pkgname.png    "$pkgdir/usr/share/$pkgname/$pkgname.png"
+    install -Dm644 packaging/$pkgname.png "$pkgdir/usr/share/$pkgname/packaging/$pkgname.png"
 
     # Иконка системы
-    install -Dm644 $pkgname.png "$pkgdir/usr/share/icons/hicolor/512x512/apps/$pkgname.png"
-    install -Dm644 $pkgname.png "$pkgdir/usr/share/pixmaps/$pkgname.png"
+    install -Dm644 packaging/$pkgname.png "$pkgdir/usr/share/icons/hicolor/512x512/apps/$pkgname.png"
+    install -Dm644 packaging/$pkgname.png "$pkgdir/usr/share/pixmaps/$pkgname.png"
 
     # .desktop файл
-    install -Dm644 imagefinish.desktop \
+    install -Dm644 packaging/imagefinish.desktop \
         "$pkgdir/usr/share/applications/$pkgname.desktop"
 
     # Бинарник-лаунчер в /usr/bin
