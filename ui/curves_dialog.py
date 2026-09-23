@@ -609,9 +609,8 @@ def _channel_histogram(argb: QImage, channel_idx: int) -> list:
     """256-bucket histogram of one BGRA channel index (0=B,1=G,2=R)."""
     try:
         import numpy as np
-        ptr = argb.constBits()
-        ptr.setsize(argb.sizeInBytes())
-        arr = np.frombuffer(ptr, dtype=np.uint8).reshape((argb.height(), argb.width(), 4))
+        from core.pixel_buffer import qimage_argb_view
+        arr = qimage_argb_view(argb, writable=False)[:, :argb.width(), :]
         mask = arr[:, :, 3] > 0
         if not np.any(mask):
             return [0] * 256

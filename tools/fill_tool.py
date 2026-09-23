@@ -55,11 +55,8 @@ class FillTool(BaseTool):
         fr, fg_g, fb, fa = fill_color.red(), fill_color.green(), fill_color.blue(), fill_color.alpha()
 
         # --- NUMPY OPTIMIZATION ---
-        import ctypes
-        bpl = image.bytesPerLine()
-        ptr = image.bits()
-        buf = (ctypes.c_uint8 * image.sizeInBytes()).from_address(int(ptr))
-        arr_full = np.ndarray((h, bpl // 4, 4), dtype=np.uint8, buffer=buf)
+        from core.pixel_buffer import qimage_argb_view
+        arr_full = qimage_argb_view(image, writable=True)
         arr = arr_full[:, :w, :]
 
         B = arr[..., 0].astype(np.int32)

@@ -1,78 +1,45 @@
 import numpy as np
-import ctypes
 import math
 from PyQt6.QtWidgets import (QDialog, QVBoxLayout, QHBoxLayout, QLabel, 
                              QPushButton, QDialogButtonBox, QWidget)
 from PyQt6.QtCore import Qt, QPointF, QTimer
-from PyQt6.QtGui import QImage, QPainter, QColor, QPen
+from PyQt6.QtGui import QImage, QColor, QPen
 
 from core.locale import tr, current as locale_current
 from ui.adjustments_dialog import _JumpSlider
+from ui.preview_canvas_base import PreviewCanvasBase
 
 from ui import theme
 
 
-class LiquifyCanvas(QWidget):
+class LiquifyCanvas(PreviewCanvasBase):
     def __init__(self, dialog):
-        super().__init__()
-        self.dialog = dialog
-        self.setMouseTracking(True)
-        self.zoom = 1.0
-        self._pan = QPointF(0, 0)
-        self._panning = False
+        super().__init__(dialog)
         self._drawing = False
-        self._pan_last = None
         self._last_mouse = None
-        self._space = False
-        self.setFocusPolicy(Qt.FocusPolicy.StrongFocus)
 
-    def paintEvent(self, ev):
-        p = QPainter(self)
-        p.fillRect(self.rect(), QColor(theme.CRUST))
-        if not self.dialog.preview_img: return
-            
-        w, h = self.dialog.preview_img.width(), self.dialog.preview_img.height()
-        p.save()
-        p.translate(self._pan)
-        p.scale(self.zoom, self.zoom)
-        
-        tile = 16
-        for y in range(0, h, tile):
-            for x in range(0, w, tile):
-                c = QColor(180,180,180) if (x//tile + y//tile) % 2 == 0 else QColor(220,220,220)
-                p.fillRect(x, y, min(tile, w-x), min(tile, h-y), c)
-                
-        p.drawImage(0, 0, self.dialog.preview_img)
-        p.restore()
-        
+    def _paint_overlay_in_screen_space(self, painter):
         if self.dialog.mode == "liquify" and not self._space and self._last_mouse:
             r = (self.dialog.sl1.value() * self.zoom) / 2.0
-            p.setPen(QPen(QColor(255, 255, 255, 180), 1))
-            p.setBrush(Qt.BrushStyle.NoBrush)
-            p.drawEllipse(self._last_mouse, r, r)
-            p.setPen(QPen(QColor(0, 0, 0, 150), 1))
-            p.drawEllipse(self._last_mouse, r-1, r-1)
-            
-        p.end()
+            painter.setPen(QPen(QColor(255, 255, 255, 180), 1))
+            painter.setBrush(Qt.BrushStyle.NoBrush)
+            painter.drawEllipse(self._last_mouse, r, r)
+            painter.setPen(QPen(QColor(0, 0, 0, 150), 1))
+            painter.drawEllipse(self._last_mouse, r-1, r-1)
 
     def mousePressEvent(self, ev):
-        is_pan = ev.button() == Qt.MouseButton.MiddleButton or (self._space and ev.button() == Qt.MouseButton.LeftButton)
-        if is_pan:
-            self._panning = True
-            self._pan_last = ev.position()
-            self.setCursor(Qt.CursorShape.ClosedHandCursor)
-        elif ev.button() == Qt.MouseButton.LeftButton and self.dialog.mode == "liquify":
+        if self._maybe_start_pan(ev):
+            return
+        if ev.button() == Qt.MouseButton.LeftButton and self.dialog.mode == "liquify":
             self.dialog.push_undo()
             self._drawing = True
             self._last_mouse = ev.position()
 
     def mouseMoveEvent(self, ev):
         pos = ev.position()
-        if self._panning and self._pan_last is not None:
-            self._pan += (pos - self._pan_last)
-            self._pan_last = pos
-            self.update()
-        elif self._drawing and self.dialog.mode == "liquify":
+        if self._maybe_continue_pan(ev):
+            return
+        if self._drawing and self.dialog.mode == "liquify":
             if self._last_mouse:
                 p1_x = (self._last_mouse.x() - self._pan.x()) / self.zoom
                 p1_y = (self._last_mouse.y() - self._pan.y()) / self.zoom
@@ -86,30 +53,14 @@ class LiquifyCanvas(QWidget):
             self.update()
 
     def mouseReleaseEvent(self, ev):
-        self._panning = False
         self._drawing = False
-        self.setCursor(Qt.CursorShape.OpenHandCursor if self._space else Qt.CursorShape.ArrowCursor)
-
-    def wheelEvent(self, ev):
-        factor = 1.15 if ev.angleDelta().y() > 0 else 1 / 1.15
-        new_zoom = max(0.05, min(32.0, self.zoom * factor))
-        scale = new_zoom / self.zoom
-        pivot = ev.position()
-        self._pan = QPointF(pivot.x() - (pivot.x() - self._pan.x()) * scale, pivot.y() - (pivot.y() - self._pan.y()) * scale)
-        self.zoom = new_zoom
-        self.update()
+        super().mouseReleaseEvent(ev)
 
     def keyPressEvent(self, ev):
         if ev.key() == Qt.Key.Key_Z and (ev.modifiers() & Qt.KeyboardModifier.ControlModifier):
             self.dialog.undo()
-        elif ev.key() == Qt.Key.Key_Space and not ev.isAutoRepeat():
-            self._space = True
-            self.setCursor(Qt.CursorShape.OpenHandCursor)
-
-    def keyReleaseEvent(self, ev):
-        if ev.key() == Qt.Key.Key_Space and not ev.isAutoRepeat():
-            self._space = False
-            self.setCursor(Qt.CursorShape.ArrowCursor)
+        else:
+            super().keyPressEvent(ev)
 
 
 class SpecificFiltersDialog(QDialog):
@@ -124,13 +75,23 @@ class SpecificFiltersDialog(QDialog):
         self.setWindowFlags(self.windowFlags() | Qt.WindowType.WindowMaximizeButtonHint | Qt.WindowType.WindowMinimizeButtonHint)
         self.resize(1000, 700)
         
-        self.orig_img = layer.image.copy()
-        self.preview_img = layer.image.copy()
-        
-        ptr = self.orig_img.constBits()
-        buf = (ctypes.c_uint8 * self.orig_img.sizeInBytes()).from_address(int(ptr))
-        self.orig_arr = np.ndarray((self.orig_img.height(), self.orig_img.bytesPerLine() // 4, 4), dtype=np.uint8, buffer=buf)[:, :self.orig_img.width(), :].copy()
-        
+        # Liquify keeps a per-pixel displacement map (self.disp_x/disp_y) tied
+        # 1:1 to the working resolution and edited via bounded-ROI strokes —
+        # it's already cheap regardless of image size, and downscaling would
+        # need to resample that map back up on accept() (not just a scalar
+        # rescale like cx/cy elsewhere). camera_raw/lens_correction are plain
+        # per-pixel/LUT math over the whole image with no such state, so they
+        # get the same live-preview downscaling as the other filter dialogs.
+        if self.mode == "liquify":
+            self.orig_img = layer.image.copy()
+            self.preview_img = layer.image.copy()
+            self.orig_img_full = None
+            from core.pixel_buffer import qimage_argb_view
+            self.orig_arr = qimage_argb_view(self.orig_img, writable=False)[:, :self.orig_img.width(), :].copy()
+        else:
+            from ui.preview_canvas_base import init_live_preview_arrays
+            init_live_preview_arrays(self, layer)
+
         h, w = self.orig_arr.shape[:2]
         if self.mode == "liquify":
             Y, X = np.ogrid[:h, :w]
@@ -330,5 +291,7 @@ class SpecificFiltersDialog(QDialog):
         self.canvas.update()
 
     def accept(self):
-        self.layer.image = self.preview_img
-        super().accept()
+        from ui.preview_canvas_base import run_full_res_commit
+        if run_full_res_commit(self, self._apply_effect):
+            self.layer.image = self.preview_img
+            super().accept()

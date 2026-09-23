@@ -7,8 +7,12 @@ from PyQt6.QtWidgets import (
 from PyQt6.QtCore import Qt, QTimer
 from PyQt6.QtGui import QImage, QMouseEvent
 
+from core.app_logging import get_logger
 from core.locale import tr
 from ui.base_dialog import BaseDialog
+from ui.preview_canvas_base import downscale_for_live_preview, start_full_res_worker
+
+logger = get_logger("ui.adjustments_dialog")
 
 
 # ── low-level pixel ops ──────────────────────────────────────────────────────
@@ -25,30 +29,20 @@ def _to_argb32(img: QImage) -> QImage:
 
 def _in_place_arr(img: QImage):
     """Returns a writable numpy array mapped to the QImage's memory safely."""
-    import numpy as np
-    import ctypes
-    ptr = img.bits()
-    buf = (ctypes.c_uint8 * img.sizeInBytes()).from_address(int(ptr))
-    return np.ndarray((img.height(), img.bytesPerLine() // 4, 4), dtype=np.uint8, buffer=buf)
+    from core.pixel_buffer import qimage_argb_view
+    return qimage_argb_view(img, writable=True)
 
 def _const_arr(img: QImage):
     """Returns a read-only numpy array mapped to the QImage's memory safely."""
-    import numpy as np
-    import ctypes
-    ptr = img.constBits()
-    buf = (ctypes.c_uint8 * img.sizeInBytes()).from_address(int(ptr))
-    return np.ndarray((img.height(), img.bytesPerLine() // 4, 4), dtype=np.uint8, buffer=buf)
+    from core.pixel_buffer import qimage_argb_view
+    return qimage_argb_view(img, writable=False)
 
 
 def _bits_ba(img: QImage):
     """Returns (buffer, array) for in-place pixel modification of QImage.
     Keep the returned buffer alive until _from_ba is called."""
-    import numpy as np
-    import ctypes
-    ptr = img.bits()
-    buf = (ctypes.c_uint8 * img.sizeInBytes()).from_address(int(ptr))
-    arr = np.ndarray((img.height(), img.bytesPerLine() // 4, 4), dtype=np.uint8, buffer=buf)
-    return buf, arr[:, :img.width(), :]
+    arr = _in_place_arr(img)
+    return arr.base, arr[:, :img.width(), :]
 
 
 def _from_ba(ba, img: QImage) -> QImage:
@@ -249,6 +243,25 @@ class _AdjustDialog(BaseDialog):
       format-conversion step on every slider change.
     - A 40 ms debounce timer prevents pixel computation on every single
       valueChanged event while the user is dragging fast.
+    - On images above the live-preview cap, _orig_argb32 is a downscaled
+      proxy while the dialog is open (see ui.preview_canvas_base — same
+      mechanism as the filter-preview dialogs); the true full-resolution
+      source is restored and re-applied once in accept(). Subclasses that
+      derive their own numpy state from _orig_argb32 in __init__ (rather
+      than reading it fresh inside _apply_preview(), like HDRToningDialog
+      does) must override _on_full_res_restored() to refresh that state —
+      otherwise the final accept() pass silently reuses stale,
+      wrong-resolution arrays.
+    - Unlike the PreviewCanvasBase dialog family, this class paints
+      directly onto the *document* layer (self._layer.image) and refreshes
+      the *main* canvas — there is no isolated preview widget to quietly
+      show a smaller proxy in. So every subclass's _apply_preview() write
+      of a downscaled-proxy-sized image is caught and upscaled back to the
+      full document size in _on_refresh_requested() (the method actually
+      stored in self._canvas_refresh — see below) before the caller's
+      real canvas_refresh runs. Without this, the layer would visibly
+      shrink/pixelate on the real canvas while a slider is being dragged,
+      not just show a lower-detail preview like the isolated dialogs do.
     """
 
     _DEBOUNCE_MS = 40
@@ -259,11 +272,31 @@ class _AdjustDialog(BaseDialog):
         self.setModal(True)
         self.setMinimumWidth(380)
 
-        self._layer          = layer
-        self._canvas_refresh = canvas_refresh
+        self._layer               = layer
+        self._canvas_refresh_real = canvas_refresh
+        # Subclasses always call self._canvas_refresh() as the last step of
+        # _apply_preview()/_reset()/_do_reset() — intercepting it here (not
+        # just the debounce-timer path) catches every entry point, direct
+        # or timer-driven, without editing a single subclass.
+        self._canvas_refresh      = self._on_refresh_requested
+        # True only while the final full-res _apply_preview() runs on a
+        # background thread (see _run_final_apply_with_progress) — the
+        # worker thread must not reach into the real, OpenGL-backed main
+        # canvas, so the refresh is skipped there and done once, on the GUI
+        # thread, when the worker signals completion.
+        self._defer_gui_refresh   = False
+        self._full_res_worker     = None
+        self._full_res_progress   = None
         image                = layer.image
         self._original       = image.copy()
-        self._orig_argb32    = _to_argb32(self._original)
+        full_argb32          = _to_argb32(self._original)
+        self._orig_argb32_full = None
+        downscaled = downscale_for_live_preview(full_argb32)
+        if downscaled is not None:
+            self._orig_argb32_full = full_argb32
+            self._orig_argb32      = downscaled
+        else:
+            self._orig_argb32      = full_argb32
 
         self._timer = QTimer(self)
         self._timer.setSingleShot(True)
@@ -276,6 +309,24 @@ class _AdjustDialog(BaseDialog):
             QDialogButtonBox.StandardButton.Cancel)
         self._btns.accepted.connect(self.accept)
         self._btns.rejected.connect(self.reject)
+
+    def _on_refresh_requested(self):
+        """Stored as self._canvas_refresh — every subclass calls this
+        expecting layer.image to already be at full document resolution.
+        While _orig_argb32 is a downscaled live-preview proxy,
+        _apply_preview() writes a proxy-sized image instead; upscale it
+        back to the real layer size here, then run the real refresh."""
+        if self._orig_argb32_full is not None:
+            full_w, full_h = self._orig_argb32_full.width(), self._orig_argb32_full.height()
+            img = self._layer.image
+            if not img.isNull() and (img.width(), img.height()) != (full_w, full_h):
+                self._layer.image = img.scaled(
+                    full_w, full_h,
+                    Qt.AspectRatioMode.IgnoreAspectRatio,
+                    Qt.TransformationMode.SmoothTransformation)
+        if self._defer_gui_refresh:
+            return
+        self._canvas_refresh_real()
 
     def _add_row(self, row: _SliderRow):
         self._vbox.addLayout(row)
@@ -332,11 +383,62 @@ class _AdjustDialog(BaseDialog):
     def _apply_preview(self):
         raise NotImplementedError
 
+    def _on_full_res_restored(self):
+        """Hook for subclasses that cache numpy arrays derived from
+        _orig_argb32 in __init__ instead of re-reading it inside
+        _apply_preview(). Called once, right after _orig_argb32 is swapped
+        back to full resolution, immediately before the final
+        _apply_preview() — both run inside the background worker started
+        by _run_final_apply_with_progress(), not directly in accept(), so
+        this must stay GUI-free (numpy/QImage only, no widgets). No-op by
+        default — only needed by dialogs like HDRToningDialog with a
+        per-init derived-array cache."""
+        pass
+
     def accept(self):
         self._timer.stop()
         if getattr(self, "_is_adj_layer", False):
             self._layer.adjustment_data = self._get_auto_data()
+        if self._orig_argb32_full is not None:
+            self._orig_argb32      = self._orig_argb32_full
+            self._orig_argb32_full = None
+            # Runs the real algorithm at full resolution — exactly what was
+            # too slow to run on every slider tick in the first place — off
+            # the GUI thread with a busy indicator, so the dialog stays
+            # visibly alive instead of looking frozen; it closes itself
+            # once the worker reports back (see the finished/error handlers
+            # below), so we return here without calling super().accept()
+            # yet. _on_full_res_restored() runs inside the worker too, not
+            # here — for HDRToningDialog specifically it re-extracts numpy
+            # arrays from the full 8K+ image, which alone can take seconds;
+            # running it before the progress dialog is even shown would
+            # reintroduce exactly the freeze this whole mechanism exists to
+            # avoid.
+            self._run_final_apply_with_progress()
+            return
         super().accept()
+
+    def _run_final_apply_with_progress(self):
+        self._defer_gui_refresh = True
+
+        def work():
+            self._on_full_res_restored()
+            self._apply_preview()
+
+        def on_finished():
+            self._defer_gui_refresh = False
+            self._canvas_refresh_real()
+            QDialog.accept(self)
+
+        def on_error(trace: str):
+            logger.error("Full-resolution adjustment commit failed:\n%s", trace)
+            self._defer_gui_refresh = False
+            # self.reject() (not QDialog.reject) so the normal is_adj_layer
+            # vs. destructive-filter restoration below runs exactly as it
+            # would for a manual Cancel click.
+            self.reject()
+
+        start_full_res_worker(self, work, on_finished, on_error)
 
     def reject(self):
         self._timer.stop()

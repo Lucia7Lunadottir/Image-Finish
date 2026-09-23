@@ -5,173 +5,53 @@ from PyQt6.QtWidgets import (QDialog, QVBoxLayout, QPlainTextEdit,
                              QDialogButtonBox, QLabel)
 from tools.base_tool import BaseTool
 from core.locale import tr
+from core.text_layout import TextLayout, _build_font
 
 
-# ── Font helpers ───────────────────────────────────────────────────────────────
-
-def _build_font(opts: dict) -> QFont:
-    font = QFont(opts.get("font_family", "Sans Serif"),
-                 int(opts.get("font_size", 24)))
-    font.setBold(bool(opts.get("font_bold", False)))
-    font.setItalic(bool(opts.get("font_italic", False)))
-    font.setUnderline(bool(opts.get("font_underline", False)))
-    font.setStrikeOut(bool(opts.get("font_strikeout", False)))
-    return font
-
+# ── Font/layout helpers ──────────────────────────────────────────────────────
+# All the actual per-line metrics/alignment/leading/tracking math lives in
+# core.text_layout.TextLayout — one engine shared by rendering, bounding-box
+# hit-testing and type-mask path generation, horizontal and vertical alike.
+# These are thin, signature-compatible wrappers kept here since the rest of
+# the app (ui/text_edit_overlay.py, ui/main_window.py, tools/move_tool.py,
+# tools/other_tools.py) imports them from `tools.text_tool`.
 
 def _text_bounding_rect(td: dict, padding: int = 4):
-    """Returns QRect bounding box of text from text_data (in layer
-    coordinates), matching exactly what `_render_text` draws: `td["y"]` is
-    the top of the block (baseline of the first line sits at y + ascent),
-    not the baseline itself."""
-    from PyQt6.QtCore import QRect
+    """QRect bounding box of text from text_data (layer coordinates);
+    `td["y"]` is the top of the block, not the first line's baseline."""
     text = td.get("text", "")
     if not text:
         return None
-    font = _build_font(td)
-    metrics = QFontMetrics(font)
-    lines = text.split("\n")
-    max_w = max((metrics.horizontalAdvance(line) for line in lines if line), default=0)
-    line_h = metrics.lineSpacing()
-    total_h = metrics.ascent() + metrics.descent() + line_h * (len(lines) - 1)
     x, y = int(td.get("x", 0)), int(td.get("y", 0))
-    return QRect(x - padding, y - padding,
-                 max_w + padding * 2, total_h + padding * 2)
+    return TextLayout(text, td).bounding_rect(x, y, padding)
 
 
 def _text_bounding_rect_vertical(td: dict, padding: int = 4):
-    """Same as `_text_bounding_rect` but for `_render_text_vertical`'s
-    column layout (one text line per column, one character per row)."""
-    from PyQt6.QtCore import QRect
+    """Same as `_text_bounding_rect` but for the vertical column layout
+    (one text line per column, one character per row)."""
     text = td.get("text", "")
     if not text:
         return None
-    font = _build_font(td)
-    metrics = QFontMetrics(font)
-    cols = text.split("\n")
-    col_w = metrics.maxWidth() + 4
-    char_h = metrics.height()
-    max_rows = max((len(c) for c in cols), default=0)
-    total_w = col_w * max(1, len(cols))
-    total_h = char_h * max(1, max_rows)
     x, y = int(td.get("x", 0)), int(td.get("y", 0))
-    return QRect(x - padding, y - padding,
-                 total_w + padding * 2, total_h + padding * 2)
+    return TextLayout(text, td, vertical=True).bounding_rect(x, y, padding)
 
 
 def _render_text(image, x: int, y: int, text: str, opts: dict, clip_path=None, angle: float = 0.0):
-    font        = _build_font(opts)
-    metrics     = QFontMetrics(font)
-    line_h      = metrics.lineSpacing()
-    lines       = text.split("\n")
-    text_color   = opts.get("text_color",       QColor(0, 0, 0))
-    stroke_w     = int(opts.get("text_stroke_w",   0))
-    stroke_color = opts.get("text_stroke_color", QColor(0, 0, 0))
-    shadow       = bool(opts.get("text_shadow",  False))
-    shadow_color = opts.get("text_shadow_color", QColor(0, 0, 0, 160))
-    sdx          = int(opts.get("text_shadow_dx", 3))
-    sdy          = int(opts.get("text_shadow_dy", 3))
-    render_angle = angle or float(opts.get("text_angle", 0.0))
-
-    def make_path(dx=0, dy=0) -> QPainterPath:
-        path = QPainterPath()
-        baseline = metrics.ascent()
-        for i, line in enumerate(lines):
-            if line:
-                path.addText(x + dx, y + dy + baseline + i * line_h, font, line)
-        return path
-
-    painter = QPainter(image)
-    painter.setRenderHint(QPainter.RenderHint.Antialiasing)
-    if clip_path and not clip_path.isEmpty():
-        painter.setClipPath(clip_path)
-    if render_angle:
-        painter.translate(x, y)
-        painter.rotate(render_angle)
-        painter.translate(-x, -y)
-    if shadow:
-        painter.fillPath(make_path(sdx, sdy), QBrush(shadow_color))
-    main_path = make_path()
-    if stroke_w > 0:
-        pen = _QPen(stroke_color, stroke_w * 2,
-                    Qt.PenStyle.SolidLine,
-                    Qt.PenCapStyle.RoundCap,
-                    Qt.PenJoinStyle.RoundJoin)
-        painter.strokePath(main_path, pen)
-    painter.fillPath(main_path, QBrush(text_color))
-    painter.end()
+    if angle and not opts.get("text_angle"):
+        opts = {**opts, "text_angle": angle}
+    TextLayout(text, opts).draw(image, x, y, clip_path)
 
 
 def _render_text_vertical(image, x: int, y: int, text: str, opts: dict, clip_path=None):
-    font    = _build_font(opts)
-    metrics = QFontMetrics(font)
-    col_w   = metrics.maxWidth() + 4
-    char_h  = metrics.height()
-    cols    = text.split("\n")
-    text_color   = opts.get("text_color",       QColor(0, 0, 0))
-    stroke_w     = int(opts.get("text_stroke_w",   0))
-    stroke_color = opts.get("text_stroke_color", QColor(0, 0, 0))
-    shadow       = bool(opts.get("text_shadow",  False))
-    shadow_color = opts.get("text_shadow_color", QColor(0, 0, 0, 160))
-    sdx          = int(opts.get("text_shadow_dx", 3))
-    sdy          = int(opts.get("text_shadow_dy", 3))
-
-    def make_path(dx=0, dy=0) -> QPainterPath:
-        path = QPainterPath()
-        for ci, col_text in enumerate(cols):
-            cx = x + dx + ci * col_w
-            for ri, ch in enumerate(col_text):
-                if ch.strip():
-                    cy = y + dy + metrics.ascent() + ri * char_h
-                    path.addText(cx, cy, font, ch)
-        return path
-
-    painter = QPainter(image)
-    painter.setRenderHint(QPainter.RenderHint.Antialiasing)
-    if clip_path and not clip_path.isEmpty():
-        painter.setClipPath(clip_path)
-    if shadow:
-        painter.fillPath(make_path(sdx, sdy), QBrush(shadow_color))
-    main_path = make_path()
-    if stroke_w > 0:
-        pen = _QPen(stroke_color, stroke_w * 2,
-                    Qt.PenStyle.SolidLine,
-                    Qt.PenCapStyle.RoundCap,
-                    Qt.PenJoinStyle.RoundJoin)
-        painter.strokePath(main_path, pen)
-    painter.fillPath(main_path, QBrush(text_color))
-    painter.end()
+    TextLayout(text, opts, vertical=True).draw(image, x, y, clip_path)
 
 
 def _text_path_h(pos, text: str, opts: dict) -> QPainterPath:
-    font     = _build_font(opts)
-    metrics  = QFontMetrics(font)
-    line_h   = metrics.lineSpacing()
-    lines    = text.split("\n")
-    x, y     = pos.x(), pos.y()
-    path     = QPainterPath()
-    baseline = metrics.ascent()
-    for i, line in enumerate(lines):
-        if line:
-            path.addText(x, y + baseline + i * line_h, font, line)
-    return path
+    return TextLayout(text, opts).to_qpainter_path(pos.x(), pos.y())
 
 
 def _text_path_v(pos, text: str, opts: dict) -> QPainterPath:
-    font    = _build_font(opts)
-    metrics = QFontMetrics(font)
-    col_w   = metrics.maxWidth() + 4
-    char_h  = metrics.height()
-    cols    = text.split("\n")
-    x, y    = pos.x(), pos.y()
-    path    = QPainterPath()
-    for ci, col_text in enumerate(cols):
-        cx = x + ci * col_w
-        for ri, ch in enumerate(col_text):
-            if ch.strip():
-                cy = y + metrics.ascent() + ri * char_h
-                path.addText(cx, cy, font, ch)
-    return path
+    return TextLayout(text, opts, vertical=True).to_qpainter_path(pos.x(), pos.y())
 
 
 # ── Text dialog ────────────────────────────────────────────────────────────────
@@ -336,7 +216,7 @@ class TextTool(BaseTool):
             "font_underline", "font_strikeout",
             "text_color", "text_stroke_w", "text_stroke_color",
             "text_shadow", "text_shadow_color", "text_shadow_dx", "text_shadow_dy",
-            "text_angle",
+            "text_angle", "text_align", "font_tracking", "text_leading",
         ) if k in opts}
 
     def needs_history_push(self) -> bool:

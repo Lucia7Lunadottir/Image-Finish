@@ -538,9 +538,9 @@ class EditActionsMixin:
             self._canvas_refresh()
             return
             
-        from core.layer import Layer
-        new_layer = Layer(f"Pasted {len(self._document.layers)+1}",
-                          self._document.width, self._document.height)
+        from core.layer import RasterLayer
+        new_layer = RasterLayer(f"Pasted {len(self._document.layers)+1}",
+                                self._document.width, self._document.height)
         origin = getattr(self, "_clipboard_origin", None)
         if origin is not None:
             cx, cy = origin.x(), origin.y()

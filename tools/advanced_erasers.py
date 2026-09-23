@@ -41,10 +41,8 @@ class MagicEraserTool(BaseTool):
         contiguous = bool(opts.get("fill_contiguous", True))
 
         # --- NUMPY OPTIMIZATION ---
-        import ctypes
-        bpl = img.bytesPerLine()
-        arr_full = np.empty((h, bpl // 4, 4), dtype=np.uint8)
-        ctypes.memmove(arr_full.ctypes.data, int(img.constBits()), img.sizeInBytes())
+        from core.pixel_buffer import qimage_argb_view
+        arr_full = qimage_argb_view(img, writable=True)
         arr = arr_full[:, :w, :]
 
         # Vectorized color matching mask computation
@@ -77,9 +75,9 @@ class MagicEraserTool(BaseTool):
             visited = color_mask.copy()
             visited[sy, sx] = True
 
-        # Instantly clear all found pixels in one sweep
+        # Instantly clear all found pixels in one sweep — arr is a live
+        # view onto img's own buffer, no copy-back needed.
         arr[visited] = 0
-        ctypes.memmove(int(img.bits()), arr_full.ctypes.data, img.sizeInBytes())
 
     def on_move(self, pos, doc, fg, bg, opts): pass
     def on_release(self, pos, doc, fg, bg, opts): pass
@@ -186,12 +184,10 @@ class BackgroundEraserTool(BaseTool):
         sb = sc & 0xFF
 
         # --- NUMPY MAGIC STARTS HERE ---
-        import ctypes
-        bpl = img.bytesPerLine()
-        arr_full = np.empty((h, bpl // 4, 4), dtype=np.uint8)
-        ctypes.memmove(arr_full.ctypes.data, int(img.constBits()), img.sizeInBytes())
+        from core.pixel_buffer import qimage_argb_view
+        arr_full = qimage_argb_view(img, writable=True)
         arr = arr_full[:, :w, :]
-        
+
         roi = arr[min_y:max_y, min_x:max_x]
         Y, X = np.ogrid[min_y - cy : max_y - cy, min_x - cx : max_x - cx]
         circle_mask = (X**2 + Y**2) <= radius**2
@@ -206,8 +202,6 @@ class BackgroundEraserTool(BaseTool):
         
         final_mask = circle_mask & (roi_A > 0) & (color_dist_sq <= tolerance_sq)
         roi[final_mask] = 0
-        
-        ctypes.memmove(int(img.bits()), arr_full.ctypes.data, img.sizeInBytes())
 
     def needs_history_push(self) -> bool: return True
     def cursor(self): return Qt.CursorShape.CrossCursor

@@ -490,7 +490,7 @@ class ScreenPicker(QWidget):
             img = self._screenshot.toImage()
             pos = e.pos()
             if 0 <= pos.x() < img.width() and 0 <= pos.y() < img.height():
-                c = QColor(img.pixel(pos.x(), pos.y()))
+                c = img.pixelColor(pos.x(), pos.y())
                 self.color_picked.emit(c)
         self.close()
 

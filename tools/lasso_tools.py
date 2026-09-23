@@ -124,11 +124,9 @@ class MagneticLassoTool(PolygonalLassoTool):
         min_y, max_y = max(0, pos.y() - r), min(h, pos.y() + r + 1)
 
         if min_x < max_x and min_y < max_y:
-            import ctypes
             import numpy as np
-            ptr = img.constBits()
-            buf = (ctypes.c_uint8 * img.sizeInBytes()).from_address(int(ptr))
-            arr = np.ndarray((h, img.bytesPerLine() // 4, 4), dtype=np.uint8, buffer=buf)
+            from core.pixel_buffer import qimage_argb_view
+            arr = qimage_argb_view(img, writable=False)
             roi = arr[min_y:max_y, min_x:max_x]
 
             gray = 0.299 * roi[..., 2] + 0.587 * roi[..., 1] + 0.114 * roi[..., 0]

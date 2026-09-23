@@ -34,7 +34,7 @@ class PuppetWarpTool(BaseTool):
     def on_press(self, pos, doc, fg, bg, opts):
         layer = doc.get_active_layer()
         if not layer or layer.locked: return
-        if getattr(layer, "layer_type", "raster") in ("artboard", "group"): return
+        if layer._is_container: return
 
         if not self.is_transforming:
             self.is_transforming = True
@@ -44,42 +44,17 @@ class PuppetWarpTool(BaseTool):
 
             sel = doc.selection
             if sel and not sel.isEmpty():
+                from tools.tool_utils import cut_floating_selection
                 self._is_floating = True
                 self._bounds = sel.boundingRect()
-                br = self._bounds.toRect()
-                local_br = br.translated(-layer.offset).intersected(layer.image.rect())
-                if local_br.isEmpty():
+
+                original_img, original_offset, sel_origin, ok = cut_floating_selection(layer, sel)
+                if not ok:
                     self.is_transforming = False
                     return
-                self._original_img = layer.image.copy(local_br)
-                self._original_offset = layer.offset + local_br.topLeft()
-                self._sel_origin = QPainterPath(sel)
-
-                import ctypes
-                mask_img = QImage(local_br.width(), local_br.height(), QImage.Format.Format_Grayscale8)
-                mask_img.fill(0)
-                p = QPainter(mask_img)
-                p.translate(-self._original_offset.x(), -self._original_offset.y())
-                p.fillPath(sel, QColor(255, 255, 255))
-                p.end()
-
-                m_arr = np.empty((local_br.height(), mask_img.bytesPerLine()), dtype=np.uint8)
-                ctypes.memmove(m_arr.ctypes.data, int(mask_img.constBits()), mask_img.sizeInBytes())
-                mask_f = m_arr[:, :local_br.width()].astype(np.float32) / 255.0
-                
-                f_arr = np.empty((local_br.height(), self._original_img.bytesPerLine() // 4, 4), dtype=np.uint8)
-                ctypes.memmove(f_arr.ctypes.data, int(self._original_img.constBits()), self._original_img.sizeInBytes())
-                for c in range(4): f_arr[:local_br.height(), :local_br.width(), c] = (f_arr[:local_br.height(), :local_br.width(), c] * mask_f).astype(np.uint8)
-                ctypes.memmove(int(self._original_img.bits()), f_arr.ctypes.data, self._original_img.sizeInBytes())
-                
-                l_arr = np.empty((layer.height(), layer.image.bytesPerLine() // 4, 4), dtype=np.uint8)
-                ctypes.memmove(l_arr.ctypes.data, int(layer.image.constBits()), layer.image.sizeInBytes())
-                
-                inv_mask_f = 1.0 - mask_f
-                sy, sx = local_br.y(), local_br.x()
-                l_roi = l_arr[sy:sy+local_br.height(), sx:sx+local_br.width()]
-                for c in range(4): l_roi[..., c] = (l_roi[..., c] * inv_mask_f).astype(np.uint8)
-                ctypes.memmove(int(layer.image.bits()), l_arr.ctypes.data, layer.image.sizeInBytes())
+                self._original_img = original_img
+                self._original_offset = original_offset
+                self._sel_origin = sel_origin
             else:
                 self._is_floating = False
                 br = Document._nontransparent_bounds(layer.image)

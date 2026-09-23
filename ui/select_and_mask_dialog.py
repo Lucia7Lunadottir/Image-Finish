@@ -6,12 +6,13 @@ from PyQt6.QtWidgets import (QDialog, QVBoxLayout, QHBoxLayout, QLabel,
                              QSpinBox, QComboBox, QPushButton, 
                              QDialogButtonBox, QWidget, QScrollArea, QFrame)
 from PyQt6.QtCore import Qt, QPoint, QPointF, QRect, QRectF, QTimer
-from PyQt6.QtGui import (QImage, QPainter, QColor, QPen, QBrush, QPixmap, 
+from PyQt6.QtGui import (QImage, QPainter, QColor, QPen,
                          QPainterPath, QRegion, QBitmap, QCursor)
 
 from core.locale import tr
 from core.adjustments.hdr_toning import _box_blur_ch
 from ui.adjustments_dialog import _JumpSlider
+from ui.preview_canvas_base import PreviewCanvasBase
 
 from ui import theme
 
@@ -22,60 +23,30 @@ def _blur_mask(m, r):
     res = _box_blur_ch(res, r)
     return res
 
-class SelectAndMaskCanvas(QWidget):
-    def __init__(self, parent=None):
-        super().__init__(parent)
-        self.setMouseTracking(True)
-        self.zoom = 1.0
-        self._pan = QPointF(0, 0)
-        self._panning = False
-        self._pan_last = None
-        self._space = False
+class SelectAndMaskCanvas(PreviewCanvasBase):
+    def __init__(self, dialog=None):
+        super().__init__(dialog)
         self._drawing = False
         self._mouse_pos = QPointF(-100, -100)
-        
-        self.dialog = None
-        
-        self._checker = self._build_checker()
-
-    @staticmethod
-    def _build_checker(tile: int = 16) -> QPixmap:
-        pix = QPixmap(tile * 2, tile * 2)
-        p = QPainter(pix)
-        p.fillRect(0, 0, tile, tile, QColor(180, 180, 180))
-        p.fillRect(tile, 0, tile, tile, QColor(220, 220, 220))
-        p.fillRect(0, tile, tile, tile, QColor(220, 220, 220))
-        p.fillRect(tile, tile, tile, tile, QColor(180, 180, 180))
-        p.end()
-        return pix
 
     def to_img(self, widget_pos: QPointF) -> QPoint:
         x = (widget_pos.x() - self._pan.x()) / self.zoom
         y = (widget_pos.y() - self._pan.y()) / self.zoom
         return QPoint(int(x), int(y))
 
-    def paintEvent(self, ev):
-        p = QPainter(self)
-        p.fillRect(self.rect(), QColor(theme.CRUST))
-        
-        if not self.dialog or not hasattr(self.dialog, "preview_img"):
-            p.end()
-            return
-            
-        w, h = self.dialog.preview_img.width(), self.dialog.preview_img.height()
-        dr = QRect(int(self._pan.x()), int(self._pan.y()), int(w * self.zoom), int(h * self.zoom))
-        
-        p.save()
-        p.setClipRect(dr)
-        p.translate(self._pan)
-        p.scale(self.zoom, self.zoom)
-        
-        if self.dialog.view_mode in ("onion", "overlay"):
-            p.fillRect(0, 0, w, h, QBrush(self._checker))
-            
-        p.drawImage(0, 0, self.dialog.preview_img)
-        p.restore()
-        
+    def _wants_checkerboard(self) -> bool:
+        return self.dialog.view_mode in ("onion", "overlay")
+
+    def _image_clip_rect(self, w, h):
+        return QRect(int(self._pan.x()), int(self._pan.y()), int(w * self.zoom), int(h * self.zoom))
+
+    def _idle_cursor(self):
+        return Qt.CursorShape.BlankCursor
+
+    def _is_pan_trigger(self, ev) -> bool:
+        return super()._is_pan_trigger(ev) or self.dialog.active_tool == "hand"
+
+    def _paint_overlay_in_screen_space(self, p):
         if self.dialog.active_tool in ("refine", "brush", "eraser") and not self._space:
             r = (self.dialog.brush_size * self.zoom) / 2.0
             p.setPen(QPen(QColor(0, 0, 0, 150), 1.5))
@@ -86,51 +57,31 @@ class SelectAndMaskCanvas(QWidget):
             if self.dialog.active_tool == "refine":
                 p.drawLine(self._mouse_pos - QPointF(r, 0), self._mouse_pos + QPointF(r, 0))
                 p.drawLine(self._mouse_pos - QPointF(0, r), self._mouse_pos + QPointF(0, r))
-        p.end()
 
     def mousePressEvent(self, ev):
-        if ev.button() == Qt.MouseButton.MiddleButton or (self._space and ev.button() == Qt.MouseButton.LeftButton) or self.dialog.active_tool == "hand":
-            self._panning = True
-            self._pan_last = ev.position()
-            self.setCursor(Qt.CursorShape.ClosedHandCursor)
-        elif ev.button() == Qt.MouseButton.LeftButton and self.dialog.active_tool in ("refine", "brush", "eraser"):
+        if self._maybe_start_pan(ev):
+            return
+        if ev.button() == Qt.MouseButton.LeftButton and self.dialog.active_tool in ("refine", "brush", "eraser"):
             self._drawing = True
             self.dialog.apply_stroke(self.to_img(ev.position()))
-            
+
     def mouseMoveEvent(self, ev):
         self._mouse_pos = ev.position()
-        if self._panning and self._pan_last is not None:
-            self._pan += (ev.position() - self._pan_last)
-            self._pan_last = ev.position()
-        elif self._drawing:
+        if self._maybe_continue_pan(ev):
+            return
+        if self._drawing:
             self.dialog.apply_stroke(self.to_img(ev.position()))
         self.update()
-            
+
     def mouseReleaseEvent(self, ev):
         self._panning = False
         self._drawing = False
-        if self.dialog.active_tool == "hand": self.setCursor(Qt.CursorShape.OpenHandCursor)
-        else: self.setCursor(Qt.CursorShape.BlankCursor)
-        if self.dialog: self.dialog.commit_stroke()
-
-    def wheelEvent(self, ev):
-        factor = 1.15 if ev.angleDelta().y() > 0 else 1 / 1.15
-        new_zoom = max(0.05, min(32.0, self.zoom * factor))
-        scale = new_zoom / self.zoom
-        pivot = ev.position()
-        self._pan = QPointF(pivot.x() - (pivot.x() - self._pan.x()) * scale, pivot.y() - (pivot.y() - self._pan.y()) * scale)
-        self.zoom = new_zoom
-        self.update()
-
-    def keyPressEvent(self, ev):
-        if ev.key() == Qt.Key.Key_Space and not ev.isAutoRepeat():
-            self._space = True
+        if self.dialog and self.dialog.active_tool == "hand":
             self.setCursor(Qt.CursorShape.OpenHandCursor)
-            
-    def keyReleaseEvent(self, ev):
-        if ev.key() == Qt.Key.Key_Space and not ev.isAutoRepeat():
-            self._space = False
-            self.setCursor(Qt.CursorShape.BlankCursor)
+        else:
+            self.setCursor(self._idle_cursor())
+        if self.dialog:
+            self.dialog.commit_stroke()
 
 
 class SelectAndMaskDialog(QDialog):
@@ -148,9 +99,8 @@ class SelectAndMaskDialog(QDialog):
             
         self.W, self.H = self.layer.width(), self.layer.height()
         
-        ptr = self.layer.image.constBits()
-        buf = (ctypes.c_uint8 * self.layer.image.sizeInBytes()).from_address(int(ptr))
-        self.orig_arr = np.ndarray((self.H, self.layer.image.bytesPerLine() // 4, 4), dtype=np.uint8, buffer=buf)[:, :self.W, :].copy()
+        from core.pixel_buffer import qimage_argb_view
+        self.orig_arr = qimage_argb_view(self.layer.image, writable=False)[:, :self.W, :].copy()
         
         self.base_mask = np.zeros((self.H, self.W), dtype=np.float32)
         sel = document.selection
@@ -214,7 +164,6 @@ class SelectAndMaskDialog(QDialog):
         
         # Canvas
         self.canvas = SelectAndMaskCanvas(self)
-        self.canvas.dialog = self
         root.addWidget(self.canvas, 1)
         
         # Properties (Right)
@@ -367,9 +316,8 @@ class SelectAndMaskDialog(QDialog):
         else:
             x1, y1, x2, y2 = rect
             
-        ptr = self.preview_img.bits()
-        buf = (ctypes.c_uint8 * self.preview_img.sizeInBytes()).from_address(int(ptr))
-        out = np.ndarray((self.H, self.W, 4), dtype=np.uint8, buffer=buf)
+        from core.pixel_buffer import qimage_argb_view
+        out = qimage_argb_view(self.preview_img, writable=True)[:, :self.W, :]
         
         m = self.display_mask[y1:y2, x1:x2, np.newaxis]
         op = self.op_sl.value() / 100.0

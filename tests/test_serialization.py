@@ -6,9 +6,10 @@ import pickle
 
 import pytest
 from PyQt6.QtGui import QColor, QImage
+from PyQt6.QtCore import QRectF
 
 from core.document import Document
-from core.layer import Layer
+from core.layer import RasterLayer, GroupLayer, FillLayer, VectorLayer
 from core.serialization import (SerializationError, load_document,
                                 save_document)
 
@@ -16,10 +17,9 @@ from core.serialization import (SerializationError, load_document,
 def _rich_document():
     doc = Document(64, 48)
     doc.layers[0].image.fill(QColor(255, 0, 0))
-    group = Layer("Group", 64, 48)
-    group.layer_type = "group"
+    group = GroupLayer("Group", 64, 48)
     doc.layers.append(group)
-    child = Layer("Child", 64, 48)
+    child = RasterLayer("Child", 64, 48)
     child.parent_id = group.layer_id
     child.image.fill(QColor(0, 255, 0, 128))
     child.opacity = 0.7
@@ -30,10 +30,16 @@ def _rich_document():
     child.mask = QImage(64, 48, QImage.Format.Format_ARGB32_Premultiplied)
     child.mask.fill(QColor(255, 255, 255))
     doc.layers.append(child)
-    fill = Layer("Fill", 64, 48)
-    fill.layer_type = "fill"
+    fill = FillLayer("Fill", 64, 48)
     fill.fill_data = {"type": "solid", "color": QColor(1, 2, 3)}
     doc.layers.append(fill)
+    from PyQt6.QtGui import QPainterPath
+    vector = VectorLayer("Path", 64, 48)
+    vpath = QPainterPath()
+    vpath.addEllipse(10, 10, 20, 20)
+    vector.vector_mask = vpath
+    vector.path_style = {"fill_color": QColor(9, 8, 7), "stroke_color": None, "stroke_width": 0.0}
+    doc.layers.append(vector)
     return doc
 
 
@@ -44,7 +50,7 @@ def test_v2_roundtrip(qapp, tmp_path):
 
     doc2, legacy = load_document(path)
     assert not legacy
-    assert len(doc2.layers) == 4
+    assert len(doc2.layers) == 5
     assert doc2.layers[2].parent_id == doc2.layers[1].layer_id
     assert doc2.layers[2].opacity == pytest.approx(0.7)
     assert doc2.layers[2].blend_mode == "Multiply"
@@ -53,12 +59,17 @@ def test_v2_roundtrip(qapp, tmp_path):
     assert isinstance(doc2.layers[3].fill_data["color"], QColor)
     assert doc2.layers[2].mask is not None
     assert doc2.layers[0].image.pixelColor(5, 5) == QColor(255, 0, 0)
+    vec = doc2.layers[4]
+    assert isinstance(vec.path_style["fill_color"], QColor)
+    assert vec.path_style["fill_color"].getRgb()[:3] == (9, 8, 7)
+    assert vec.vector_mask is not None and not vec.vector_mask.isEmpty()
+    assert vec.vector_mask.contains(QRectF(15, 15, 5, 5))
 
 
 def test_legacy_pickle_loads_and_converts(qapp, tmp_path):
     path = str(tmp_path / "legacy.imfn")
     data = {"width": 32, "height": 20, "color_mode": "RGB", "bit_depth": 8,
-            "layers": [Layer("L1", 32, 20).to_dict()]}
+            "layers": [RasterLayer("L1", 32, 20).to_dict()]}
     with gzip.open(path, "wb") as f:
         pickle.dump(data, f)
 

@@ -4,6 +4,7 @@ from PyQt6.QtCore import QPoint, Qt, QRect, QRectF
 from PyQt6.QtGui import QImage, QBitmap, QRegion, QPainterPath
 from tools.base_tool import BaseTool, AbstractAsyncTool
 from tools.lasso_tools import LassoMixin
+from core.pixel_buffer import qimage_argb_view
 
 from core.app_logging import get_logger
 
@@ -22,13 +23,12 @@ class AbstractSelectionTool(AbstractAsyncTool, LassoMixin):
                 return None
 
             img_rgba = img.convertToFormat(QImage.Format.Format_RGBA8888)
-            w, h = img_rgba.width(), img_rgba.height()
-            
-            ptr = img_rgba.bits()
-            ptr.setsize(img_rgba.sizeInBytes())
-            
-            # .copy() is required — it physically duplicates the array into isolated Python memory
-            np_data = np.frombuffer(ptr, dtype=np.uint8).reshape((h, img_rgba.bytesPerLine() // 4, 4))[:, :w, :].copy()
+            w = img_rgba.width()
+
+            # .copy() is required — it physically duplicates the array into
+            # isolated Python memory (this snapshot crosses into a
+            # background QThreadPool worker; a live view could dangle).
+            np_data = qimage_argb_view(img_rgba, writable=False)[:, :w, :].copy()
             return img, np_data
         except Exception as e:
             logger.exception("Error creating safe memory snapshot")
@@ -40,9 +40,7 @@ class AbstractSelectionTool(AbstractAsyncTool, LassoMixin):
         mask_img = QImage(w, h, QImage.Format.Format_RGBA8888)
         mask_img.fill(0)
 
-        m_ptr = mask_img.bits()
-        m_ptr.setsize(mask_img.sizeInBytes())
-        mask_arr = np.ndarray((h, mask_img.bytesPerLine() // 4, 4), dtype=np.uint8, buffer=m_ptr)
+        mask_arr = qimage_argb_view(mask_img, writable=True)
         mask_arr[:, :w, 3][mask] = 255
 
         bitmap = QBitmap.fromImage(mask_img.createAlphaMask())
@@ -249,10 +247,8 @@ class QuickSelectionTool(AbstractSelectionTool):
             img = QImage(w, h, QImage.Format.Format_ARGB32_Premultiplied)
             img.fill(0)
             
-            ptr = img.bits()
-            ptr.setsize(img.sizeInBytes())
-            img_arr = np.ndarray((h, img.bytesPerLine() // 4, 4), dtype=np.uint8, buffer=ptr)
-            img_arr[:, :w][self._live_mask] = [250, 150, 50, 120] 
+            img_arr = qimage_argb_view(img, writable=True)
+            img_arr[:, :w][self._live_mask] = [250, 150, 50, 120]
             return img, self._active_layer.offset, 1.0
         return None
 

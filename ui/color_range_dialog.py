@@ -80,9 +80,8 @@ class ColorRangeDialog(QDialog):
         tr_c, tg, tb = self.target_color.red(), self.target_color.green(), self.target_color.blue()
         
         import ctypes
-        ptr = img.constBits()
-        buf = (ctypes.c_uint8 * img.sizeInBytes()).from_address(int(ptr))
-        arr = np.ndarray((h, img.bytesPerLine() // 4, 4), dtype=np.uint8, buffer=buf)[:, :w, :]
+        from core.pixel_buffer import qimage_argb_view
+        arr = qimage_argb_view(img, writable=False)[:, :w, :]
 
         dist_sq = (arr[..., 2].astype(np.int32) - tr_c)**2 + \
                   (arr[..., 1].astype(np.int32) - tg)**2 + \
@@ -111,9 +110,8 @@ class ColorRangeDialog(QDialog):
             h, w = self._final_mask.shape
             mask_img = QImage(w, h, QImage.Format.Format_RGBA8888)
             mask_img.fill(0)
-            m_ptr = mask_img.bits()
-            m_buf = (ctypes.c_uint8 * mask_img.sizeInBytes()).from_address(int(m_ptr))
-            np.ndarray((h, w, 4), dtype=np.uint8, buffer=m_buf)[self._final_mask, 3] = 255
+            from core.pixel_buffer import qimage_argb_view
+            qimage_argb_view(mask_img, writable=True)[:, :w, :][self._final_mask, 3] = 255
             
             path = QPainterPath()
             path.addRegion(QRegion(QBitmap.fromImage(mask_img.createAlphaMask())))

@@ -65,12 +65,9 @@ class GradientTool(BaseTool):
             lock_a = getattr(layer, "lock_alpha", False)
             
         if lock_a:
-            import ctypes
-            w, h = target_img.width(), target_img.height()
-            bpl = target_img.bytesPerLine()
-            ptr = target_img.bits()
-            _buf_la = (ctypes.c_uint8 * target_img.sizeInBytes()).from_address(int(ptr))
-            arr = np.ndarray((h, bpl // 4, 4), dtype=np.uint8, buffer=_buf_la)[:, :w, :]
+            from core.pixel_buffer import qimage_argb_view
+            w = target_img.width()
+            arr = qimage_argb_view(target_img, writable=True)[:, :w, :]
             orig_alpha = arr[..., 3].copy()
 
         painter = QPainter(target_img)

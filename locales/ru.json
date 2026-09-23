@@ -358,6 +358,7 @@
   "history.add_layer":          "До добавления слоя",
   "history.add_text":           "Добавление текста",
   "history.edit_text":          "Редактирование текста",
+  "history.edit_shape":         "Редактирование фигуры",
   "history.duplicate_layer":    "До дублирования",
   "history.delete_layer":       "До удаления слоя",
   "history.layer_moved":        "Перемещение слоя",
@@ -882,6 +883,7 @@
   "fill_layer.color2":   "Цвет 2:",
 
   "adj.reset":                     "Сброс",
+  "adj.applying_full_res":         "Применение в полном разрешении…",
 
   "adj.bc.title":                  "Яркость / Контраст",
   "adj.bc.brightness":             "Яркость:",

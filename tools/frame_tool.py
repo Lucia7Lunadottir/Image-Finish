@@ -25,9 +25,9 @@ class FrameTool(BaseTool):
         if self._start and self._end:
             r = QRectF(QPointF(self._start), QPointF(self._end)).normalized()
             if r.width() > 10 and r.height() > 10:
+                from core.layer import FrameLayer
                 n = sum(1 for l in doc.layers if getattr(l, "layer_type", "") == "frame") + 1
-                layer = doc.add_layer(f"Frame {n}")
-                layer.layer_type = "frame"
+                layer = doc.add_layer(f"Frame {n}", layer_cls=FrameLayer)
                 layer.frame_data = {"shape": self._shape, "rect": r}
                 layer.offset = QPoint(0, 0)
                 layer.image = QImage(1, 1, QImage.Format.Format_ARGB32_Premultiplied)

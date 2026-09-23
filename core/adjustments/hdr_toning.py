@@ -169,6 +169,23 @@ class HDRToningDialog(_AdjustDialog):
         for row in (self._radius, self._strength, self._gamma, self._detail):
             row.reset()
 
+    def _on_full_res_restored(self):
+        """_orig_bgr/_orig_f/_orig_alpha and the radius-keyed blur cache are
+        derived from _orig_argb32 once in __init__ (not re-read on every
+        _apply_preview() call like other adjustment dialogs) — after the
+        base class swaps _orig_argb32 back to full resolution for the final
+        accept() pass, both must be rebuilt, or the accept() pass would
+        silently keep computing from the stale downscaled arrays."""
+        if not self._np_ok:
+            return
+        import numpy as np
+        _arr = _const_arr(self._orig_argb32)
+        self._orig_bgr   = np.ascontiguousarray(_arr[:, :, :3])
+        self._orig_f     = self._orig_bgr.astype(np.float32) / 255.0
+        self._orig_alpha = _arr[:, :, 3].copy()
+        self._blur_radius = None
+        self._blur_cache  = None
+
     def _apply_preview(self):
         if not self._np_ok:
             # No numpy — delegate to standalone function (slow but correct)

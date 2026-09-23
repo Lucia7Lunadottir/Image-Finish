@@ -12,9 +12,13 @@ logger = get_logger("shapes_tool")
 
 class ShapesTool(BaseTool):
     """Vector shape layers store their geometry in `layer.shape_data` and
-    are re-rendered from it on every edit (via `_bake_shape`), rather than
-    being fixed pixels from the moment they're drawn — so an existing shape
-    can be picked up by its handles and resized/moved after the fact."""
+    are re-rendered from it (via `_bake_shape`) rather than being fixed
+    pixels from the moment they're drawn.
+
+    This tool only handles drawing a brand-new shape by dragging on empty
+    canvas. Once a shape layer exists, resizing/moving it is owned by a
+    real scene object — see `ui/shape_scene_overlay.py::ShapeLayerItem` —
+    not by hit-testing raw mouse coordinates against a stored rect here."""
 
     name = "Shapes"
     icon = "🔷"
@@ -27,14 +31,6 @@ class ShapesTool(BaseTool):
         self._shift:       bool          = False
         self._sides:       int           = 6
         self._angle:       int           = 0
-
-        # Re-editing an existing shape layer's handles
-        self._edit_layer:        object | None = None
-        self._edit_mode:         str | None    = None   # 'move' | 'tl' | 't' | ...
-        self._edit_orig_rect:    QRect | None  = None
-        self._edit_start_pos:    QPoint | None = None
-        self._edit_pending_rect: QRect | None  = None
-        self._hover_mode:        str | None    = None
 
     # ── Geometry helpers ──────────────────────────────────────────────────────
 
@@ -222,54 +218,9 @@ class ShapesTool(BaseTool):
         )
         painter.end()
 
-    @staticmethod
-    def _find_edit_target(doc, pos: QPoint, zoom: float):
-        """Hit-tests existing vector layers' handles/body, topmost first.
-        Returns (layer, handle_name) or (None, None)."""
-        hit_dist = 8 / max(0.01, zoom)
-        for layer in reversed(doc.layers):
-            if not layer.visible or layer.locked:
-                continue
-            if getattr(layer, "layer_type", "raster") != "vector":
-                continue
-            sd = getattr(layer, "shape_data", None)
-            if not sd or "rect" not in sd:
-                continue
-            rx, ry, rw, rh = sd["rect"]
-            r = QRectF(rx, ry, rw, rh)
-            handles = {
-                'tl': r.topLeft(), 't': QPointF(r.center().x(), r.top()), 'tr': r.topRight(),
-                'r':  QPointF(r.right(), r.center().y()), 'br': r.bottomRight(),
-                'b':  QPointF(r.center().x(), r.bottom()), 'bl': r.bottomLeft(),
-                'l':  QPointF(r.left(), r.center().y()),
-            }
-            min_d, best = float('inf'), None
-            for name, pt in handles.items():
-                d = math.hypot(pos.x() - pt.x(), pos.y() - pt.y())
-                if d < min_d:
-                    min_d, best = d, name
-            if min_d <= hit_dist:
-                return layer, best
-            if r.contains(QPointF(pos)):
-                return layer, 'move'
-        return None, None
-
     # ── Tool interface ────────────────────────────────────────────────────────
 
     def on_press(self, pos, doc, fg, bg, opts):
-        hit_layer, hit_mode = self._find_edit_target(doc, pos, opts.get("_zoom", 1.0))
-        if hit_layer is not None:
-            doc.active_layer_index = doc.layers.index(hit_layer)
-            self._edit_layer     = hit_layer
-            self._edit_mode      = hit_mode
-            self._edit_start_pos = pos
-            rx, ry, rw, rh = hit_layer.shape_data["rect"]
-            self._edit_orig_rect    = QRect(int(rx), int(ry), int(rw), int(rh))
-            self._edit_pending_rect = QRect(self._edit_orig_rect)
-            self._start = None
-            return
-
-        self._edit_layer = None
         self._start       = pos
         self._preview_end = pos
         self._shape_type  = opts.get("shape_type", "rect")
@@ -280,30 +231,6 @@ class ShapesTool(BaseTool):
             self._angle = random.randint(0, 359)
 
     def on_move(self, pos, doc, fg, bg, opts):
-        if self._edit_layer is not None:
-            r = QRect(self._edit_orig_rect)
-            dx = pos.x() - self._edit_start_pos.x()
-            dy = pos.y() - self._edit_start_pos.y()
-            if self._edit_mode == 'move':
-                r.translate(dx, dy)
-            else:
-                if 'l' in self._edit_mode: r.setLeft(r.left() + dx)
-                if 'r' in self._edit_mode: r.setRight(r.right() + dx)
-                if 't' in self._edit_mode: r.setTop(r.top() + dy)
-                if 'b' in self._edit_mode: r.setBottom(r.bottom() + dy)
-            r = r.normalized()
-            if r.width() < 1 or r.height() < 1:
-                return
-
-            self._edit_pending_rect = r
-            sd = dict(self._edit_layer.shape_data)
-            sd["rect"]  = (r.x(), r.y(), r.width(), r.height())
-            sd["start"] = (r.left(), r.top())
-            sd["end"]   = (r.right(), r.bottom())
-            self._edit_layer.image.fill(Qt.GlobalColor.transparent)
-            self._bake_shape(self._edit_layer.image, sd, doc.selection)
-            return
-
         self._preview_end = pos
         self._shift       = bool(opts.get("_shift", False))
         self._sides       = int(opts.get("shape_sides", 6))
@@ -326,21 +253,6 @@ class ShapesTool(BaseTool):
     def on_release(self, pos, doc, fg, bg, opts):
         self._preview_end = None
 
-        if self._edit_layer is not None:
-            layer = self._edit_layer
-            rect = self._edit_pending_rect
-            self._edit_layer = None
-            self._edit_mode = None
-            self._edit_orig_rect = None
-            self._edit_pending_rect = None
-            if rect is not None:
-                sd = dict(layer.shape_data)
-                sd["rect"]  = (rect.x(), rect.y(), rect.width(), rect.height())
-                sd["start"] = (rect.left(), rect.top())
-                sd["end"]   = (rect.right(), rect.bottom())
-                layer.shape_data = sd
-            return
-
         if self._start is None:
             return
 
@@ -357,10 +269,9 @@ class ShapesTool(BaseTool):
         angle = self._angle
         shape_color = opts.get("shape_color", fg)
 
-        from core.layer import Layer
+        from core.layer import VectorLayer
         n = sum(1 for l in doc.layers if getattr(l, "layer_type", "raster") == "vector") + 1
-        new_layer = Layer(f"Shape {n}", doc.width, doc.height)
-        new_layer.layer_type = "vector"
+        new_layer = VectorLayer(f"Shape {n}", doc.width, doc.height)
 
         shape_data = {
             "shape": shape,
@@ -377,17 +288,8 @@ class ShapesTool(BaseTool):
         doc.active_layer_index = len(doc.layers) - 1
         self._start = None
 
-    def on_hover(self, pos: QPoint, doc, fg, bg, opts):
-        _layer, self._hover_mode = self._find_edit_target(doc, pos, opts.get("_zoom", 1.0))
-
     def needs_history_push(self) -> bool:
         return True
 
     def cursor(self):
-        m = self._hover_mode
-        if m == 'move': return Qt.CursorShape.SizeAllCursor
-        if m in ('tl', 'br'): return Qt.CursorShape.SizeFDiagCursor
-        if m in ('tr', 'bl'): return Qt.CursorShape.SizeBDiagCursor
-        if m in ('l', 'r'): return Qt.CursorShape.SizeHorCursor
-        if m in ('t', 'b'): return Qt.CursorShape.SizeVerCursor
         return Qt.CursorShape.CrossCursor

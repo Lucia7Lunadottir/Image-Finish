@@ -159,7 +159,8 @@ class ApplyImageDialog(QDialog):
         out[..., 3] = t_arr[..., 3]
         
         new_img = QImage(w, h, QImage.Format.Format_ARGB32)
-        ctypes.memmove(int(new_img.bits()), out.ctypes.data, new_img.sizeInBytes())
+        from core.pixel_buffer import qimage_argb_view
+        qimage_argb_view(new_img, writable=True)[:, :w, :] = out
         self.layer.image = new_img.convertToFormat(QImage.Format.Format_ARGB32_Premultiplied)
         self.layer.offset = QPoint(0, 0)
         self.canvas_refresh()
@@ -283,9 +284,8 @@ class CalculationsDialog(QDialog):
         if res in ("selection", "channel"):
             mask_img = QImage(w, h, QImage.Format.Format_RGBA8888)
             mask_img.fill(0)
-            m_ptr = mask_img.bits()
-            m_buf = (ctypes.c_uint8 * mask_img.sizeInBytes()).from_address(int(m_ptr))
-            m_arr = np.ndarray((h, mask_img.bytesPerLine() // 4, 4), dtype=np.uint8, buffer=m_buf)
+            from core.pixel_buffer import qimage_argb_view
+            m_arr = qimage_argb_view(mask_img, writable=True)
             m_arr[:, :w, 3] = mask_u8
             
             path = QPainterPath()
@@ -304,7 +304,8 @@ class CalculationsDialog(QDialog):
             out[..., 0] = out[..., 1] = out[..., 2] = mask_u8
             out[..., 3] = 255
             new_img = QImage(w, h, QImage.Format.Format_ARGB32)
-            ctypes.memmove(int(new_img.bits()), out.ctypes.data, new_img.sizeInBytes())
+            from core.pixel_buffer import qimage_argb_view
+            qimage_argb_view(new_img, writable=True)[:, :w, :] = out
             new_layer.image = new_img.convertToFormat(QImage.Format.Format_ARGB32_Premultiplied)
             
         main_window._canvas_refresh()

@@ -24,10 +24,10 @@ def compute_histogram(img: QImage) -> list:
     argb = _to_argb32(img)
     try:
         import numpy as np
-        ptr = argb.constBits()
-        ptr.setsize(argb.sizeInBytes())
-        arr = np.frombuffer(ptr, dtype=np.uint8).reshape((argb.height(), argb.width(), 4))
-        
+        from core.pixel_buffer import qimage_argb_view
+        arr = qimage_argb_view(argb, writable=False)[:, :argb.width(), :]
+
+
         mask = arr[:, :, 3] > 0
         if not np.any(mask):
             return [0] * 256
@@ -74,14 +74,11 @@ def apply_levels(src: QImage,
     img = _to_argb32(src)
     try:
         import numpy as np
+        from core.pixel_buffer import qimage_argb_view
         img = img.copy()
-        ptr = img.bits()
-        ptr.setsize(img.sizeInBytes())
-        arr = np.frombuffer(ptr, dtype=np.uint8).reshape((img.height(), img.width(), 4))
+        arr = qimage_argb_view(img, writable=True)[:, :img.width(), :]
         lut_np = np.frombuffer(lut, dtype=np.uint8)
         arr[:, :, :3] = lut_np[arr[:, :, :3]]
-        del arr
-        del ptr
         return img.convertToFormat(QImage.Format.Format_ARGB32_Premultiplied)
     except ImportError:
         for y in range(img.height()):

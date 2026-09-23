@@ -228,14 +228,9 @@ class ColorLookupDialog(_AdjustDialog):
 
     def _apply_preview(self):
         if not getattr(self, "_is_adj_layer", False):
-            from PyQt6.QtGui import QPainter
-            p = QPainter(self._image)
-            p.setCompositionMode(QPainter.CompositionMode.CompositionMode_Source)
             if self._lut is None:
-                p.drawImage(0, 0, self._original)
+                self._layer.image = self._original.copy()
             else:
-                res = apply_color_lookup(self._orig_argb32, self._lut, self._intensity.value())
-                p.drawImage(0, 0, res)
-            p.end()
-        if hasattr(self, "_canvas_refresh"): self._canvas_refresh()
-        elif self.parent() and hasattr(self.parent(), "_canvas_refresh"): self.parent()._canvas_refresh()
+                self._layer.image = apply_color_lookup(
+                    self._orig_argb32, self._lut, self._intensity.value())
+        self._canvas_refresh()

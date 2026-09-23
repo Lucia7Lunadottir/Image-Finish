@@ -625,7 +625,7 @@ def draw_measurements(painter, *, active_tool, pan, zoom, composite_cache, to_wi
         for i, pt in enumerate(active_tool.markers):
             c = QColor(0, 0, 0, 0)
             if composite_cache and 0 <= pt.x() < composite_cache.width() and 0 <= pt.y() < composite_cache.height():
-                c = QColor(composite_cache.pixel(pt))
+                c = composite_cache.pixelColor(pt)
             text = f" #{i + 1} R:{c.red()} G:{c.green()} B:{c.blue()} "
             wp = to_widget_fn(pt)
             tr_rect = painter.fontMetrics().boundingRect(text)

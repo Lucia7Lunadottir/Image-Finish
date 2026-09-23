@@ -1,84 +1,19 @@
 import numpy as np
-import ctypes
 from PyQt6.QtWidgets import (QDialog, QVBoxLayout, QHBoxLayout, QLabel, 
                              QComboBox, QPushButton, QDialogButtonBox, QWidget, QSpinBox, QGridLayout)
 from PyQt6.QtCore import Qt, QPointF, QTimer
-from PyQt6.QtGui import QImage, QPainter, QColor
+from PyQt6.QtGui import QImage
 
 from core.locale import tr
 from ui.adjustments_dialog import _JumpSlider
+from ui.preview_canvas_base import PreviewCanvasBase
 from tools.tool_utils import fast_box_blur_np
 
 from ui import theme
 
 
-class OtherFiltersCanvas(QWidget):
-    def __init__(self, dialog):
-        super().__init__()
-        self.dialog = dialog
-        self.setMouseTracking(True)
-        self.zoom = 1.0
-        self._pan = QPointF(0, 0)
-        self._panning = False
-        self._pan_last = None
-        self._space = False
-        self.setFocusPolicy(Qt.FocusPolicy.StrongFocus)
-
-    def paintEvent(self, ev):
-        p = QPainter(self)
-        p.fillRect(self.rect(), QColor(theme.CRUST))
-        if not self.dialog.preview_img: return
-            
-        w, h = self.dialog.preview_img.width(), self.dialog.preview_img.height()
-        p.save()
-        p.translate(self._pan)
-        p.scale(self.zoom, self.zoom)
-        
-        tile = 16
-        for y in range(0, h, tile):
-            for x in range(0, w, tile):
-                c = QColor(180,180,180) if (x//tile + y//tile) % 2 == 0 else QColor(220,220,220)
-                p.fillRect(x, y, min(tile, w-x), min(tile, h-y), c)
-                
-        p.drawImage(0, 0, self.dialog.preview_img)
-        p.restore()
-        p.end()
-
-    def mousePressEvent(self, ev):
-        is_pan = ev.button() == Qt.MouseButton.MiddleButton or (self._space and ev.button() == Qt.MouseButton.LeftButton)
-        if is_pan:
-            self._panning = True
-            self._pan_last = ev.position()
-            self.setCursor(Qt.CursorShape.ClosedHandCursor)
-
-    def mouseMoveEvent(self, ev):
-        if self._panning and self._pan_last is not None:
-            self._pan += (ev.position() - self._pan_last)
-            self._pan_last = ev.position()
-            self.update()
-
-    def mouseReleaseEvent(self, ev):
-        self._panning = False
-        self.setCursor(Qt.CursorShape.OpenHandCursor if self._space else Qt.CursorShape.ArrowCursor)
-
-    def wheelEvent(self, ev):
-        factor = 1.15 if ev.angleDelta().y() > 0 else 1 / 1.15
-        new_zoom = max(0.05, min(32.0, self.zoom * factor))
-        scale = new_zoom / self.zoom
-        pivot = ev.position()
-        self._pan = QPointF(pivot.x() - (pivot.x() - self._pan.x()) * scale, pivot.y() - (pivot.y() - self._pan.y()) * scale)
-        self.zoom = new_zoom
-        self.update()
-
-    def keyPressEvent(self, ev):
-        if ev.key() == Qt.Key.Key_Space and not ev.isAutoRepeat():
-            self._space = True
-            self.setCursor(Qt.CursorShape.OpenHandCursor)
-
-    def keyReleaseEvent(self, ev):
-        if ev.key() == Qt.Key.Key_Space and not ev.isAutoRepeat():
-            self._space = False
-            self.setCursor(Qt.CursorShape.ArrowCursor)
+class OtherFiltersCanvas(PreviewCanvasBase):
+    pass
 
 
 class OtherFiltersDialog(QDialog):
@@ -93,13 +28,9 @@ class OtherFiltersDialog(QDialog):
         self.setWindowFlags(self.windowFlags() | Qt.WindowType.WindowMaximizeButtonHint | Qt.WindowType.WindowMinimizeButtonHint)
         self.resize(1000, 700)
         
-        self.orig_img = layer.image.copy()
-        self.preview_img = layer.image.copy()
-        
-        ptr = self.orig_img.constBits()
-        buf = (ctypes.c_uint8 * self.orig_img.sizeInBytes()).from_address(int(ptr))
-        self.orig_arr = np.ndarray((self.orig_img.height(), self.orig_img.bytesPerLine() // 4, 4), dtype=np.uint8, buffer=buf)[:, :self.orig_img.width(), :].copy()
-        
+        from ui.preview_canvas_base import init_live_preview_arrays
+        init_live_preview_arrays(self, layer)
+
         self._timer = QTimer(self)
         self._timer.setSingleShot(True)
         self._timer.setInterval(60)
@@ -248,5 +179,7 @@ class OtherFiltersDialog(QDialog):
         self.canvas.update()
 
     def accept(self):
-        self.layer.image = self.preview_img
-        super().accept()
+        from ui.preview_canvas_base import run_full_res_commit
+        if run_full_res_commit(self, self._apply_effect):
+            self.layer.image = self.preview_img
+            super().accept()

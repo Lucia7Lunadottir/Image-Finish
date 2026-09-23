@@ -79,9 +79,8 @@ class PatchTool(BaseTool, LassoMixin):
         mp.end()
 
         import ctypes
-        arr = np.empty((h, layer.image.bytesPerLine() // 4, 4), dtype=np.uint8)
-        ctypes.memmove(arr.ctypes.data, int(self._layer_backup.constBits()), self._layer_backup.sizeInBytes())
-        arr = arr[:, :w, :].copy()
+        from core.pixel_buffer import qimage_argb_view
+        arr = qimage_argb_view(self._layer_backup, writable=False)[:, :w, :].copy()
 
         m_arr = np.empty((h, mask_img.bytesPerLine()), dtype=np.uint8)
         ctypes.memmove(m_arr.ctypes.data, int(mask_img.constBits()), mask_img.sizeInBytes())
@@ -142,12 +141,7 @@ class PatchTool(BaseTool, LassoMixin):
         arr[y1:y2, x1:x2] = final_roi.astype(np.uint8)
 
         new_img = QImage(w, h, QImage.Format.Format_ARGB32_Premultiplied)
-        out_ptr = new_img.bits()
-        out_ptr.setsize(new_img.sizeInBytes())
-        out_arr = np.frombuffer(out_ptr, dtype=np.uint8).reshape((h, new_img.bytesPerLine() // 4, 4))
-        out_arr[:, :w, :] = arr
-        del out_arr
-        del out_ptr
+        qimage_argb_view(new_img, writable=True)[:, :w, :] = arr
         layer.image = new_img
 
     def draw_overlays(self, painter, pw, doc):
@@ -232,14 +226,15 @@ class SpotHealingTool(BaseTool):
         p.end()
 
         import ctypes
+        from core.pixel_buffer import qimage_argb_view
         m_arr = np.empty((h, mask_img.bytesPerLine()), dtype=np.uint8)
         ctypes.memmove(m_arr.ctypes.data, int(mask_img.constBits()), mask_img.sizeInBytes())
         m_arr = m_arr[:, :w].copy()
         y_idx, x_idx = np.where(m_arr > 0)
-        if len(y_idx) == 0: 
+        if len(y_idx) == 0:
             self._pts = []
             return
-            
+
         y1, y2 = max(0, y_idx.min() - self._current_size), min(h, y_idx.max() + self._current_size + 1)
         x1, x2 = max(0, x_idx.min() - self._current_size), min(w, x_idx.max() + self._current_size + 1)
         rw, rh = x2 - x1, y2 - y1
@@ -251,14 +246,12 @@ class SpotHealingTool(BaseTool):
             if 0 <= x1 + ox and x2 + ox < w and 0 <= y1 + oy and y2 + oy < h:
                 dx, dy = ox, oy
                 break
-                
+
         if dx == 0 and dy == 0:
             dx, dy = min(rw, 10), min(rh, 10) # Fallback so edges also work
 
-        arr = np.empty((h, layer.image.bytesPerLine() // 4, 4), dtype=np.uint8)
-        ctypes.memmove(arr.ctypes.data, int(layer.image.constBits()), layer.image.sizeInBytes())
-        arr = arr[:, :w, :].copy()
-        
+        arr = qimage_argb_view(layer.image, writable=False)[:, :w, :].copy()
+
         mask_roi = m_arr[y1:y2, x1:x2].astype(np.float32) / 255.0
         target_roi = arr[y1:y2, x1:x2].astype(np.float32)
 
@@ -300,10 +293,7 @@ class SpotHealingTool(BaseTool):
         arr[y1:y2, x1:x2] = final_roi.astype(np.uint8)
 
         new_img = QImage(w, h, QImage.Format.Format_ARGB32_Premultiplied)
-        out_arr = np.empty((h, new_img.bytesPerLine() // 4, 4), dtype=np.uint8)
-        ctypes.memmove(out_arr.ctypes.data, int(layer.image.constBits()), layer.image.sizeInBytes())
-        out_arr[:, :w, :] = arr
-        ctypes.memmove(int(new_img.bits()), out_arr.ctypes.data, new_img.sizeInBytes())
+        qimage_argb_view(new_img, writable=True)[:, :w, :] = arr
         layer.image = new_img
         self._pts = []
 
@@ -355,9 +345,8 @@ class RedEyeTool(BaseTool):
             self._start = None
             return
 
-        import ctypes
-        arr = np.empty((h, layer.image.bytesPerLine() // 4, 4), dtype=np.uint8)
-        ctypes.memmove(arr.ctypes.data, int(layer.image.constBits()), layer.image.sizeInBytes())
+        from core.pixel_buffer import qimage_argb_view
+        arr = qimage_argb_view(layer.image, writable=False).copy()
         roi = arr[rect.top():rect.bottom()+1, rect.left():rect.right()+1]
 
         if roi.size > 0:
@@ -378,8 +367,7 @@ class RedEyeTool(BaseTool):
             roi[..., 2] = np.clip(R * (1 - mask) + target_lum * mask, 0, 255).astype(np.uint8)
             
             new_img = QImage(w, h, QImage.Format.Format_ARGB32_Premultiplied)
-            out_arr = np.ascontiguousarray(arr)
-            ctypes.memmove(int(new_img.bits()), out_arr.ctypes.data, new_img.sizeInBytes())
+            qimage_argb_view(new_img, writable=True)[:] = arr
             layer.image = new_img
 
         self._start = None
@@ -460,34 +448,31 @@ class HealingBrushTool(BaseTool):
         p.end()
 
         import ctypes
+        from core.pixel_buffer import qimage_argb_view
         m_arr = np.empty((h, mask_img.bytesPerLine()), dtype=np.uint8)
         ctypes.memmove(m_arr.ctypes.data, int(mask_img.constBits()), mask_img.sizeInBytes())
         m_arr = m_arr[:, :w].copy()
         y_idx, x_idx = np.where(m_arr > 0)
-        if len(y_idx) == 0: 
+        if len(y_idx) == 0:
             self._reset_stroke()
             return
-            
+
         y1, y2 = max(0, y_idx.min() - self._current_size), min(h, y_idx.max() + self._current_size + 1)
         x1, x2 = max(0, x_idx.min() - self._current_size), min(w, x_idx.max() + self._current_size + 1)
 
         dx = int(self._paint_offset.x() - layer.offset.x() + self._source_offset.x())
         dy = int(self._paint_offset.y() - layer.offset.y() + self._source_offset.y())
 
-        arr = np.empty((h, layer.image.bytesPerLine() // 4, 4), dtype=np.uint8)
-        ctypes.memmove(arr.ctypes.data, int(layer.image.constBits()), layer.image.sizeInBytes())
-        arr = arr[:, :w, :].copy()
-        
+        arr = qimage_argb_view(layer.image, writable=False)[:, :w, :].copy()
+
         mask_roi = m_arr[y1:y2, x1:x2].astype(np.float32) / 255.0
         target_roi = arr[y1:y2, x1:x2].astype(np.float32)
 
         sy1, sy2 = y1 - dy, y2 - dy
         sx1, sx2 = x1 - dx, x2 - dx
-        
+
         source_roi = np.zeros_like(target_roi)
-        s_arr = np.empty((h, self._source_img.bytesPerLine() // 4, 4), dtype=np.uint8)
-        ctypes.memmove(s_arr.ctypes.data, int(self._source_img.constBits()), self._source_img.sizeInBytes())
-        s_arr = s_arr[:, :w, :].copy()
+        s_arr = qimage_argb_view(self._source_img, writable=False)[:, :w, :].copy()
         
         sy_start, sy_end = max(0, sy1), min(h, sy2)
         sx_start, sx_end = max(0, sx1), min(w, sx2)
@@ -523,10 +508,7 @@ class HealingBrushTool(BaseTool):
         arr[y1:y2, x1:x2] = final_roi.astype(np.uint8)
 
         new_img = QImage(w, h, QImage.Format.Format_ARGB32_Premultiplied)
-        out_arr = np.empty((h, new_img.bytesPerLine() // 4, 4), dtype=np.uint8)
-        ctypes.memmove(out_arr.ctypes.data, int(layer.image.constBits()), layer.image.sizeInBytes())
-        out_arr[:, :w, :] = arr
-        ctypes.memmove(int(new_img.bits()), out_arr.ctypes.data, new_img.sizeInBytes())
+        qimage_argb_view(new_img, writable=True)[:, :w, :] = arr
         layer.image = new_img
         self._reset_stroke()
 

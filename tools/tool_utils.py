@@ -5,8 +5,8 @@ Functions for numpy/QImage: brush masks, blur, format conversion.
 Imported by effect_tools, fill_tool, advanced_erasers, etc.
 """
 
-from PyQt6.QtGui import QImage
-from PyQt6.QtCore import QRect
+from PyQt6.QtGui import QImage, QPainter, QColor, QPainterPath
+from PyQt6.QtCore import QRect, QPoint
 
 try:
     import numpy as np
@@ -24,6 +24,67 @@ def _clamp_rect(rect: QRect, w: int, h: int) -> QRect:
     x2 = min(w, rect.right() + 1)
     y2 = min(h, rect.bottom() + 1)
     return QRect(x1, y1, x2 - x1, y2 - y1)
+
+
+# ── Floating-selection cut ──────────────────────────────────────────────────
+# Identical ~25-line block used to live in move_tool.py, puppet_warp_tool.py
+# and perspective_warp_tool.py: whenever a transform tool starts on a layer
+# with an active selection, it needs to cut the selected pixels out into a
+# separate floating piece (feathered by the selection's own anti-aliased
+# mask) and punch a matching hole in the source layer. One copy now.
+
+def cut_floating_selection(layer, sel: "QPainterPath"):
+    """Cut the region under `sel` out of `layer.image` for a floating-
+    selection drag/warp. Mutates `layer.image` in place (clears the
+    selected pixels, feathered by the selection mask, so a "hole" shows
+    through while the cut piece is transformed separately).
+
+    Returns `(original_img, original_offset, sel_origin, ok)`. `ok` is
+    False when the selection doesn't intersect the layer at all — callers
+    should abort the transform (the other three values are None) in that
+    case.
+    """
+    from core.pixel_buffer import qimage_argb_view
+
+    br = sel.boundingRect().toRect()
+    local_br = br.translated(-layer.offset).intersected(layer.image.rect())
+    if local_br.isEmpty():
+        return None, None, None, False
+
+    original_img = layer.image.copy(local_br)
+    original_offset = layer.offset + local_br.topLeft()
+    sel_origin = QPainterPath(sel)
+
+    # The selection mask needs its own grayscale buffer — a different pixel
+    # format (1 channel, not 4), so it can't share qimage_argb_view.
+    mask_img = QImage(local_br.width(), local_br.height(), QImage.Format.Format_Grayscale8)
+    mask_img.fill(0)
+    p = QPainter(mask_img)
+    p.translate(-original_offset.x(), -original_offset.y())
+    p.fillPath(sel, QColor(255, 255, 255))
+    p.end()
+
+    import ctypes
+    m_arr = np.empty((local_br.height(), mask_img.bytesPerLine()), dtype=np.uint8)
+    ctypes.memmove(m_arr.ctypes.data, int(mask_img.constBits()), mask_img.sizeInBytes())
+    mask_f = m_arr[:, :local_br.width()].astype(np.float32) / 255.0
+
+    # original_img is a fresh, exclusively-owned copy -> a writable view is
+    # a direct mutation, no copy-in/copy-out round trip needed.
+    f_arr = qimage_argb_view(original_img, writable=True)
+    for c in range(4):
+        f_arr[:local_br.height(), :local_br.width(), c] = (
+            f_arr[:local_br.height(), :local_br.width(), c] * mask_f
+        ).astype(np.uint8)
+
+    l_arr = qimage_argb_view(layer.image, writable=True)
+    inv_mask_f = 1.0 - mask_f
+    sy, sx = local_br.y(), local_br.x()
+    l_roi = l_arr[sy:sy + local_br.height(), sx:sx + local_br.width()]
+    for c in range(4):
+        l_roi[..., c] = (l_roi[..., c] * inv_mask_f).astype(np.uint8)
+
+    return original_img, original_offset, sel_origin, True
 
 
 # ── QImage <-> numpy conversion ────────────────────────────────────────────────
@@ -189,7 +250,7 @@ def _apply_qt_blur(image: QImage, cx: int, cy: int, radius: int, passes: int = 2
                     for dx in range(-1, 2):
                         nx_, ny_ = x + dx, y + dy
                         if 0 <= nx_ < image.width() and 0 <= ny_ < image.height():
-                            c = QColor(image.pixel(nx_, ny_))
+                            c = image.pixelColor(nx_, ny_)
                             rs += c.red(); gs += c.green()
                             bs += c.blue(); als += c.alpha()
                             n += 1

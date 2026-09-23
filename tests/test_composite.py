@@ -2,10 +2,11 @@
 
 import hashlib
 
-from PyQt6.QtCore import QRect
+from PyQt6.QtCore import QRect, QRectF
 from PyQt6.QtGui import QColor, QImage, QPainter
 
 from core.document import Document
+from core.layer import RasterLayer, AdjustmentLayer, ArtboardLayer, FrameLayer
 
 
 def _digest(img):
@@ -171,11 +172,11 @@ def test_eligibility_excludes_exotic_layers(qapp):
     assert doc._composite_eligible_for_partial() is False
     doc.layers[0].clipping = False
 
-    doc.layers[0].layer_type = "adjustment"
+    doc.layers[0] = doc.layers[0].convert_to(AdjustmentLayer)
     assert doc._composite_eligible_for_partial() is False
-    doc.layers[0].layer_type = "artboard"
+    doc.layers[0] = doc.layers[0].convert_to(ArtboardLayer)
     assert doc._composite_eligible_for_partial() is False
-    doc.layers[0].layer_type = "raster"
+    doc.layers[0] = doc.layers[0].convert_to(RasterLayer)
 
     assert doc._composite_eligible_for_partial() is True
     doc.quick_mask_layer = doc.layers[0].copy(deep_image=False)
@@ -234,3 +235,113 @@ def test_incremental_matches_full_via_real_brush_tool(qapp):
     doc.invalidate_composite()
     full = doc.get_composite()
     assert _digest(incremental) == _digest(full)
+
+
+# --- Characterization tests below: pin TODAY's behavior of render paths not
+# covered above (adjustment layers, frame layers, clipping chains, the
+# layer-style offset shift), ahead of refactoring `_render_composite` into
+# `Layer.render_into`. These are regression nets, not correctness specs —
+# the exact digests/pixels were captured from the current code.
+
+def test_adjustment_layer_no_mask(qapp):
+    doc = Document(100, 80)
+    doc.layers[0].image.fill(QColor(120, 130, 140, 255))
+    adj = doc.add_layer(layer_cls=AdjustmentLayer)
+    adj.adjustment_data = {"type": "brightness_contrast", "brightness": 40, "contrast": 0}
+    doc.invalidate_composite()
+    comp = doc.get_composite()
+    assert QColor(comp.pixel(50, 40)).getRgb() == (222, 232, 242, 255)
+    assert _digest(comp) == "0f21ec5167a6316a2394c842605fc2b4"
+
+
+def test_adjustment_layer_with_mask(qapp):
+    doc = Document(100, 80)
+    doc.layers[0].image.fill(QColor(120, 130, 140, 255))
+    adj = doc.add_layer(layer_cls=AdjustmentLayer)
+    adj.adjustment_data = {"type": "brightness_contrast", "brightness": 40, "contrast": 0}
+    mask = QImage(100, 80, QImage.Format.Format_ARGB32_Premultiplied)
+    mask.fill(QColor(255, 255, 255, 255))
+    mp = QPainter(mask)
+    mp.fillRect(50, 0, 50, 80, QColor(0, 0, 0, 255))
+    mp.end()
+    adj.mask = mask
+    doc.invalidate_composite()
+    comp = doc.get_composite()
+    assert QColor(comp.pixel(25, 40)).getRgb() == (222, 232, 242, 255)  # masked in: adjusted
+    assert QColor(comp.pixel(75, 40)).getRgb() == (120, 130, 140, 255)  # masked out: untouched
+    assert _digest(comp) == "29a32073f3d4f648530a01401c07fe57"
+
+
+def test_frame_layer_empty_placeholder(qapp):
+    doc = Document(100, 80)
+    frame = doc.add_layer(layer_cls=FrameLayer)
+    frame.frame_data = {"rect": QRectF(10, 10, 40, 30), "shape": "rect"}
+    frame.image = QImage(1, 1, QImage.Format.Format_ARGB32_Premultiplied)  # empty sentinel, see tools/frame_tool.py
+    doc.invalidate_composite()
+    comp = doc.get_composite()
+    assert QColor(comp.pixel(30, 25)).getRgb() == (150, 150, 150, 255)  # placeholder fill/lines
+    assert QColor(comp.pixel(5, 5)).getRgb() == (255, 255, 255, 255)  # outside: background shows
+    assert _digest(comp) == "ab7d0bf369a55db9ad9e7d70545f4be4"
+
+
+def test_frame_layer_with_image(qapp):
+    doc = Document(100, 80)
+    frame = doc.add_layer(layer_cls=FrameLayer)
+    frame.frame_data = {"rect": QRectF(10, 10, 40, 30), "shape": "rect"}
+    img = QImage(40, 30, QImage.Format.Format_ARGB32_Premultiplied)
+    img.fill(QColor(10, 200, 10, 255))
+    frame.image = img
+    doc.invalidate_composite()
+    comp = doc.get_composite()
+    assert QColor(comp.pixel(30, 25)).getRgb() == (10, 200, 10, 255)
+    assert _digest(comp) == "e9a4c284ad43aea657fd01fc7d72df6e"
+
+
+def test_clipping_chain_of_three(qapp):
+    doc = Document(100, 80)
+    doc.layers[0].image.fill(QColor(255, 255, 255, 255))
+
+    base = doc.add_layer()
+    base.image.fill(QColor(0, 0, 0, 0))
+    p = QPainter(base.image)
+    p.fillRect(0, 0, 60, 80, QColor(200, 0, 0, 255))
+    p.end()
+
+    clip1 = doc.add_layer()
+    clip1.clipping = True
+    clip1.image.fill(QColor(0, 200, 0, 128))
+
+    clip2 = doc.add_layer()
+    clip2.clipping = True
+    clip2.image.fill(QColor(0, 0, 0, 0))
+    p2 = QPainter(clip2.image)
+    p2.fillRect(0, 0, 30, 80, QColor(0, 0, 200, 200))
+    p2.end()
+
+    doc.invalidate_composite()
+    comp = doc.get_composite()
+    assert QColor(comp.pixel(10, 40)).getRgb() == (22, 22, 157, 255)   # all 3 clipped-in
+    assert QColor(comp.pixel(40, 40)).getRgb() == (100, 100, 0, 255)  # base+clip1 only
+    assert QColor(comp.pixel(70, 40)).getRgb() == (255, 255, 255, 255)  # outside base's clip source
+    assert _digest(comp) == "570e44fd9565778a2e55b8989aeecdac"
+
+
+def test_layer_style_offset_edge_modes(qapp):
+    expected = {
+        "wrap": ((255, 0, 0, 255), (0, 0, 0, 255), "068935fc4e59132937f5f4ccf91989b6"),
+        "repeat": ((0, 0, 0, 255), (0, 0, 0, 255), "0caff2000a4adbd70f4b91e07d01fe77"),
+        "transparent": ((0, 0, 0, 255), (0, 0, 0, 255), "0caff2000a4adbd70f4b91e07d01fe77"),
+    }
+    for mode, (px5, px40, dig) in expected.items():
+        doc = Document(60, 40)
+        l = doc.layers[0]
+        l.image.fill(QColor(0, 0, 0, 0))
+        p = QPainter(l.image)
+        p.fillRect(0, 0, 20, 40, QColor(255, 0, 0, 255))
+        p.end()
+        l.layer_styles = {"offset": {"enabled": True, "dx_pct": 80, "dy_pct": 0, "edge_mode": mode}}
+        doc.invalidate_composite()
+        comp = doc.get_composite()
+        assert QColor(comp.pixel(5, 20)).getRgb() == px5, mode
+        assert QColor(comp.pixel(40, 20)).getRgb() == px40, mode
+        assert _digest(comp) == dig, mode

@@ -2,6 +2,7 @@ from PyQt6.QtCore import QPoint, Qt, QRect
 from PyQt6.QtGui import QImage
 from tools.base_tool import BaseTool
 from core.locale import tr
+from core.layer import ArtboardLayer
 
 class ArtboardTool(BaseTool):
     name = "Artboard"
@@ -36,8 +37,7 @@ class ArtboardTool(BaseTool):
         
         if count == 0:
             # Gather all current layers into base Artboard 1
-            bg_art = doc.add_layer(f"{tr('layer.name.artboard')} 1")
-            bg_art.layer_type = "artboard"
+            bg_art = doc.add_layer(f"{tr('layer.name.artboard')} 1", layer_cls=ArtboardLayer)
             bg_art.parent_id = None
             bg_art.artboard_rect = QRect(0, 0, doc.width, doc.height)
             bg_art.image = QImage(1, 1, QImage.Format.Format_ARGB32)
@@ -50,8 +50,7 @@ class ArtboardTool(BaseTool):
             
             count = 1
 
-        layer = doc.add_layer(f"{tr('layer.name.artboard')} {count + 1}")
-        layer.layer_type = "artboard"
+        layer = doc.add_layer(f"{tr('layer.name.artboard')} {count + 1}", layer_cls=ArtboardLayer)
         layer.parent_id = None
         layer.artboard_rect = rect
         layer.image = QImage(1, 1, QImage.Format.Format_ARGB32)

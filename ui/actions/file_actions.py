@@ -47,7 +47,7 @@ class FileActionsMixin:
                 psd = PSDImage.open(path)
                 doc = Document(psd.width, psd.height)
                 doc.layers = []
-                from core.layer import Layer
+                from core.layer import RasterLayer
                 from PyQt6.QtGui import QImage, QPainter
                 from PyQt6.QtCore import QPoint
                 for pl in psd:
@@ -58,7 +58,7 @@ class FileActionsMixin:
                     data = pil_img.tobytes("raw", "RGBA")
                     qim = QImage(data, pil_img.width, pil_img.height, QImage.Format.Format_RGBA8888).copy()
                     qim = qim.convertToFormat(QImage.Format.Format_ARGB32_Premultiplied)
-                    layer = Layer(pl.name, doc.width, doc.height)
+                    layer = RasterLayer(pl.name, doc.width, doc.height)
                     p = QPainter(layer.image)
                     p.drawImage(QPoint(pl.left, pl.top), qim)
                     p.end()
@@ -86,8 +86,8 @@ class FileActionsMixin:
         doc = Document(img.width(), img.height())
         doc.layers.clear()
         
-        from core.layer import Layer
-        layer = Layer("Background", img.width(), img.height())
+        from core.layer import RasterLayer
+        layer = RasterLayer("Background", img.width(), img.height())
         layer.image = img
         doc.layers.append(layer)
         

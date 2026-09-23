@@ -57,7 +57,7 @@ class _HistWorker(QRunnable):
                 b_hist = [0] * 256; lum_hist = [0] * 256
                 for y in range(img.height()):
                     for x in range(img.width()):
-                        c = QColor(img.pixel(x, y))
+                        c = img.pixelColor(x, y)
                         if c.alpha() > 0:
                             r_hist[c.red()] += 1; g_hist[c.green()] += 1; b_hist[c.blue()] += 1
                             lum_hist[min(255, int(0.299*c.red()+0.587*c.green()+0.114*c.blue()))] += 1
@@ -199,9 +199,8 @@ class HistogramPanel(QWidget):
         img = composite.convertToFormat(QImage.Format.Format_ARGB32)
         try:
             import numpy as np
-            ptr = img.bits()
-            ptr.setsize(img.sizeInBytes())
-            pixel_data = np.frombuffer(ptr, dtype=np.uint8).reshape(img.height(), img.width(), 4).copy()
+            from core.pixel_buffer import qimage_argb_view
+            pixel_data = qimage_argb_view(img, writable=False)[:, :img.width(), :].copy()
         except ImportError:
             pixel_data = None
 

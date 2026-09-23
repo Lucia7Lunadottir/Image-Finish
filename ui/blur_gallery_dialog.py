@@ -1,64 +1,33 @@
 import numpy as np
-import ctypes
 import math
 from PyQt6.QtWidgets import (QDialog, QVBoxLayout, QHBoxLayout, QLabel, 
                              QComboBox, QPushButton, QDialogButtonBox, QWidget)
 from PyQt6.QtCore import Qt, QPointF, QRect, QTimer
-from PyQt6.QtGui import QImage, QPainter, QColor, QPen, QBrush, QPixmap
+from PyQt6.QtGui import QImage, QPainter, QColor, QPen
 
 from core.locale import tr
 from ui.adjustments_dialog import _JumpSlider
+from ui.preview_canvas_base import PreviewCanvasBase, DragCenterMixin
 from tools.tool_utils import fast_box_blur_np
 
 from ui import theme
 
 
-class BlurGalleryCanvas(QWidget):
-    def __init__(self, dialog):
-        super().__init__()
-        self.dialog = dialog
-        self.setMouseTracking(True)
-        self.zoom = 1.0
-        self._pan = QPointF(0, 0)
-        self._panning = False
-        self._dragging_center = False
-        self._pan_last = None
-        self._space = False
-        self.setFocusPolicy(Qt.FocusPolicy.StrongFocus)
+class BlurGalleryCanvas(DragCenterMixin, PreviewCanvasBase):
+    _center_hit_radius = 20
 
-    def paintEvent(self, ev):
-        p = QPainter(self)
-        p.fillRect(self.rect(), QColor(theme.CRUST))
-        if not self.dialog.preview_img:
-            return
-            
-        w, h = self.dialog.preview_img.width(), self.dialog.preview_img.height()
-        
-        p.save()
-        p.translate(self._pan)
-        p.scale(self.zoom, self.zoom)
-        
-        # Checkerboard
-        tile = 16
-        for y in range(0, h, tile):
-            for x in range(0, w, tile):
-                c = QColor(180,180,180) if (x//tile + y//tile) % 2 == 0 else QColor(220,220,220)
-                p.fillRect(x, y, min(tile, w-x), min(tile, h-y), c)
-                
-        p.drawImage(0, 0, self.dialog.preview_img)
-        
-        # Draw UI elements (focus center)
+    def _paint_overlay_in_image_space(self, p, w, h):
         cx, cy = self.dialog.cx, self.dialog.cy
         p.setPen(QPen(QColor(255, 255, 255, 200), max(1.0, 1.5/self.zoom)))
         p.setBrush(QColor(0, 0, 0, 100))
         cr = max(4.0, 6.0/self.zoom)
         p.drawEllipse(QPointF(cx, cy), cr, cr)
         p.drawEllipse(QPointF(cx, cy), cr*3, cr*3)
-        
+
         mode = self.dialog.mode
         focus = self.dialog.focus_sl.value() / 100.0 * max(w, h) / 2.0
         trans = self.dialog.trans_sl.value() / 100.0 * max(w, h) / 2.0
-        
+
         p.setPen(QPen(QColor(255, 255, 255, 100), max(1.0, 1.0/self.zoom), Qt.PenStyle.DashLine))
         p.setBrush(Qt.BrushStyle.NoBrush)
         if mode == "iris":
@@ -67,7 +36,7 @@ class BlurGalleryCanvas(QWidget):
         elif mode in ("tilt_shift", "path"):
             p.translate(cx, cy)
             p.rotate(-self.dialog.angle_sl.value())
-            
+
             if mode == "tilt_shift":
                 p.drawLine(QPointF(-w*2, -focus), QPointF(w*2, -focus))
                 p.drawLine(QPointF(-w*2, focus), QPointF(w*2, focus))
@@ -76,62 +45,9 @@ class BlurGalleryCanvas(QWidget):
                 p.drawLine(QPointF(-w*2, focus + trans), QPointF(w*2, focus + trans))
             else: # path
                 p.drawLine(QPointF(-w*2, 0), QPointF(w*2, 0))
-                
-        p.restore()
-        p.end()
-
-    def mousePressEvent(self, ev):
-        is_pan = ev.button() == Qt.MouseButton.MiddleButton or (self._space and ev.button() == Qt.MouseButton.LeftButton)
-        if is_pan:
-            self._panning = True
-            self._pan_last = ev.position()
-            self.setCursor(Qt.CursorShape.ClosedHandCursor)
-        elif ev.button() == Qt.MouseButton.LeftButton:
-            # Check hit on center
-            pos = ev.position()
-            img_x = (pos.x() - self._pan.x()) / self.zoom
-            img_y = (pos.y() - self._pan.y()) / self.zoom
-            if math.hypot(img_x - self.dialog.cx, img_y - self.dialog.cy) < (20 / self.zoom):
-                self._dragging_center = True
-
-    def mouseMoveEvent(self, ev):
-        if self._panning and self._pan_last is not None:
-            self._pan += (ev.position() - self._pan_last)
-            self._pan_last = ev.position()
-            self.update()
-        elif self._dragging_center:
-            pos = ev.position()
-            self.dialog.cx = (pos.x() - self._pan.x()) / self.zoom
-            self.dialog.cy = (pos.y() - self._pan.y()) / self.zoom
-            self.update()
-            self.dialog._trigger_update()
-
-    def mouseReleaseEvent(self, ev):
-        self._panning = False
-        self._dragging_center = False
-        if self._space:
-            self.setCursor(Qt.CursorShape.OpenHandCursor)
-        else:
-            self.setCursor(Qt.CursorShape.ArrowCursor)
-
-    def wheelEvent(self, ev):
-        factor = 1.15 if ev.angleDelta().y() > 0 else 1 / 1.15
-        new_zoom = max(0.05, min(32.0, self.zoom * factor))
-        scale = new_zoom / self.zoom
-        pivot = ev.position()
-        self._pan = QPointF(pivot.x() - (pivot.x() - self._pan.x()) * scale, pivot.y() - (pivot.y() - self._pan.y()) * scale)
-        self.zoom = new_zoom
-        self.update()
-
-    def keyPressEvent(self, ev):
-        if ev.key() == Qt.Key.Key_Space and not ev.isAutoRepeat():
-            self._space = True
-            self.setCursor(Qt.CursorShape.OpenHandCursor)
 
     def keyReleaseEvent(self, ev):
-        if ev.key() == Qt.Key.Key_Space and not ev.isAutoRepeat():
-            self._space = False
-            self.setCursor(Qt.CursorShape.ArrowCursor)
+        super().keyReleaseEvent(ev)
         self.update()
 
 
@@ -146,15 +62,11 @@ class BlurGalleryDialog(QDialog):
         self.mode = mode
         self.canvas_refresh = canvas_refresh
         
-        self.orig_img = layer.image.copy()
-        self.preview_img = layer.image.copy()
+        from ui.preview_canvas_base import init_live_preview_arrays
+        init_live_preview_arrays(self, layer)
         self.cx = self.orig_img.width() / 2.0
         self.cy = self.orig_img.height() / 2.0
-        
-        ptr = self.orig_img.constBits()
-        buf = (ctypes.c_uint8 * self.orig_img.sizeInBytes()).from_address(int(ptr))
-        self.orig_arr = np.ndarray((self.orig_img.height(), self.orig_img.bytesPerLine() // 4, 4), dtype=np.uint8, buffer=buf)[:, :self.orig_img.width(), :].copy()
-        
+
         self.blurred_cache = None
         self.last_blur_radius = -1
         
@@ -301,9 +213,8 @@ class BlurGalleryDialog(QDialog):
             if step_alpha > 0:
                 max_possible = step_alpha * steps
                 if max_possible < 255:
-                    ptr = res_img.bits()
-                    buf = (ctypes.c_uint8 * res_img.sizeInBytes()).from_address(int(ptr))
-                    arr = np.ndarray((h, w, 4), dtype=np.uint8, buffer=buf)
+                    from core.pixel_buffer import qimage_argb_view
+                    arr = qimage_argb_view(res_img, writable=True)[:, :w, :]
                     ratio = 255.0 / max_possible
                     arr[...] = np.clip(arr.astype(np.float32) * ratio, 0, 255).astype(np.uint8)
                     
@@ -312,5 +223,13 @@ class BlurGalleryDialog(QDialog):
         self.canvas.update()
 
     def accept(self):
-        self.layer.image = self.preview_img
-        super().accept()
+        from ui.preview_canvas_base import run_full_res_commit
+        # blurred_cache is keyed only by radius, not array shape — it's
+        # still sized to the downscaled preview at this point and would
+        # otherwise broadcast-mismatch against the restored full-res
+        # orig_arr, so it's invalidated via pre_apply (cheap, stays
+        # synchronous) before the threaded _apply_effect() re-runs.
+        if run_full_res_commit(self, self._apply_effect, scale_attrs=("cx", "cy"),
+                                pre_apply=lambda: setattr(self, "blurred_cache", None)):
+            self.layer.image = self.preview_img
+            super().accept()

@@ -1,5 +1,5 @@
 from PyQt6.QtWidgets import QMessageBox
-from PyQt6.QtGui import QPainter, QColor
+from PyQt6.QtGui import QPainter, QColor, QImage
 from PyQt6.QtCore import Qt
 from core.locale import tr
 from ui.document_controller import require_document
@@ -42,12 +42,48 @@ class LayerActionsMixin:
         self._refresh_layers()
         self._canvas_refresh()
 
+    def _fit_text_layer(self, layer, text: str, opts: dict, doc_x: int, doc_y: int,
+                        clip, vertical: bool) -> None:
+        """Sizes `layer.image` tightly around the text's own bounding box
+        and positions it via `layer.offset`, instead of always allocating
+        a full document-sized image at absolute coordinates — the old
+        approach silently, permanently clipped any glyph past the canvas
+        edge (nothing past the fixed image bounds was ever rendered at
+        all). The compositor already draws every layer at `layer.offset`
+        (core/document.py, exercised by crop/move already), so a
+        smaller-than-canvas layer is not a new concept here.
+
+        `doc_x`/`doc_y` (and `text_data["x"]/["y"]`, which must keep this
+        exact meaning — re-edit anchor recovery, hit-testing and
+        move_tool.py all read them as document-space) stay document-space;
+        only the actual pixel draw position and the selection clip shift
+        by `-layer.offset` to land correctly inside the now-smaller image.
+        """
+        from core.text_layout import TextLayout
+        stroke_w = int(opts.get("text_stroke_w", 0))
+        shadow_pad = 0
+        if opts.get("text_shadow", False):
+            shadow_pad = max(abs(int(opts.get("text_shadow_dx", 3))),
+                             abs(int(opts.get("text_shadow_dy", 3))))
+        padding = 4 + stroke_w + shadow_pad
+
+        layout = TextLayout(text, opts, vertical=vertical)
+        bounds = layout.bounding_rect(doc_x, doc_y, padding=padding)
+
+        layer.image = QImage(max(1, bounds.width()), max(1, bounds.height()),
+                             QImage.Format.Format_ARGB32_Premultiplied)
+        layer.image.fill(Qt.GlobalColor.transparent)
+        layer.offset = bounds.topLeft()
+
+        local_clip = clip.translated(-bounds.left(), -bounds.top()) if clip else None
+        layout.draw(layer.image, doc_x - bounds.left(), doc_y - bounds.top(), local_clip)
+
     @require_document
     def _commit_text_edit(self, layer, text: str, font_opts: dict, doc_anchor, vertical: bool = False):
         """Bakes the CanvasWidget's on-canvas text editor result into a text
         layer's pixels and records one undo step. `layer` is None when the
         editor was creating a brand-new text layer."""
-        from tools.text_tool import _render_text, _render_text_vertical, TextTool
+        from tools.text_tool import TextTool
 
         doc = self._document
         text = text.strip()
@@ -57,26 +93,24 @@ class LayerActionsMixin:
         idx = doc.layers.index(layer) if layer is not None and layer in doc.layers else None
         self._push_history(tr("history.edit_text") if layer is not None else tr("history.add_text"), idx)
 
-        render = _render_text_vertical if vertical else _render_text
         clip = doc.selection if (doc.selection and not doc.selection.isEmpty()) else None
 
         if layer is not None:
             if not text:
                 doc.remove_layer(idx)
             else:
-                layer.image.fill(Qt.GlobalColor.transparent)
                 td = layer.text_data
-                render(layer.image, td["x"], td["y"], text, font_opts, clip)
+                self._fit_text_layer(layer, text, font_opts, td["x"], td["y"], clip, vertical)
                 merged = {**td, "text": text, **TextTool._snap_opts(font_opts)}
                 if vertical:
                     merged["vertical"] = True
                 layer.text_data = merged
         else:
-            from core.layer import Layer
-            n = sum(1 for l in doc.layers if l.text_data) + 1
-            new_layer = Layer(f"Text {n}", doc.width, doc.height)
-            new_layer.layer_type = "text"
-            render(new_layer.image, doc_anchor.x(), doc_anchor.y(), text, font_opts, clip)
+            from core.layer import TextLayer
+            n = sum(1 for l in doc.layers if getattr(l, "text_data", None)) + 1
+            new_layer = TextLayer(f"Text {n}", doc.width, doc.height)
+            self._fit_text_layer(new_layer, text, font_opts, doc_anchor.x(), doc_anchor.y(),
+                                 clip, vertical)
             new_layer.text_data = {"text": text, "x": doc_anchor.x(), "y": doc_anchor.y(),
                                    **TextTool._snap_opts(font_opts)}
             if vertical:
@@ -272,10 +306,10 @@ class LayerActionsMixin:
 
     def _new_adj_layer(self, adj_type: str = "brightness_contrast"):
         if not self._document: return
+        from core.layer import AdjustmentLayer
         idx = self._document.active_layer_index
         self._push_history(tr("history.new_adj_layer"))  # snapshot BEFORE adding
-        layer = self._document.add_layer(tr("layer.name.adjustment"), idx + 1)
-        layer.layer_type = "adjustment"
+        layer = self._document.add_layer(tr("layer.name.adjustment"), idx + 1, layer_cls=AdjustmentLayer)
         layer.adjustment_data = {"type": adj_type}
 
         dlg = self._get_adj_dialog(layer, adj_type)
@@ -307,15 +341,14 @@ class LayerActionsMixin:
     @require_document
     def _new_fill_layer(self, fill_type: str = "solid"):
         from ui.fill_layer_dialog import FillLayerDialog
-        from core.layer import Layer
+        from core.layer import FillLayer
         init = {"type": fill_type, "color": QColor(128, 128, 128)}
         dlg = FillLayerDialog(init, self)
         if not dlg.exec():
             return
         self._push_history(tr("history.new_fill_layer"))
         data = dlg.result_data()
-        layer = Layer(tr("layer.name.fill"), self._document.width, self._document.height)
-        layer.layer_type = "fill"
+        layer = FillLayer(tr("layer.name.fill"), self._document.width, self._document.height)
         layer.fill_data = data
         i = self._document.active_layer_index + 1
         self._document.layers.insert(i, layer)
@@ -365,10 +398,9 @@ class LayerActionsMixin:
         if not layer or getattr(layer, "layer_type", "raster") == "smart_object":
             return
         self._push_history(tr("history.new_smart_object"))
-        layer.layer_type = "smart_object"
-        if not hasattr(layer, "smart_data") or layer.smart_data is None:
-            layer.smart_data = {}
-        layer.smart_data["original"] = layer.image.copy()
+        from core.layer import SmartObjectLayer
+        layer = self._document.replace_layer(layer, layer.convert_to(SmartObjectLayer))
+        layer.smart_data = {"original": layer.image.copy()}
         self._refresh_layers()
         self._canvas_refresh()
 
@@ -389,17 +421,16 @@ class LayerActionsMixin:
             return
         self._push_history(tr("history.rasterize_layer"))
         ltype = layer.layer_type
+        rendered = None
         if ltype == "fill":
             from core.document import _render_fill_layer
-            layer.image = _render_fill_layer(layer, self._document.width,
-                                             self._document.height)
+            rendered = _render_fill_layer(layer, self._document.width,
+                                          self._document.height)
+        from core.layer import RasterLayer
+        layer = self._document.replace_layer(layer, layer.convert_to(RasterLayer))
+        if ltype == "fill":
+            layer.image = rendered
         elif ltype == "adjustment":
             layer.image.fill(0)
-        layer.layer_type = "raster"
-        layer.adjustment_data = None
-        layer.fill_data = None
-        layer.shape_data = None
-        layer.text_data = None
-        layer.smart_data = None
         self._refresh_layers()
         self._canvas_refresh()

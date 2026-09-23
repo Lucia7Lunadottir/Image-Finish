@@ -6,7 +6,7 @@ pkgdesc="A PyQt6 image editor inspired by Photoshop"
 arch=('any')
 url="https://github.com/Lucia7Lunadottir/Image-Finish"
 license=('MIT')
-depends=('python' 'python-pyqt6' 'python-numpy')
+depends=('python' 'python-pyqt6' 'python-numpy' 'python-pyopengl')
 makedepends=('git')
 
 # ВАЖНО: жестко привязываем ветку исходников к текущему тегу версии

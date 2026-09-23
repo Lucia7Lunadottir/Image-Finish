@@ -6,13 +6,12 @@ position, so re-editing the layer afterwards redrew it in the wrong spot.
 from PyQt6.QtCore import QRect, QPoint
 
 from core.document import Document
-from core.layer import Layer
+from core.layer import TextLayer, VectorLayer
 
 
 def test_crop_shifts_text_anchor_to_match_new_local_origin():
     doc = Document(100, 100)
-    layer = Layer("Text 1", 100, 100)
-    layer.layer_type = "text"
+    layer = TextLayer("Text 1", 100, 100)
     layer.text_data = {"text": "Hi", "x": 40, "y": 40, "font_size": 24}
     doc.layers.append(layer)
     doc.active_layer_index = len(doc.layers) - 1
@@ -28,8 +27,7 @@ def test_crop_shifts_text_anchor_to_match_new_local_origin():
 
 def test_crop_shifts_shape_anchor_rect_start_end():
     doc = Document(100, 100)
-    layer = Layer("Shape 1", 100, 100)
-    layer.layer_type = "vector"
+    layer = VectorLayer("Shape 1", 100, 100)
     layer.shape_data = {
         "shape": "rect", "rect": (30, 30, 20, 20),
         "start": (30, 30), "end": (50, 50),

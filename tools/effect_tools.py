@@ -257,7 +257,7 @@ class SmudgeTool(BrushEffectTool):
             x = pos.x() - layer.offset.x()
             y = pos.y() - layer.offset.y()
             if 0 <= x < layer.width() and 0 <= y < layer.height():
-                self._color = QColor(layer.image.pixel(x, y))
+                self._color = layer.image.pixelColor(x, y)
             else:
                 self._color = QColor(0, 0, 0, 0)
 
@@ -310,7 +310,7 @@ class SmudgeTool(BrushEffectTool):
         p.drawLine(start, QPoint(cx, cy))
         p.end()
         if 0 <= cx < layer.width() and 0 <= cy < layer.height():
-            orig = QColor(layer.image.pixel(cx, cy))
+            orig = layer.image.pixelColor(cx, cy)
             self._color = QColor(
                 int(orig.red()   * (1-strength) + self._color.red()   * strength),
                 int(orig.green() * (1-strength) + self._color.green() * strength),

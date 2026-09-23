@@ -65,7 +65,7 @@ class WarpTool(BaseTool):
 
         layer = doc.get_active_layer()
         if not layer or layer.locked: return
-        if getattr(layer, "layer_type", "raster") in ("artboard", "group"): return
+        if layer._is_container: return
 
         sel = doc.selection
         has_sel = sel and not sel.isEmpty()
@@ -79,40 +79,17 @@ class WarpTool(BaseTool):
             self._offset_backup = QPoint(layer.offset)
 
             if has_sel:
+                from tools.tool_utils import cut_floating_selection
                 self._is_floating = True
                 self._bounds = sel.boundingRect()
-                br = self._bounds.toRect()
-                local_br = br.translated(-layer.offset).intersected(layer.image.rect())
-                if local_br.isEmpty():
+
+                original_img, original_offset, sel_origin, ok = cut_floating_selection(layer, sel)
+                if not ok:
                     self.is_transforming = False
                     return
-                
-                self._original_img = layer.image.copy(local_br)
-                self._original_offset = layer.offset + local_br.topLeft()
-                self._sel_origin = QPainterPath(sel)
-
-                mask_img = QImage(local_br.width(), local_br.height(), QImage.Format.Format_Grayscale8)
-                mask_img.fill(0)
-                p = QPainter(mask_img)
-                p.translate(-self._original_offset.x(), -self._original_offset.y())
-                p.fillPath(sel, QColor(255, 255, 255))
-                p.end()
-
-                m_ptr = mask_img.bits(); m_ptr.setsize(mask_img.sizeInBytes())
-                m_arr = np.ndarray((local_br.height(), mask_img.bytesPerLine()), dtype=np.uint8, buffer=m_ptr)
-                mask_f = m_arr[:, :local_br.width()].astype(np.float32) / 255.0
-
-                f_ptr = self._original_img.bits(); f_ptr.setsize(self._original_img.sizeInBytes())
-                f_arr = np.ndarray((local_br.height(), self._original_img.bytesPerLine() // 4, 4), dtype=np.uint8, buffer=f_ptr)
-                for c in range(4): f_arr[:local_br.height(), :local_br.width(), c] = (f_arr[:local_br.height(), :local_br.width(), c] * mask_f).astype(np.uint8)
-
-                l_ptr = layer.image.bits(); l_ptr.setsize(layer.image.sizeInBytes())
-                l_arr = np.ndarray((layer.height(), layer.image.bytesPerLine() // 4, 4), dtype=np.uint8, buffer=l_ptr)
-
-                inv_mask_f = 1.0 - mask_f
-                sy, sx = local_br.y(), local_br.x()
-                l_roi = l_arr[sy:sy+local_br.height(), sx:sx+local_br.width()]
-                for c in range(4): l_roi[..., c] = (l_roi[..., c] * inv_mask_f).astype(np.uint8)
+                self._original_img = original_img
+                self._original_offset = original_offset
+                self._sel_origin = sel_origin
             else:
                 self._is_floating = False
                 br = Document._nontransparent_bounds(layer.image)

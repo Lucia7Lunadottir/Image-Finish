@@ -6,6 +6,7 @@ from PyQt6.QtGui import QColor, QFont, QPixmap, QPainter
 from core.locale import tr
 
 from ui import theme
+from ui.text_style_widgets import make_style_toggle_btn
 
 def LABEL_STYLE():
     return (f"color:{theme.SUBTEXT};font-size:11px;background:transparent;")
@@ -101,36 +102,23 @@ class CharacterPanel(QWidget):
         style_lo.setContentsMargins(0, 0, 0, 0)
         style_lo.setSpacing(4)
 
-        self._btn_bold = QPushButton("B")
-        self._btn_bold.setCheckable(True)
-        bold_font = QFont()
-        bold_font.setBold(True)
-        self._btn_bold.setFont(bold_font)
-        self._btn_bold.setFixedSize(28, 28)
-        theme.apply_style(self._btn_bold, TOGGLE_BTN_STYLE)
-        self._btn_bold.toggled.connect(lambda v: self.option_changed.emit("font_bold", v))
+        bold_font = QFont(); bold_font.setBold(True)
+        ital_font = QFont(); ital_font.setItalic(True)
+        under_font = QFont(); under_font.setUnderline(True)
+        strike_font = QFont(); strike_font.setStrikeOut(True)
 
-        self._btn_italic = QPushButton("I")
-        self._btn_italic.setCheckable(True)
-        ital_font = QFont()
-        ital_font.setItalic(True)
-        self._btn_italic.setFont(ital_font)
-        self._btn_italic.setFixedSize(28, 28)
-        theme.apply_style(self._btn_italic, TOGGLE_BTN_STYLE)
-        self._btn_italic.toggled.connect(lambda v: self.option_changed.emit("font_italic", v))
+        self._btn_bold = make_style_toggle_btn("B", bold_font)
+        self._btn_italic = make_style_toggle_btn("I", ital_font)
+        self._btn_underline = make_style_toggle_btn("U", under_font)
+        self._btn_strikeout = make_style_toggle_btn("S", strike_font)
 
-        self._btn_underline = QPushButton("U")
-        self._btn_underline.setCheckable(True)
-        under_font = QFont()
-        under_font.setUnderline(True)
-        self._btn_underline.setFont(under_font)
-        self._btn_underline.setFixedSize(28, 28)
-        theme.apply_style(self._btn_underline, TOGGLE_BTN_STYLE)
-        self._btn_underline.toggled.connect(lambda v: self.option_changed.emit("font_underline", v))
-
-        style_lo.addWidget(self._btn_bold)
-        style_lo.addWidget(self._btn_italic)
-        style_lo.addWidget(self._btn_underline)
+        for btn, key in ((self._btn_bold, "font_bold"),
+                        (self._btn_italic, "font_italic"),
+                        (self._btn_underline, "font_underline"),
+                        (self._btn_strikeout, "font_strikeout")):
+            theme.apply_style(btn, TOGGLE_BTN_STYLE)
+            btn.toggled.connect(lambda v, k=key: self.option_changed.emit(k, v))
+            style_lo.addWidget(btn)
 
         # Color button
         self._current_color = QColor(0, 0, 0)
@@ -261,17 +249,13 @@ class CharacterPanel(QWidget):
         self._size_spin.setValue(int(opts.get("font_size", 24)))
         self._size_spin.blockSignals(False)
 
-        self._btn_bold.blockSignals(True)
-        self._btn_bold.setChecked(bool(opts.get("font_bold", False)))
-        self._btn_bold.blockSignals(False)
-
-        self._btn_italic.blockSignals(True)
-        self._btn_italic.setChecked(bool(opts.get("font_italic", False)))
-        self._btn_italic.blockSignals(False)
-
-        self._btn_underline.blockSignals(True)
-        self._btn_underline.setChecked(bool(opts.get("font_underline", False)))
-        self._btn_underline.blockSignals(False)
+        for btn, key in ((self._btn_bold, "font_bold"),
+                        (self._btn_italic, "font_italic"),
+                        (self._btn_underline, "font_underline"),
+                        (self._btn_strikeout, "font_strikeout")):
+            btn.blockSignals(True)
+            btn.setChecked(bool(opts.get(key, False)))
+            btn.blockSignals(False)
 
         color = opts.get("text_color", QColor(0, 0, 0))
         if isinstance(color, str):

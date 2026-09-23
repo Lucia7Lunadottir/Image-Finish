@@ -1,6 +1,5 @@
 from PyQt6.QtWidgets import (QWidget, QVBoxLayout, QHBoxLayout, QLabel,
-                             QSpinBox, QFrame, QToolButton, QButtonGroup,
-                             QSizePolicy)
+                             QFrame, QToolButton, QButtonGroup, QSizePolicy)
 from PyQt6.QtCore import Qt, pyqtSignal
 from core.locale import tr
 
@@ -8,12 +7,6 @@ from ui import theme
 
 def LABEL_STYLE():
     return (f"color:{theme.SUBTEXT};font-size:11px;background:transparent;")
-def SPIN_STYLE():
-    return (
-    f"QSpinBox{{background:{theme.SURFACE0};color:{theme.TEXT};border:none;"
-                  "padding:2px 4px;border-radius:3px;}"
-                  "QSpinBox::up-button,QSpinBox::down-button{width:14px;}"
-    )
 def HEADER_STYLE():
     return (
     f"color:{theme.MUTED};font-size:10px;font-weight:bold;letter-spacing:1px;"
@@ -35,18 +28,16 @@ def _make_sep():
     return f
 
 
-def _spin_row(label_widget, spin_widget):
-    row = QWidget()
-    lo = QHBoxLayout(row)
-    lo.setContentsMargins(0, 0, 0, 0)
-    lo.setSpacing(6)
-    lo.addWidget(label_widget)
-    lo.addStretch()
-    lo.addWidget(spin_widget)
-    return row
-
-
 class ParagraphPanel(QWidget):
+    """Paragraph-level text formatting. Deliberately just alignment: this
+    app's text layers are single click-to-place blocks, not InDesign-style
+    reflowing paragraph boxes, so indents / space-before / space-after
+    controls that used to live here had no layout model to act on and did
+    nothing — removed rather than left as decoration. Alignment is real:
+    `option_changed("text_align", ...)`
+    reaches `text_data` via `TextTool._snap_opts` and is applied by
+    `core.text_layout.TextLayout`."""
+
     option_changed = pyqtSignal(str, object)
 
     def __init__(self, parent=None):
@@ -73,10 +64,10 @@ class ParagraphPanel(QWidget):
         align_lo.setContentsMargins(0, 0, 0, 0)
         align_lo.setSpacing(4)
 
-        self._btn_left    = QToolButton(); self._btn_left.setText("\u2261 L")
-        self._btn_center  = QToolButton(); self._btn_center.setText("\u2261 C")
-        self._btn_right   = QToolButton(); self._btn_right.setText("\u2261 R")
-        self._btn_justify = QToolButton(); self._btn_justify.setText("\u2261 J")
+        self._btn_left    = QToolButton(); self._btn_left.setText("≡ L")
+        self._btn_center  = QToolButton(); self._btn_center.setText("≡ C")
+        self._btn_right   = QToolButton(); self._btn_right.setText("≡ R")
+        self._btn_justify = QToolButton(); self._btn_justify.setText("≡ J")
 
         self._align_btns = {
             "left":    self._btn_left,
@@ -100,71 +91,6 @@ class ParagraphPanel(QWidget):
 
         self._btn_left.setChecked(True)
         layout.addWidget(align_row)
-        layout.addWidget(_make_sep())
-
-        # ---------- Indent controls ----------
-        self._indent_left_lbl = QLabel("Left Indent:")
-        theme.apply_style(self._indent_left_lbl, LABEL_STYLE)
-        self._indent_left_spin = QSpinBox()
-        self._indent_left_spin.setRange(0, 999)
-        self._indent_left_spin.setValue(0)
-        self._indent_left_spin.setSuffix(" px")
-        theme.apply_style(self._indent_left_spin, SPIN_STYLE)
-        self._indent_left_spin.setFixedWidth(72)
-        self._indent_left_spin.valueChanged.connect(
-            lambda v: self.option_changed.emit("text_indent_left", v))
-        layout.addWidget(_spin_row(self._indent_left_lbl, self._indent_left_spin))
-
-        self._indent_right_lbl = QLabel("Right Indent:")
-        theme.apply_style(self._indent_right_lbl, LABEL_STYLE)
-        self._indent_right_spin = QSpinBox()
-        self._indent_right_spin.setRange(0, 999)
-        self._indent_right_spin.setValue(0)
-        self._indent_right_spin.setSuffix(" px")
-        theme.apply_style(self._indent_right_spin, SPIN_STYLE)
-        self._indent_right_spin.setFixedWidth(72)
-        self._indent_right_spin.valueChanged.connect(
-            lambda v: self.option_changed.emit("text_indent_right", v))
-        layout.addWidget(_spin_row(self._indent_right_lbl, self._indent_right_spin))
-
-        self._indent_first_lbl = QLabel("First Line:")
-        theme.apply_style(self._indent_first_lbl, LABEL_STYLE)
-        self._indent_first_spin = QSpinBox()
-        self._indent_first_spin.setRange(-999, 999)
-        self._indent_first_spin.setValue(0)
-        self._indent_first_spin.setSuffix(" px")
-        theme.apply_style(self._indent_first_spin, SPIN_STYLE)
-        self._indent_first_spin.setFixedWidth(72)
-        self._indent_first_spin.valueChanged.connect(
-            lambda v: self.option_changed.emit("text_indent_first", v))
-        layout.addWidget(_spin_row(self._indent_first_lbl, self._indent_first_spin))
-
-        layout.addWidget(_make_sep())
-
-        # ---------- Spacing controls ----------
-        self._space_before_lbl = QLabel("Before \u00b6:")
-        theme.apply_style(self._space_before_lbl, LABEL_STYLE)
-        self._space_before_spin = QSpinBox()
-        self._space_before_spin.setRange(0, 999)
-        self._space_before_spin.setValue(0)
-        self._space_before_spin.setSuffix(" px")
-        theme.apply_style(self._space_before_spin, SPIN_STYLE)
-        self._space_before_spin.setFixedWidth(72)
-        self._space_before_spin.valueChanged.connect(
-            lambda v: self.option_changed.emit("text_space_before", v))
-        layout.addWidget(_spin_row(self._space_before_lbl, self._space_before_spin))
-
-        self._space_after_lbl = QLabel("After \u00b6:")
-        theme.apply_style(self._space_after_lbl, LABEL_STYLE)
-        self._space_after_spin = QSpinBox()
-        self._space_after_spin.setRange(0, 999)
-        self._space_after_spin.setValue(0)
-        self._space_after_spin.setSuffix(" px")
-        theme.apply_style(self._space_after_spin, SPIN_STYLE)
-        self._space_after_spin.setFixedWidth(72)
-        self._space_after_spin.valueChanged.connect(
-            lambda v: self.option_changed.emit("text_space_after", v))
-        layout.addWidget(_spin_row(self._space_after_lbl, self._space_after_spin))
 
         layout.addStretch(1)
 
@@ -182,33 +108,7 @@ class ParagraphPanel(QWidget):
             btn.setChecked(True)
             btn.blockSignals(False)
 
-        def _set_spin(spin, key, default=0):
-            spin.blockSignals(True)
-            spin.setValue(int(opts.get(key, default)))
-            spin.blockSignals(False)
-
-        _set_spin(self._indent_left_spin,   "text_indent_left",   0)
-        _set_spin(self._indent_right_spin,  "text_indent_right",  0)
-        _set_spin(self._indent_first_spin,  "text_indent_first",  0)
-        _set_spin(self._space_before_spin,  "text_space_before",  0)
-        _set_spin(self._space_after_spin,   "text_space_after",   0)
-
     def retranslate(self):
         self._header_lbl.setText(
             tr("para.title") if tr("para.title") != "para.title" else "PARAGRAPH"
-        )
-        self._indent_left_lbl.setText(
-            tr("para.indent_left") if tr("para.indent_left") != "para.indent_left" else "Left Indent:"
-        )
-        self._indent_right_lbl.setText(
-            tr("para.indent_right") if tr("para.indent_right") != "para.indent_right" else "Right Indent:"
-        )
-        self._indent_first_lbl.setText(
-            tr("para.indent_first") if tr("para.indent_first") != "para.indent_first" else "First Line:"
-        )
-        self._space_before_lbl.setText(
-            tr("para.space_before") if tr("para.space_before") != "para.space_before" else "Before \u00b6:"
-        )
-        self._space_after_lbl.setText(
-            tr("para.space_after") if tr("para.space_after") != "para.space_after" else "After \u00b6:"
         )

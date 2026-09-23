@@ -18,10 +18,25 @@ sys.path.insert(0, os.path.dirname(os.path.abspath(__file__)))
 # Only lightweight imports before the splash goes up: the heavy ones
 # (ui.main_window, numpy, tools) happen while the banner is visible.
 from PyQt6.QtWidgets import QApplication, QSplashScreen
-from PyQt6.QtGui import QIcon, QFontDatabase, QPixmap, QColor
+from PyQt6.QtGui import QIcon, QFontDatabase, QPixmap, QColor, QSurfaceFormat
 from PyQt6.QtCore import Qt
 
 from core.app_logging import setup_logging, install_excepthook, get_logger
+
+
+def _configure_gl_surface():
+    """Request a desktop-GL 3.3 core context for the canvas's GPU compositor
+    (ui/gl_compositor.py). Must run before the QApplication is constructed —
+    Qt reads the default QSurfaceFormat when the first GL context is made.
+    Without this, Qt falls back to whatever context type the platform
+    plugin defaults to (observed: OpenGL ES on this NVIDIA/EGL setup), and
+    the compositor's GLSL 330 core shaders wouldn't compile against it."""
+    fmt = QSurfaceFormat()
+    fmt.setRenderableType(QSurfaceFormat.RenderableType.OpenGL)
+    fmt.setProfile(QSurfaceFormat.OpenGLContextProfile.CoreProfile)
+    fmt.setVersion(3, 3)
+    fmt.setSwapInterval(1)
+    QSurfaceFormat.setDefaultFormat(fmt)
 
 logger = get_logger("main")
 
@@ -71,6 +86,7 @@ def _splash_message(app, splash, text):
 
 def main():
     setup_logging()
+    _configure_gl_surface()
     app = QApplication(sys.argv)
     install_excepthook(app)
     app.setApplicationName("ImageFinish")

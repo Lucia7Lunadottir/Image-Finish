@@ -1,8 +1,9 @@
 import math
-from PyQt6.QtCore import QPoint, QPointF, QRect, QRectF, Qt
+from PyQt6.QtCore import QPoint, QPointF, QRectF, Qt
 from PyQt6.QtGui import QColor, QPainter, QImage, QPainterPath, QTransform, QPen, QPolygonF
 from tools.base_tool import BaseTool
 from core.document import Document
+from core.layer import TextLayer
 
 
 class MoveTool(BaseTool):
@@ -52,7 +53,7 @@ class MoveTool(BaseTool):
             'bl': pts[3],
             'l':  (pts[3] + pts[0]) / 2.0,
         }
-        
+
         # Get the current zoom factor from options to calculate accurate screen distances
         current_zoom = max(0.01, opts.get("_zoom", 1.0))
         
@@ -148,10 +149,10 @@ class MoveTool(BaseTool):
                         res.extend(get_descendants(getattr(l, "layer_id", None)))
                 return res
                 
-            if target_id and getattr(layer, "layer_type", "raster") in ("artboard", "group"):
+            if target_id and layer._is_container:
                 for kid in get_descendants(target_id):
                     self._linked_children.append({"layer": kid, "backup_offset": QPoint(kid.offset)})
-                    
+
             link_id = getattr(layer, "link_id", None)
             if link_id:
                 for l in doc.layers:
@@ -160,105 +161,37 @@ class MoveTool(BaseTool):
                             self._linked_children.append({"layer": l, "backup_offset": QPoint(l.offset)})
 
             sel = doc.selection
-            if getattr(layer, "layer_type", "raster") in ("artboard", "group"):
+            if layer._is_container:
                 self._is_floating = False
-                if getattr(layer, "layer_type", "raster") == "artboard":
-                    self._bounds = QRectF(getattr(layer, "artboard_rect", QRect()))
-                    self._original_rect = QRect(getattr(layer, "artboard_rect", QRect()))
-                else:
-                    union_br = QRectF()
-                    for k_data in self._linked_children:
-                        kid = k_data["layer"]
-                        if kid.image and not kid.image.isNull():
-                            br = Document._nontransparent_bounds(kid.image)
-                            if not br.isEmpty():
-                                union_br = union_br.united(QRectF(br).translated(QPointF(kid.offset)))
-                    if union_br.isEmpty():
-                        union_br = QRectF(layer.offset.x(), layer.offset.y(), 100, 100)
-                    self._bounds = union_br
-                    self._original_rect = union_br.toRect()
-                    
+                self._bounds = layer.move_tool_container_bounds(self._linked_children)
+                self._original_rect = self._bounds.toRect()
                 self._original_img = QImage(1, 1, QImage.Format.Format_ARGB32)
                 self._original_offset = layer.offset
                 self._sel_origin = None
-                
+
             elif sel and not sel.isEmpty():
+                from tools.tool_utils import cut_floating_selection
                 self._is_floating = True
                 self._bounds = sel.boundingRect()
-                br = self._bounds.toRect()
-                
-                local_br = br.translated(-layer.offset).intersected(layer.image.rect())
-                if local_br.isEmpty():
+
+                original_img, original_offset, sel_origin, ok = cut_floating_selection(layer, sel)
+                if not ok:
                     self.is_transforming = False
                     return
-                    
-                self._original_img = layer.image.copy(local_br)
-                self._original_offset = layer.offset + local_br.topLeft()
-                self._sel_origin = QPainterPath(sel)
-                
-                # Clean Numpy Cut for perfectly smooth selection extraction
-                import numpy as np
-                import ctypes
-                mask_img = QImage(local_br.width(), local_br.height(), QImage.Format.Format_Grayscale8)
-                mask_img.fill(0)
-                p = QPainter(mask_img)
-                p.translate(-self._original_offset.x(), -self._original_offset.y())
-                p.fillPath(sel, QColor(255, 255, 255))
-                p.end()
-                
-                m_arr = np.empty((local_br.height(), mask_img.bytesPerLine()), dtype=np.uint8)
-                ctypes.memmove(m_arr.ctypes.data, int(mask_img.constBits()), mask_img.sizeInBytes())
-                mask_f = m_arr[:, :local_br.width()].astype(np.float32) / 255.0
-                
-                f_arr = np.empty((local_br.height(), self._original_img.bytesPerLine() // 4, 4), dtype=np.uint8)
-                ctypes.memmove(f_arr.ctypes.data, int(self._original_img.constBits()), self._original_img.sizeInBytes())
-                for c in range(4): f_arr[:local_br.height(), :local_br.width(), c] = (f_arr[:local_br.height(), :local_br.width(), c] * mask_f).astype(np.uint8)
-                ctypes.memmove(int(self._original_img.bits()), f_arr.ctypes.data, self._original_img.sizeInBytes())
-                
-                l_arr = np.empty((layer.height(), layer.image.bytesPerLine() // 4, 4), dtype=np.uint8)
-                ctypes.memmove(l_arr.ctypes.data, int(layer.image.constBits()), layer.image.sizeInBytes())
-                
-                inv_mask_f = 1.0 - mask_f
-                sy, sx = local_br.y(), local_br.x()
-                l_roi = l_arr[sy:sy+local_br.height(), sx:sx+local_br.width()]
-                for c in range(4): l_roi[..., c] = (l_roi[..., c] * inv_mask_f).astype(np.uint8)
-                ctypes.memmove(int(layer.image.bits()), l_arr.ctypes.data, layer.image.sizeInBytes())
-                
+                self._original_img = original_img
+                self._original_offset = original_offset
+                self._sel_origin = sel_origin
+
             else:
                 self._is_floating = False
-                self._is_text_layer = False
-                if getattr(layer, "layer_type", "raster") == "text":
-                    self._is_text_layer = True
-                    br = Document._nontransparent_bounds(layer.image)
-                    if br.isEmpty():
-                        self._bounds = QRectF(layer.offset.x(), layer.offset.y(),
-                                              layer.width(), layer.height())
-                    else:
-                        self._bounds = QRectF(br).translated(QPointF(layer.offset))
-                    self._original_img = layer.image.copy()
-                    self._original_offset = layer.offset
-                    self._sel_origin = None
-                    layer.image = QImage(1, 1, QImage.Format.Format_ARGB32)
-                    layer.image.fill(Qt.GlobalColor.transparent)
-                elif getattr(layer, "layer_type", "raster") == "frame":
-                    self._bounds = QRectF(getattr(layer, "frame_data", {}).get("rect", QRectF(0,0,100,100)))
-                    self._original_rect = self._bounds.toRect()
-                    self._original_img = layer.image.copy()
-                    self._original_offset = layer.offset
-                    self._sel_origin = None
-                    layer.image = QImage(1, 1, QImage.Format.Format_ARGB32)
-                    layer.image.fill(Qt.GlobalColor.transparent)
-                else:
-                    br = Document._nontransparent_bounds(layer.image)
-                    if br.isEmpty():
-                        self._bounds = QRectF(layer.offset.x(), layer.offset.y(), layer.width(), layer.height())
-                    else:
-                        self._bounds = QRectF(br).translated(QPointF(layer.offset))
-                    self._original_img = layer.image.copy()
-                    self._original_offset = layer.offset
-                    self._sel_origin = None
-                    layer.image = QImage(1, 1, QImage.Format.Format_ARGB32)
-                    layer.image.fill(Qt.GlobalColor.transparent)
+                self._is_text_layer = isinstance(layer, TextLayer)
+                self._bounds = layer.move_tool_bounds()
+                self._original_rect = self._bounds.toRect()
+                self._original_img = layer.image.copy()
+                self._original_offset = layer.offset
+                self._sel_origin = None
+                layer.image = QImage(1, 1, QImage.Format.Format_ARGB32)
+                layer.image.fill(Qt.GlobalColor.transparent)
 
         self._base_transform = QTransform(self._total_transform)
         self._start_pos = QPointF(pos)
@@ -279,8 +212,17 @@ class MoveTool(BaseTool):
         ctrl = opts.get("_ctrl", False)
         shift = opts.get("_shift", False)
         alt = opts.get("_alt", False)
-        
+
         corner_indices = {'tl': 0, 'tr': 1, 'br': 2, 'bl': 3}
+        if (getattr(layer, "_move_tool_uniform_scale_only", False)
+                and self._mode in corner_indices and not ctrl):
+            # Locks aspect ratio, same as Shift, in the plain (non-Ctrl)
+            # corner-drag branch below. The Ctrl-held branch's own "shift"
+            # means something different there (constrain to one edge's
+            # direction, not lock aspect) — deliberately left alone, out
+            # of scope for "forbid free stretching" on the primary drag.
+            shift = True
+
         edge_indices = {'t': (0,1), 'r': (1,2), 'b': (2,3), 'l': (3,0)}
         
         if self._mode == 'move':
@@ -454,8 +396,11 @@ class MoveTool(BaseTool):
                     sx = v_cur_x / v_orig_x if abs(v_orig_x) > 0.001 else 1.0
                     sy = v_cur_y / v_orig_y if abs(v_orig_y) > 0.001 else 1.0
             
-                    if self._mode in ('r', 'l'): sy = 1.0
-                    if self._mode in ('t', 'b'): sx = 1.0
+                    uniform = getattr(layer, "_move_tool_uniform_scale_only", False)
+                    if self._mode in ('r', 'l'):
+                        sy = sx if uniform else 1.0
+                    if self._mode in ('t', 'b'):
+                        sx = sy if uniform else 1.0
                     
                     if shift and self._mode in corner_indices:
                         s = max(abs(sx), abs(sy))
@@ -591,67 +536,35 @@ class MoveTool(BaseTool):
         for kid_data in getattr(self, "_linked_children", []):
             kid_data["layer"].offset = kid_data["backup_offset"] + QPoint(int(dx), int(dy))
             
-        if getattr(layer, "layer_type", "raster") == "artboard":
-            new_rect = final_t.mapRect(QRectF(self._original_rect)).toRect()
-            layer.artboard_rect = new_rect
-            self._reset_state()
-            doc.fit_to_artboards()
-            return
-        elif getattr(layer, "layer_type", "raster") == "frame":
-            layer.frame_data["rect"] = final_t.mapRect(QRectF(self._original_rect))
-        elif getattr(layer, "layer_type", "raster") == "group":
-            self._reset_state()
-            return
-        elif getattr(layer, "layer_type", "raster") == "text":
-            td = getattr(layer, "text_data", None)
-            if td:
-                orig_pt = QPointF(td.get("x", 0), td.get("y", 0))
-                new_pt = final_t.map(orig_pt)
-                m11, m12 = final_t.m11(), final_t.m12()
-                delta_angle = math.degrees(math.atan2(m12, m11))
-                new_angle = float(td.get("text_angle", 0.0)) + delta_angle
-                new_td = dict(td)
-                new_td["x"] = new_pt.x()
-                new_td["y"] = new_pt.y()
-                new_td["text_angle"] = new_angle
-                w, h = self._original_img.width(), self._original_img.height()
-                new_img = QImage(w, h, QImage.Format.Format_ARGB32_Premultiplied)
-                new_img.fill(Qt.GlobalColor.transparent)
-                from tools.text_tool import _render_text
-                _render_text(new_img, int(new_pt.x()), int(new_pt.y()),
-                             new_td.get("text", ""), new_td, None)
-                layer.image = new_img
-                layer.text_data = new_td
-            self._reset_state()
-            return
+        handled = layer.move_tool_apply_extra(doc, final_t, self._original_rect, self._original_img)
+        if not handled:
+            if not final_t.isIdentity():
+                src_rect = QRectF(0, 0, self._original_img.width(), self._original_img.height())
+                doc_transform = QTransform().translate(self._original_offset.x(), self._original_offset.y()) * final_t
+                mapped_rect = doc_transform.mapRect(src_rect)
 
-        if not final_t.isIdentity():
-            src_rect = QRectF(0, 0, self._original_img.width(), self._original_img.height())
-            doc_transform = QTransform().translate(self._original_offset.x(), self._original_offset.y()) * final_t
-            mapped_rect = doc_transform.mapRect(src_rect)
-            
-            new_w, new_h = int(math.ceil(mapped_rect.width())), int(math.ceil(mapped_rect.height()))
-            if new_w > 0 and new_h > 0:
-                new_img = QImage(new_w, new_h, QImage.Format.Format_ARGB32_Premultiplied)
-                new_img.fill(Qt.GlobalColor.transparent)
-                p = QPainter(new_img)
-                p.setRenderHint(QPainter.RenderHint.SmoothPixmapTransform)
-                p.setRenderHint(QPainter.RenderHint.Antialiasing)
-                local_transform = doc_transform * QTransform().translate(-mapped_rect.left(), -mapped_rect.top())
-                p.setTransform(local_transform)
-                p.drawImage(0, 0, self._original_img)
+                new_w, new_h = int(math.ceil(mapped_rect.width())), int(math.ceil(mapped_rect.height()))
+                if new_w > 0 and new_h > 0:
+                    new_img = QImage(new_w, new_h, QImage.Format.Format_ARGB32_Premultiplied)
+                    new_img.fill(Qt.GlobalColor.transparent)
+                    p = QPainter(new_img)
+                    p.setRenderHint(QPainter.RenderHint.SmoothPixmapTransform)
+                    p.setRenderHint(QPainter.RenderHint.Antialiasing)
+                    local_transform = doc_transform * QTransform().translate(-mapped_rect.left(), -mapped_rect.top())
+                    p.setTransform(local_transform)
+                    p.drawImage(0, 0, self._original_img)
+                    p.end()
+                    self._original_img = new_img
+                    self._original_offset = QPoint(int(mapped_rect.left()), int(mapped_rect.top()))
+
+            if self._is_floating:
+                p = QPainter(layer.image)
+                p.drawImage(self._original_offset, self._original_img)
                 p.end()
-                self._original_img = new_img
-                self._original_offset = QPoint(int(mapped_rect.left()), int(mapped_rect.top()))
-                
-        if self._is_floating:
-            p = QPainter(layer.image)
-            p.drawImage(self._original_offset, self._original_img)
-            p.end()
-        else:
-            layer.image = self._original_img
-            layer.offset = self._original_offset
-            
+            else:
+                layer.image = self._original_img
+                layer.offset = self._original_offset
+
         self._reset_state()
 
     def cancel_transform(self, doc):
@@ -660,10 +573,7 @@ class MoveTool(BaseTool):
         if layer and self._layer_backup is not None:
             layer.image = self._layer_backup
             layer.offset = self._offset_backup
-            if getattr(layer, "layer_type", "raster") == "artboard":
-                layer.artboard_rect = QRect(self._original_rect) if self._original_rect else None
-            elif getattr(layer, "layer_type", "raster") == "frame":
-                layer.frame_data["rect"] = QRectF(self._original_rect) if self._original_rect else QRectF()
+            layer.move_tool_cancel_extra(self._original_rect)
             if self._sel_origin: doc.selection = self._sel_origin
             
         for kid_data in getattr(self, "_linked_children", []):
@@ -701,11 +611,8 @@ class MoveTool(BaseTool):
         self._total_transform = t
         
         layer = self._target_layer
-        if getattr(layer, "layer_type", "raster") == "artboard":
-            layer.artboard_rect = self._total_transform.mapRect(QRectF(self._original_rect)).toRect()
-        elif getattr(layer, "layer_type", "raster") == "frame":
-            layer.frame_data["rect"] = self._total_transform.mapRect(QRectF(self._original_rect))
-        elif self._is_floating and self._sel_origin:
+        handled = layer.move_tool_set_params_extra(self._total_transform, self._original_rect)
+        if not handled and self._is_floating and self._sel_origin:
             doc.selection = self._total_transform.map(self._sel_origin)
             
         dx, dy = self._total_transform.dx(), self._total_transform.dy()

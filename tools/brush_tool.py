@@ -180,30 +180,15 @@ class BrushTool(BaseTool):
                     h, w = stroke_to_draw.height(), stroke_to_draw.width()
                     dx = -int(w * dx_pct / 100.0)
                     dy = -int(h * dy_pct / 100.0)
-                    import numpy as np, ctypes
-                    ptr = stroke_to_draw.constBits()
-                    buf = (ctypes.c_uint8 * stroke_to_draw.sizeInBytes()).from_address(int(ptr))
-                    arr = np.ndarray((h, stroke_to_draw.bytesPerLine() // 4, 4), dtype=np.uint8, buffer=buf)
-                    if edge_mode == "wrap":
-                        res_arr = np.roll(np.roll(arr, dy, axis=0), dx, axis=1)
-                    elif edge_mode == "repeat":
-                        Y, X = np.ogrid[:h, :w]
-                        Y = np.clip(Y - dy, 0, h - 1); X = np.clip(X - dx, 0, w - 1)
-                        res_arr = arr[Y, X]
-                    else:
-                        res_arr = np.zeros_like(arr)
-                        y1_src, y2_src = max(0, -dy), min(h, h - dy); x1_src, x2_src = max(0, -dx), min(w, w - dx)
-                        y1_dst, y2_dst = max(0, dy), min(h, h + dy); x1_dst, x2_dst = max(0, dx), min(w, w + dx)
-                        if y1_src < y2_src and x1_src < x2_src: res_arr[y1_dst:y2_dst, x1_dst:x2_dst] = arr[y1_src:y2_src, x1_src:x2_src]
+                    from core.pixel_buffer import qimage_argb_view, shift_pixels_edge
+                    arr = qimage_argb_view(stroke_to_draw, writable=False)
+                    res_arr = shift_pixels_edge(arr, w, h, dx, dy, edge_mode)
                     stroke_to_draw = QImage(res_arr.data, w, h, w*4, QImage.Format.Format_ARGB32_Premultiplied)
                     stroke_to_draw.ndarray = res_arr
 
             if lock_a:
-                import ctypes
-                w, h = target.width(), target.height()
-                ptr = target.bits()
-                buf = (ctypes.c_uint8 * target.sizeInBytes()).from_address(int(ptr))
-                arr = np.ndarray((h, target.bytesPerLine() // 4, 4), dtype=np.uint8, buffer=buf)
+                from core.pixel_buffer import qimage_argb_view
+                arr = qimage_argb_view(target, writable=True)
                 orig_alpha = arr[..., 3].copy()
 
             painter = QPainter(target)
@@ -242,6 +227,20 @@ class BrushTool(BaseTool):
         if self._stroke_img is None:
             return None
         offset = self._stroke_layer.offset if self._stroke_layer else QPoint(0, 0)
+        # `_stroke_img` is canvas/layer-sized (mostly transparent) — handing
+        # the whole thing to the overlay painter every repaint means it has
+        # to downsample-render an enormous, nearly-empty image on every
+        # single frame during a stroke (measured: ~16ms/frame at 8000x8000,
+        # the dominant remaining "lags while drawing" cost after fixing the
+        # composite/GPU paths). `_stroke_dirty_rect` already tracks exactly
+        # what's been painted so far (get_dirty_rect() trusts it to safely
+        # patch the real composite), so crop to that here too.
+        dirty = self._stroke_dirty_rect
+        if dirty is not None:
+            local_rect = dirty.translated(-offset).intersected(self._stroke_img.rect())
+            if not local_rect.isEmpty():
+                return (self._stroke_img.copy(local_rect), local_rect.topLeft() + offset,
+                        float(self._stroke_opacity))
         return (self._stroke_img, offset, float(self._stroke_opacity))
 
     def stroke_composition_mode(self, opts=None):
@@ -291,11 +290,9 @@ class BrushTool(BaseTool):
             if not stamp.hasAlphaChannel():
                 stamp = stamp.convertToFormat(QImage.Format.Format_ARGB32)
                 import numpy as np
-                import ctypes
-                ptr = stamp.bits()
-                buf = (ctypes.c_uint8 * stamp.sizeInBytes()).from_address(int(ptr))
-                arr = np.ndarray((stamp.height(), stamp.bytesPerLine() // 4, 4), dtype=np.uint8, buffer=buf)
-                
+                from core.pixel_buffer import qimage_argb_view
+                arr = qimage_argb_view(stamp, writable=True)
+
                 # Compute luminance. Dark = brush, white = background.
                 luma = (arr[..., 2]*0.299 + arr[..., 1]*0.587 + arr[..., 0]*0.114).astype(np.uint8)
                 
@@ -659,10 +656,8 @@ class PencilTool(BrushTool):
             return self._stamp_cache[pencil_key]
 
         stamp = super()._get_stamp(size, 1.0, mask).copy()
-        import ctypes
-        ptr = stamp.bits()
-        buf = (ctypes.c_uint8 * stamp.sizeInBytes()).from_address(int(ptr))
-        arr = np.ndarray((stamp.height(), stamp.bytesPerLine() // 4, 4), dtype=np.uint8, buffer=buf)
+        from core.pixel_buffer import qimage_argb_view
+        arr = qimage_argb_view(stamp, writable=True)
         arr[arr[..., 3] < 128, 3] = 0
         arr[arr[..., 3] >= 128, 3] = 255
 
@@ -699,7 +694,7 @@ class MixerBrushTool(BrushTool):
         if self._last_pos and self._target_img:
             cx, cy = pos.x(), pos.y()
             if 0 <= cx < self._target_img.width() and 0 <= cy < self._target_img.height():
-                canvas_color = QColor(self._target_img.pixel(cx, cy))
+                canvas_color = self._target_img.pixelColor(cx, cy)
                 if canvas_color.alpha() > 0:
                     # Slow down mixing speed for a more predictable result
                     factor = 0.05

@@ -1,83 +1,18 @@
 import numpy as np
-import ctypes
 from PyQt6.QtWidgets import (QDialog, QVBoxLayout, QHBoxLayout, QLabel, 
                              QComboBox, QPushButton, QDialogButtonBox, QWidget)
 from PyQt6.QtCore import Qt, QPointF, QTimer
-from PyQt6.QtGui import QImage, QPainter, QColor
+from PyQt6.QtGui import QImage, QColor
 
 from core.locale import tr
 from ui.adjustments_dialog import _JumpSlider
+from ui.preview_canvas_base import PreviewCanvasBase
 
 from ui import theme
 
 
-class PixelateCanvas(QWidget):
-    def __init__(self, dialog):
-        super().__init__()
-        self.dialog = dialog
-        self.setMouseTracking(True)
-        self.zoom = 1.0
-        self._pan = QPointF(0, 0)
-        self._panning = False
-        self._pan_last = None
-        self._space = False
-        self.setFocusPolicy(Qt.FocusPolicy.StrongFocus)
-
-    def paintEvent(self, ev):
-        p = QPainter(self)
-        p.fillRect(self.rect(), QColor(theme.CRUST))
-        if not self.dialog.preview_img: return
-            
-        w, h = self.dialog.preview_img.width(), self.dialog.preview_img.height()
-        p.save()
-        p.translate(self._pan)
-        p.scale(self.zoom, self.zoom)
-        
-        tile = 16
-        for y in range(0, h, tile):
-            for x in range(0, w, tile):
-                c = QColor(180,180,180) if (x//tile + y//tile) % 2 == 0 else QColor(220,220,220)
-                p.fillRect(x, y, min(tile, w-x), min(tile, h-y), c)
-                
-        p.drawImage(0, 0, self.dialog.preview_img)
-        p.restore()
-        p.end()
-
-    def mousePressEvent(self, ev):
-        is_pan = ev.button() == Qt.MouseButton.MiddleButton or (self._space and ev.button() == Qt.MouseButton.LeftButton)
-        if is_pan:
-            self._panning = True
-            self._pan_last = ev.position()
-            self.setCursor(Qt.CursorShape.ClosedHandCursor)
-
-    def mouseMoveEvent(self, ev):
-        if self._panning and self._pan_last is not None:
-            self._pan += (ev.position() - self._pan_last)
-            self._pan_last = ev.position()
-            self.update()
-
-    def mouseReleaseEvent(self, ev):
-        self._panning = False
-        self.setCursor(Qt.CursorShape.OpenHandCursor if self._space else Qt.CursorShape.ArrowCursor)
-
-    def wheelEvent(self, ev):
-        factor = 1.15 if ev.angleDelta().y() > 0 else 1 / 1.15
-        new_zoom = max(0.05, min(32.0, self.zoom * factor))
-        scale = new_zoom / self.zoom
-        pivot = ev.position()
-        self._pan = QPointF(pivot.x() - (pivot.x() - self._pan.x()) * scale, pivot.y() - (pivot.y() - self._pan.y()) * scale)
-        self.zoom = new_zoom
-        self.update()
-
-    def keyPressEvent(self, ev):
-        if ev.key() == Qt.Key.Key_Space and not ev.isAutoRepeat():
-            self._space = True
-            self.setCursor(Qt.CursorShape.OpenHandCursor)
-
-    def keyReleaseEvent(self, ev):
-        if ev.key() == Qt.Key.Key_Space and not ev.isAutoRepeat():
-            self._space = False
-            self.setCursor(Qt.CursorShape.ArrowCursor)
+class PixelateCanvas(PreviewCanvasBase):
+    pass
 
 
 class PixelateDialog(QDialog):
@@ -92,13 +27,9 @@ class PixelateDialog(QDialog):
         self.setWindowFlags(self.windowFlags() | Qt.WindowType.WindowMaximizeButtonHint | Qt.WindowType.WindowMinimizeButtonHint)
         self.resize(1000, 700)
         
-        self.orig_img = layer.image.copy()
-        self.preview_img = layer.image.copy()
-        
-        ptr = self.orig_img.constBits()
-        buf = (ctypes.c_uint8 * self.orig_img.sizeInBytes()).from_address(int(ptr))
-        self.orig_arr = np.ndarray((self.orig_img.height(), self.orig_img.bytesPerLine() // 4, 4), dtype=np.uint8, buffer=buf)[:, :self.orig_img.width(), :].copy()
-        
+        from ui.preview_canvas_base import init_live_preview_arrays
+        init_live_preview_arrays(self, layer)
+
         self._timer = QTimer(self)
         self._timer.setSingleShot(True)
         self._timer.setInterval(60)
@@ -181,32 +112,28 @@ class PixelateDialog(QDialog):
         elif self.mode in ("crystallize", "pointillize"):
             s = max(3, self.amount_sl.value())
             small_h, small_w = (h + s - 1) // s, (w + s - 1) // s
-            
+
             grid_y, grid_x = np.mgrid[:small_h, :small_w]
             cy = grid_y * s + s // 2
             cx = grid_x * s + s // 2
-            
+
             np.random.seed(42)
             cy = np.clip(cy + np.random.randint(-s//2, s//2, (small_h, small_w)), 0, h - 1)
             cx = np.clip(cx + np.random.randint(-s//2, s//2, (small_h, small_w)), 0, w - 1)
-            
-            Y, X = np.ogrid[:h, :w]
-            grid_Y, grid_X = Y // s, X // s
-            
-            min_dist = np.full((h, w), 1e9, dtype=np.float32)
-            owner_y, owner_x = np.zeros((h, w), dtype=np.int32), np.zeros((h, w), dtype=np.int32)
-            
-            for dy in (-1, 0, 1):
-                for dx in (-1, 0, 1):
-                    gy = np.clip(grid_Y + dy, 0, small_h - 1)
-                    gx = np.clip(grid_X + dx, 0, small_w - 1)
-                    py, px = cy[gy, gx], cx[gy, gx]
-                    dist = (Y - py)**2 + (X - px)**2
-                    mask = dist < min_dist
-                    min_dist[mask] = dist[mask]
-                    owner_y[mask] = py[mask]
-                    owner_x[mask] = px[mask]
-                    
+
+            # Nearest-seed lookup via a Euclidean distance transform instead of
+            # a hand-rolled 3x3-neighbor search: the old version materialized
+            # several full (h, w) arrays NINE times (min_dist/mask/owner_y/
+            # owner_x), which meant multi-gigabyte allocations and minutes-long
+            # hangs on 8K-16K images. Jitter is bounded to +/-s/2, so the true
+            # nearest seed is always within the 3x3 neighborhood of grid cells
+            # — same search space, just computed by scipy's C implementation.
+            from scipy.ndimage import distance_transform_edt
+            marker = np.ones((h, w), dtype=bool)
+            marker[cy.ravel(), cx.ravel()] = False
+            _, (owner_y, owner_x) = distance_transform_edt(marker, return_indices=True)
+            min_dist = (np.arange(h)[:, None] - owner_y) ** 2 + (np.arange(w)[None, :] - owner_x) ** 2
+
             if self.mode == "crystallize":
                 res_arr[..., :3] = self.orig_arr[owner_y, owner_x, :3]
             else:
@@ -223,11 +150,14 @@ class PixelateDialog(QDialog):
             res_arr[..., :3] = (res // 4).astype(np.uint8)
             
         elif self.mode == "facet":
+            # scipy.ndimage.median_filter instead of stacking all 9 shifted
+            # copies of the image (was a (h, w, 3, 9) allocation — tens of GB
+            # and a multi-minute hang on 8K-16K images; verified pixel-identical
+            # to the old stack+np.median approach at mode='nearest' == 'edge' padding).
+            from scipy.ndimage import median_filter
             current = self.orig_arr[..., :3].copy()
             for _ in range(2):
-                padded = np.pad(current, ((1,1),(1,1),(0,0)), mode='edge')
-                stack = np.stack([padded[dy:h+dy, dx:w+dx] for dy in range(3) for dx in range(3)], axis=-1)
-                current = np.median(stack, axis=-1).astype(np.uint8)
+                current = median_filter(current, size=(3, 3, 1), mode='nearest')
             res_arr[..., :3] = current
             
         elif self.mode == "color_halftone":
@@ -273,5 +203,7 @@ class PixelateDialog(QDialog):
         self.canvas.update()
 
     def accept(self):
-        self.layer.image = self.preview_img
-        super().accept()
+        from ui.preview_canvas_base import run_full_res_commit
+        if run_full_res_commit(self, self._apply_effect):
+            self.layer.image = self.preview_img
+            super().accept()

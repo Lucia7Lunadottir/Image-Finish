@@ -1,108 +1,31 @@
 import numpy as np
-import ctypes
 import math
 from PyQt6.QtWidgets import (QDialog, QVBoxLayout, QHBoxLayout, QLabel, 
                              QComboBox, QPushButton, QDialogButtonBox, QWidget, QFileDialog)
 from PyQt6.QtCore import Qt, QPointF, QTimer
-from PyQt6.QtGui import QImage, QPainter, QColor, QPen, QBrush
+from PyQt6.QtGui import QImage, QColor, QPen
 
 from core.locale import tr
 from ui.adjustments_dialog import _JumpSlider
+from ui.preview_canvas_base import PreviewCanvasBase, DragCenterMixin
 
 from ui import theme
 
 
-class DistortCanvas(QWidget):
-    def __init__(self, dialog):
-        super().__init__()
-        self.dialog = dialog
-        self.setMouseTracking(True)
-        self.zoom = 1.0
-        self._pan = QPointF(0, 0)
-        self._panning = False
-        self._dragging_center = False
-        self._pan_last = None
-        self._space = False
-        self.setFocusPolicy(Qt.FocusPolicy.StrongFocus)
+class DistortCanvas(DragCenterMixin, PreviewCanvasBase):
+    _center_hit_radius = 30
 
-    def paintEvent(self, ev):
-        p = QPainter(self)
-        p.fillRect(self.rect(), QColor(theme.CRUST))
-        if not self.dialog.preview_img: return
-            
-        w, h = self.dialog.preview_img.width(), self.dialog.preview_img.height()
-        
-        p.save()
-        p.translate(self._pan)
-        p.scale(self.zoom, self.zoom)
-        
-        tile = 16
-        for y in range(0, h, tile):
-            for x in range(0, w, tile):
-                c = QColor(180,180,180) if (x//tile + y//tile) % 2 == 0 else QColor(220,220,220)
-                p.fillRect(x, y, min(tile, w-x), min(tile, h-y), c)
-                
-        p.drawImage(0, 0, self.dialog.preview_img)
-        
-        if self.dialog.mode in ("twirl", "pinch", "spherize", "zigzag"):
+    def _center_active(self):
+        return self.dialog.mode in ("twirl", "pinch", "spherize", "zigzag")
+
+    def _paint_overlay_in_image_space(self, p, w, h):
+        if self._center_active():
             cx, cy = self.dialog.cx, self.dialog.cy
             p.setPen(QPen(QColor(255, 255, 255, 200), max(1.0, 1.5/self.zoom)))
             p.setBrush(QColor(0, 0, 0, 100))
             cr = max(4.0, 6.0/self.zoom)
             p.drawEllipse(QPointF(cx, cy), cr, cr)
             p.drawEllipse(QPointF(cx, cy), cr*3, cr*3)
-                
-        p.restore()
-        p.end()
-
-    def mousePressEvent(self, ev):
-        is_pan = ev.button() == Qt.MouseButton.MiddleButton or (self._space and ev.button() == Qt.MouseButton.LeftButton)
-        if is_pan:
-            self._panning = True
-            self._pan_last = ev.position()
-            self.setCursor(Qt.CursorShape.ClosedHandCursor)
-        elif ev.button() == Qt.MouseButton.LeftButton and self.dialog.mode in ("twirl", "pinch", "spherize", "zigzag"):
-            pos = ev.position()
-            img_x = (pos.x() - self._pan.x()) / self.zoom
-            img_y = (pos.y() - self._pan.y()) / self.zoom
-            if math.hypot(img_x - self.dialog.cx, img_y - self.dialog.cy) < (30 / self.zoom):
-                self._dragging_center = True
-
-    def mouseMoveEvent(self, ev):
-        if self._panning and self._pan_last is not None:
-            self._pan += (ev.position() - self._pan_last)
-            self._pan_last = ev.position()
-            self.update()
-        elif self._dragging_center:
-            pos = ev.position()
-            self.dialog.cx = (pos.x() - self._pan.x()) / self.zoom
-            self.dialog.cy = (pos.y() - self._pan.y()) / self.zoom
-            self.update()
-            self.dialog._trigger_update()
-
-    def mouseReleaseEvent(self, ev):
-        self._panning = False
-        self._dragging_center = False
-        self.setCursor(Qt.CursorShape.OpenHandCursor if self._space else Qt.CursorShape.ArrowCursor)
-
-    def wheelEvent(self, ev):
-        factor = 1.15 if ev.angleDelta().y() > 0 else 1 / 1.15
-        new_zoom = max(0.05, min(32.0, self.zoom * factor))
-        scale = new_zoom / self.zoom
-        pivot = ev.position()
-        self._pan = QPointF(pivot.x() - (pivot.x() - self._pan.x()) * scale, pivot.y() - (pivot.y() - self._pan.y()) * scale)
-        self.zoom = new_zoom
-        self.update()
-
-    def keyPressEvent(self, ev):
-        if ev.key() == Qt.Key.Key_Space and not ev.isAutoRepeat():
-            self._space = True
-            self.setCursor(Qt.CursorShape.OpenHandCursor)
-
-    def keyReleaseEvent(self, ev):
-        if ev.key() == Qt.Key.Key_Space and not ev.isAutoRepeat():
-            self._space = False
-            self.setCursor(Qt.CursorShape.ArrowCursor)
 
 
 class DistortDialog(QDialog):
@@ -117,14 +40,10 @@ class DistortDialog(QDialog):
         self.setWindowFlags(self.windowFlags() | Qt.WindowType.WindowMaximizeButtonHint | Qt.WindowType.WindowMinimizeButtonHint)
         self.resize(1000, 700)
         
-        self.orig_img = layer.image.copy()
-        self.preview_img = layer.image.copy()
+        from ui.preview_canvas_base import init_live_preview_arrays
+        init_live_preview_arrays(self, layer)
         self.cx = self.orig_img.width() / 2.0
         self.cy = self.orig_img.height() / 2.0
-        
-        ptr = self.orig_img.constBits()
-        buf = (ctypes.c_uint8 * self.orig_img.sizeInBytes()).from_address(int(ptr))
-        self.orig_arr = np.ndarray((self.orig_img.height(), self.orig_img.bytesPerLine() // 4, 4), dtype=np.uint8, buffer=buf)[:, :self.orig_img.width(), :].copy()
         self.disp_arr = None
         
         self._timer = QTimer(self)
@@ -203,9 +122,8 @@ class DistortDialog(QDialog):
         path, _ = QFileDialog.getOpenFileName(self, tr("distort.load_map"), "", "Images (*.png *.jpg *.jpeg *.bmp)")
         if path:
             img = QImage(path).convertToFormat(QImage.Format.Format_ARGB32_Premultiplied)
-            ptr = img.constBits()
-            buf = (ctypes.c_uint8 * img.sizeInBytes()).from_address(int(ptr))
-            self.disp_arr = np.ndarray((img.height(), img.bytesPerLine() // 4, 4), dtype=np.uint8, buffer=buf).copy()
+            from core.pixel_buffer import qimage_argb_view
+            self.disp_arr = qimage_argb_view(img, writable=False).copy()
             self._trigger_update()
 
     def _trigger_update(self):
@@ -287,5 +205,7 @@ class DistortDialog(QDialog):
         self.canvas.update()
 
     def accept(self):
-        self.layer.image = self.preview_img
-        super().accept()
+        from ui.preview_canvas_base import run_full_res_commit
+        if run_full_res_commit(self, self._apply_effect, scale_attrs=("cx", "cy")):
+            self.layer.image = self.preview_img
+            super().accept()

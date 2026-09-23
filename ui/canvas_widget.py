@@ -6,7 +6,7 @@ from ui import theme
 
 logger = get_logger("canvas")
 
-from PyQt6.QtWidgets import QWidget
+from PyQt6.QtOpenGLWidgets import QOpenGLWidget
 from PyQt6.QtCore import Qt, QPoint, QPointF, QRect, QRectF, QTimer, pyqtSignal
 from PyQt6.QtGui import (QPainter, QColor, QPixmap, QBrush, QPen, QImage, QCursor, QInputDevice,
                          QRadialGradient, QPainterPath, QPolygon, QPolygonF, QBitmap, QRegion, QTransform)
@@ -96,7 +96,7 @@ def _make_sel_cursor(mode: str) -> QCursor:
     return cur
 
 
-class CanvasWidget(QWidget):
+class CanvasWidget(QOpenGLWidget):
     document_changed = pyqtSignal()
     pixels_changed   = pyqtSignal()
     color_picked     = pyqtSignal(QColor)
@@ -107,8 +107,8 @@ class CanvasWidget(QWidget):
     def __init__(self, parent=None):
         super().__init__(parent)
 
-        self.document    = None
-        self.active_tool = None
+        self.document     = None
+        self._active_tool = None
         self._alt_prev_tool = None  # tool stashed while the temporary Alt-eyedropper is active
         self._alt_picker = None     # the temporary EyedropperTool instance itself
         # Brush is always the first tool applied to a freshly opened document
@@ -179,6 +179,12 @@ class CanvasWidget(QWidget):
         self._cache_dirty: bool = True
         self._display_cache: QImage | None = None
         self._last_view_channel: str = "RGB"
+        self._last_composite_dirty_rect: QRect | None = None
+
+        # Built lazily in initializeGL() once a GL context exists; .ready
+        # stays False (silent CPU fallback) if shader setup fails on this
+        # driver — see ui/gl_compositor.py.
+        self._gl = None
 
         self._effect_bg_cache: QImage | None = None
         self._in_effect_stroke: bool = False
@@ -198,6 +204,21 @@ class CanvasWidget(QWidget):
 
         from ui.text_edit_overlay import TextEditOverlay
         self._text_overlay = TextEditOverlay(self)
+
+        from ui.shape_scene_overlay import ShapeSceneOverlay
+        self._shape_overlay = ShapeSceneOverlay(self)
+        self.document_changed.connect(self._shape_overlay.refresh_items)
+
+    @property
+    def active_tool(self):
+        return self._active_tool
+
+    @active_tool.setter
+    def active_tool(self, tool):
+        self._active_tool = tool
+        overlay = getattr(self, "_shape_overlay", None)
+        if overlay is not None:
+            overlay.set_active(getattr(tool, "name", None) == "Shapes")
 
     @staticmethod
     def _build_checker(tile: int = 16) -> QPixmap:
@@ -229,6 +250,27 @@ class CanvasWidget(QWidget):
         """Recompute the document composite, incrementally when the active
         tool can report the document-space rect it actually touched."""
         dirty = self.active_tool.get_dirty_rect() if self.active_tool else None
+        # A tool's dirty rect (e.g. BrushTool's) deliberately survives past
+        # its own on_release, for the eager recompute right after a stroke
+        # commits. But if something ELSE invalidated the document cache
+        # meanwhile without going through this tool at all — undo/redo,
+        # switching layers, any _canvas_refresh() — get_composite() below
+        # is about to do a full recompute regardless of `dirty`. Trusting
+        # the tool's stale rect here would tell GLCompositor "only this
+        # small rect changed" while actually everything did, leaving
+        # un-erased leftovers on screen until something forces a full
+        # re-upload. Once the doc-level cache is already gone, treat this
+        # as a full recompute for GL purposes too.
+        if dirty is not None and getattr(self.document, "_composite_cache_doc", None) is None:
+            dirty = None
+        # Exposed for GLCompositor: QImage.cacheKey() changes on *any* paint,
+        # including an in-place dirty-rect patch (verified — even a 10x10
+        # fillRect on an unrelated QImage changes it), so the GL texture
+        # can't tell "unchanged" from "one small brush dab" from the cache
+        # key alone. Remembering the same rect here lets it re-upload just
+        # that sub-rectangle instead of the whole image — the difference
+        # between a few KB and a full 8K frame (256MB+) per stroke sample.
+        self._last_composite_dirty_rect = dirty
         if dirty is not None:
             self._composite_cache = self.document.get_composite(dirty_rect=dirty)
         else:
@@ -326,17 +368,70 @@ class CanvasWidget(QWidget):
         one at `doc_anchor` on commit. Font/size/color come live from the
         Text tool's options-bar controls (`self.tool_opts`), the same
         source `TextOptions` writes to — not a snapshot, so changing them
-        mid-edit updates the on-canvas preview immediately."""
+        mid-edit updates the on-canvas editor immediately.
+
+        When re-editing, `layer` is hidden for the duration (matching the
+        C# sibling's approach) — `TextEditOverlay` is the only thing
+        showing this text on screen while it's open, never a second,
+        possibly-stale rendering underneath it."""
         if self._text_overlay.is_active():
             self._text_overlay.commit()
 
+        if layer is not None:
+            layer.visible = False
+            self.invalidate_cache()
+
+        def _restore_layer():
+            if layer is not None:
+                layer.visible = True
+
         def on_commit(text):
+            _restore_layer()
             win = self.window()
             if hasattr(win, "_commit_text_edit"):
                 win._commit_text_edit(layer, text, dict(self.tool_opts), doc_anchor, vertical)
+            self.invalidate_cache()
 
-        self._text_overlay.start(doc_anchor, lambda: self.tool_opts, initial_text, on_commit, lambda: None,
-                                 vertical=vertical)
+        def on_cancel():
+            _restore_layer()
+            self.invalidate_cache()
+
+        def _owned_by(widget, ancestor) -> bool:
+            # NOT the same question as QWidget.isAncestorOf(): that one
+            # stops at window boundaries, so it says False for a QColorDialog
+            # even when constructed with `parent=panel` — verified directly
+            # (dlg.parent() is panel, but panel.isAncestorOf(dlg) is False).
+            # A color-picker dialog opened from the Character panel IS
+            # legitimately "owned by" it for our purposes, so walk the plain
+            # QObject .parent() chain instead, which does cross that
+            # boundary for exactly this ownership relationship.
+            node = widget
+            while node is not None:
+                if node is ancestor:
+                    return True
+                node = node.parent()
+            return False
+
+        def keep_alive_check(widget):
+            # Clicking a font/size/color/alignment control while editing
+            # must restyle the in-progress edit live (see begin_text_edit's
+            # docstring) instead of stealing focus and silently baking it
+            # with the old settings — only these panels get a pass, tool
+            # switches / canvas clicks / anything else still commits.
+            win = self.window()
+            for panel_name in ("_character_panel", "_paragraph_panel"):
+                panel = getattr(win, panel_name, None)
+                if panel is not None and _owned_by(widget, panel):
+                    return True
+            opts_bar = getattr(win, "_opts_bar", None)
+            if opts_bar is not None:
+                text_page = opts_bar._pages.get("Text")
+                if text_page is not None and _owned_by(widget, text_page):
+                    return True
+            return False
+
+        self._text_overlay.start(doc_anchor, lambda: self.tool_opts, initial_text, on_commit, on_cancel,
+                                 vertical=vertical, keep_alive_check=keep_alive_check)
 
     def _doc_rect_in_widget(self) -> QRect:
         if not self.document:
@@ -411,10 +506,26 @@ class CanvasWidget(QWidget):
                 painter.drawText(0, 0, str(y))
                 painter.restore()
 
-    def paintEvent(self, _event):
-        """Render the scene, guarded against internal script failures."""
+    def initializeGL(self):
+        """Called by QOpenGLWidget once a GL context exists (and again if
+        the context is ever recreated). Building GLCompositor here, rather
+        than in __init__, is required — there is no current GL context yet
+        at construction time."""
+        from ui.gl_compositor import GLCompositor
+        self._gl = GLCompositor()
+
+    def paintGL(self):
+        """Render the scene, guarded against internal script failures.
+
+        Named paintGL(), not paintEvent(): QOpenGLWidget's own paintEvent()
+        is what sets up the widget's backing FBO before calling this, and
+        that setup is what beginNativePainting()/endNativePainting() below
+        rely on — a hand-rolled paintEvent() override was tried and produced
+        a blank frame instead (see ui/gl_compositor.py docstring)."""
         if self._text_overlay.isVisible():
             self._text_overlay.reposition()
+        if self._shape_overlay._active:
+            self._shape_overlay.sync_transform()
         try:
             painter = QPainter(self)
             if self.zoom > 0.9:
@@ -433,7 +544,9 @@ class CanvasWidget(QWidget):
                 buf.fill(QColor(0, 0, 0, 0))
                 bp = QPainter(buf)
                 bp.setRenderHint(QPainter.RenderHint.SmoothPixmapTransform)
-                self._paint_canvas_content(bp)
+                # Offscreen QImage target: no GL context to draw into, so
+                # this path always uses the CPU drawImage() fallback.
+                self._paint_canvas_content(bp, gpu=False)
                 bp.end()
                 cx = self.width()  / 2
                 cy = self.height() / 2
@@ -496,8 +609,21 @@ class CanvasWidget(QWidget):
         except Exception as ce:
             logger.exception("Critical canvas paint loop failure")
 
-    def _paint_canvas_content(self, painter: QPainter):
-        """Internal layer-by-layer rendering of cached images and vectors."""
+    def _draw_composite_cpu(self, painter: QPainter, display_img: QImage):
+        painter.save()
+        painter.translate(self._pan)
+        painter.scale(self.zoom, self.zoom)
+        painter.drawImage(0, 0, display_img)
+        painter.restore()
+
+    def _paint_canvas_content(self, painter: QPainter, gpu: bool = True):
+        """Internal layer-by-layer rendering of cached images and vectors.
+
+        `gpu` gates only the final composite blit (the one call that used
+        to be a plain painter.drawImage() of the whole document every
+        frame): True draws it as a GPU texture via GLCompositor when one is
+        available on this widget, False (offscreen-buffer callers, GL init
+        failure) always uses the original CPU drawImage() path."""
         dr = self._doc_rect_in_widget()
         has_artboards = any(getattr(l, "layer_type", "") == "artboard" for l in self.document.layers)
 
@@ -523,13 +649,11 @@ class CanvasWidget(QWidget):
             if current_ch == "RGB" or self._composite_cache is None:
                 self._display_cache = self._composite_cache
             else:
-                import ctypes
                 import numpy as np
+                from core.pixel_buffer import qimage_argb_view
                 comp = self._composite_cache
                 w, h = comp.width(), comp.height()
-                ptr = comp.constBits()
-                buf = (ctypes.c_uint8 * comp.sizeInBytes()).from_address(int(ptr))
-                arr = np.ndarray((h, comp.bytesPerLine() // 4, 4), dtype=np.uint8, buffer=buf)[:, :w]
+                arr = qimage_argb_view(comp, writable=False)[:, :w]
                 
                 B = arr[..., 0].astype(np.float32)
                 G = arr[..., 1].astype(np.float32)
@@ -576,16 +700,35 @@ class CanvasWidget(QWidget):
                 disp_arr[..., 3] = 255 if current_ch.startswith("alpha_") else arr[..., 3]
                 
                 new_img = QImage(w, h, QImage.Format.Format_ARGB32_Premultiplied)
-                ctypes.memmove(int(new_img.bits()), np.ascontiguousarray(disp_arr).ctypes.data, new_img.sizeInBytes())
+                qimage_argb_view(new_img, writable=True)[:, :w, :] = disp_arr
                 self._display_cache = new_img
 
         display_img = self._display_cache
 
-        painter.save()
-        painter.translate(self._pan)
-        painter.scale(self.zoom, self.zoom)
-        painter.drawImage(0, 0, display_img)
-        painter.restore()
+        if gpu and self._gl is not None and self._gl.ready:
+            try:
+                painter.beginNativePainting()
+                try:
+                    # Only trust the dirty rect when `display_img` really is
+                    # `self._composite_cache` patched in place (plain RGB
+                    # view) — the per-channel view above always builds a
+                    # brand-new QImage from scratch, so re-uploading just a
+                    # sub-rect of *that* would leave the rest of the GPU
+                    # texture showing stale content from a previous, wholly
+                    # different image.
+                    dirty = (self._last_composite_dirty_rect
+                            if display_img is self._composite_cache else None)
+                    self._gl.draw(display_img, self._pan.x(), self._pan.y(), self.zoom,
+                                  self.width(), self.height(), self.devicePixelRatioF(),
+                                  dirty_rect=dirty)
+                finally:
+                    painter.endNativePainting()
+            except Exception:
+                logger.exception("GPU composite draw failed — disabling for this session")
+                self._gl.ready = False
+                self._draw_composite_cpu(painter, display_img)
+        else:
+            self._draw_composite_cpu(painter, display_img)
 
         # Overlays (each function handles its own save/restore)
         _pan, _zoom = self._pan, self.zoom
@@ -1115,7 +1258,7 @@ class CanvasWidget(QWidget):
                 if 0 <= cx < self.document.width and 0 <= cy < self.document.height:
                     layer = self.document.get_active_layer()
                     if layer and 0 <= cx < layer.image.width() and 0 <= cy < layer.image.height():
-                        color = QColor(layer.image.pixel(cx, cy))
+                        color = layer.image.pixelColor(cx, cy)
                     else:
                         color = QColor(0, 0, 0, 0)
                     self.cursor_info.emit(cx, cy, color)

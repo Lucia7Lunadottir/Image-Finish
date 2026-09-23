@@ -20,7 +20,7 @@ import zipfile
 from abc import ABC, abstractmethod
 
 from PyQt6.QtCore import QPoint, QPointF, QRect, QRectF
-from PyQt6.QtGui import QColor, QImage
+from PyQt6.QtGui import QColor, QImage, QPainterPath
 
 from core.app_logging import get_logger
 
@@ -49,6 +49,14 @@ def encode_qt(obj):
         return {"__qt__": "QRect", "v": [obj.x(), obj.y(), obj.width(), obj.height()]}
     if isinstance(obj, QRectF):
         return {"__qt__": "QRectF", "v": [obj.x(), obj.y(), obj.width(), obj.height()]}
+    if isinstance(obj, QPainterPath):
+        # Flattened element list: Qt represents a cubicTo(c1, c2, end) as
+        # three consecutive elements (CurveToElement, then two
+        # CurveToDataElement) — stored as-is, [type.value, x, y] triples,
+        # and walked back the same way in decode_qt.
+        elems = [[obj.elementAt(i).type.value, obj.elementAt(i).x, obj.elementAt(i).y]
+                 for i in range(obj.elementCount())]
+        return {"__qt__": "QPainterPath", "v": elems}
     if isinstance(obj, dict):
         return {k: encode_qt(v) for k, v in obj.items()}
     if isinstance(obj, (list, tuple)):
@@ -75,6 +83,25 @@ def decode_qt(obj):
             return QRect(int(v[0]), int(v[1]), int(v[2]), int(v[3]))
         if tag == "QRectF":
             return QRectF(v[0], v[1], v[2], v[3])
+        if tag == "QPainterPath":
+            path = QPainterPath()
+            i = 0
+            while i < len(v):
+                t, x, y = v[i]
+                if t == 0:  # MoveToElement
+                    path.moveTo(x, y)
+                    i += 1
+                elif t == 1:  # LineToElement
+                    path.lineTo(x, y)
+                    i += 1
+                elif t == 2 and i + 2 < len(v):  # CurveToElement + 2 CurveToDataElement
+                    _, c2x, c2y = v[i + 1]
+                    _, ex, ey = v[i + 2]
+                    path.cubicTo(x, y, c2x, c2y, ex, ey)
+                    i += 3
+                else:
+                    i += 1
+            return path
         logger.warning("Unknown Qt tag in manifest: %r", tag)
         return None
     if isinstance(obj, list):
@@ -181,7 +208,7 @@ class ImfnZipSerializer(DocumentSerializer):
 
     def load(self, path: str):
         from core.document import Document
-        from core.layer import Layer
+        from core.layer import layer_from_dict
         try:
             zf = zipfile.ZipFile(path, "r")
         except (zipfile.BadZipFile, OSError) as e:
@@ -227,7 +254,7 @@ class ImfnZipSerializer(DocumentSerializer):
                 d["mask"] = read_blob(d.get("mask"))
                 if d.get("smart_data_original"):
                     d["smart_data_original"] = read_blob(d["smart_data_original"])
-                layer = Layer.from_dict(d, w, h)
+                layer = layer_from_dict(d, w, h)
                 if d["image"] and layer.image.isNull():
                     raise SerializationError(
                         f"Layer {d.get('name', '?')!r} image data is corrupted")
@@ -249,7 +276,7 @@ class LegacyPickleSerializer(DocumentSerializer):
 
     def load(self, path: str):
         from core.document import Document
-        from core.layer import Layer
+        from core.layer import layer_from_dict
         try:
             with gzip.open(path, "rb") as f:
                 data = pickle.load(f)
@@ -260,7 +287,7 @@ class LegacyPickleSerializer(DocumentSerializer):
         doc = Document(data["width"], data["height"])
         doc.color_mode = data.get("color_mode", "RGB")
         doc.bit_depth = data.get("bit_depth", 8)
-        layers = [Layer.from_dict(ld, doc.width, doc.height)
+        layers = [layer_from_dict(ld, doc.width, doc.height)
                   for ld in data.get("layers", [])]
         if layers:
             doc.layers = layers

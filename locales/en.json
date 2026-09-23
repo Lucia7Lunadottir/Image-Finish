@@ -359,6 +359,7 @@
   "history.add_layer":          "Before add layer",
   "history.add_text":           "Add text",
   "history.edit_text":          "Edit text",
+  "history.edit_shape":         "Edit shape",
   "history.duplicate_layer":    "Before duplicate layer",
   "history.delete_layer":       "Before delete layer",
   "history.layer_moved":        "Move Layer",
@@ -889,6 +890,7 @@
   "fill_layer.color2":   "Color 2:",
 
   "adj.reset":                     "Reset",
+  "adj.applying_full_res":         "Applying at full resolution…",
 
   "adj.bc.title":                  "Brightness / Contrast",
   "adj.bc.brightness":             "Brightness:",

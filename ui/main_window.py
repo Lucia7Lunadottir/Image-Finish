@@ -410,6 +410,11 @@ class MainWindow(QMainWindow,
             if self._document:
                 self._document.invalidate_composite()
             self._canvas.update()
+            # Undo/redo (and anything else routing through here) can swap
+            # every Layer object wholesale — re-sync the live shape items
+            # so they don't keep editing objects the document dropped.
+            if hasattr(self._canvas, "_shape_overlay"):
+                self._canvas._shape_overlay.refresh_items()
 
     # ================================================================= Signals
     def _wire_signals(self):
@@ -670,7 +675,23 @@ class MainWindow(QMainWindow,
     def _activate_tool(self, name: str):
         if self._active_tool_name in ("Move", "Warp") and name != self._active_tool_name:
             self._commit_move_transform()
-                
+
+        if name != self._active_tool_name and hasattr(self, "_doc_tabs"):
+            # Tool buttons deliberately don't take keyboard focus (so
+            # shortcuts keep hitting the canvas), so switching tools never
+            # fires QApplication.focusChanged — TextEditOverlay's whole
+            # commit mechanism is focus-based, so it never even heard the
+            # editor should close. Left open, the still-hidden layer
+            # (begin_text_edit sets layer.visible = False for the
+            # duration) stayed invisible forever the moment the user did
+            # anything else, e.g. selecting a different layer — "the text
+            # vanishes but the layer is still there". Ask directly instead
+            # of waiting for a focus signal that was never coming.
+            canvas = self._doc_tabs.currentWidget()
+            overlay = getattr(canvas, "_text_overlay", None)
+            if overlay is not None and overlay.is_active():
+                overlay.commit()
+
         logger.debug("Activating tool: %s", name)
         self._active_tool_name = name
         tool = self._tools.get(name)
@@ -698,6 +719,9 @@ class MainWindow(QMainWindow,
 
     def _on_layer_selected_wrap(self, index: int):
         self._commit_move_transform()
+        overlay = getattr(self._canvas, "_text_overlay", None) if hasattr(self, "_canvas") else None
+        if overlay is not None and overlay.is_active():
+            overlay.commit()
         if hasattr(self, "_on_layer_selected"):
             self._on_layer_selected(index)
 
@@ -859,7 +883,20 @@ class MainWindow(QMainWindow,
 
     def _deferred_panel_refresh(self):
         if self._document:
-            self._layers_panel.refresh_active_thumbnail(self._document)
+            # document_changed fires both for "pixels changed on the layer
+            # that was already there" (the common case — a cheap thumbnail
+            # refresh is enough) and "a layer got added/removed" (a tool
+            # created a new layer directly, e.g. ShapesTool/PenTool's
+            # mid-mouse-event layer creation — nothing else ever asked the
+            # panel to rebuild its rows). One row per document layer always
+            # holds regardless of collapsed-group hiding, so a row-count
+            # mismatch is exactly "the layer list itself changed" — rebuild
+            # properly in that case instead of silently updating a
+            # thumbnail for a layer that has no row at all yet.
+            if self._layers_panel._list.count() != len(self._document.layers):
+                self._refresh_layers()
+            else:
+                self._layers_panel.refresh_active_thumbnail(self._document)
         self._refresh_secondary_panels()
 
     def _refresh_secondary_panels(self):
@@ -874,6 +911,10 @@ class MainWindow(QMainWindow,
             self._properties_panel.refresh(canvas)
         if hasattr(self, "_paths_panel"):
             self._paths_panel.refresh(canvas)
+        if hasattr(self, "_character_panel"):
+            self._character_panel.refresh(canvas)
+        if hasattr(self, "_paragraph_panel"):
+            self._paragraph_panel.refresh(canvas)
 
     @require_document
     def _undo(self):
@@ -1118,21 +1159,45 @@ class MainWindow(QMainWindow,
                         self._document.selection = path
                     elif action == "shape":
                         self._push_history("New Vector Shape")
-                        from core.layer import Layer
+                        from core.layer import VectorLayer
                         n = sum(1 for l in self._document.layers if getattr(l, "layer_type", "raster") == "vector") + 1
-                        new_layer = self._document.add_layer(f"Path {n}", self._document.active_layer_index + 1)
-                        new_layer.layer_type = "vector"
+                        new_layer = self._document.add_layer(f"Path {n}", self._document.active_layer_index + 1,
+                                                             layer_cls=VectorLayer)
                         new_layer.vector_mask = QPainterPath(path)
                         new_layer.vector_mask_enabled = True
-                        p = QPainter(new_layer.image)
-                        p.fillPath(path, QBrush(self._canvas.fg_color))
-                        p.end()
+                        # Live geometry, not a one-time raster bake: render_into
+                        # fills `vector_mask` fresh on every render, so the
+                        # path stays exact instead of degrading like a pixel
+                        # bake would under future scale/rotate.
+                        new_layer.path_style = {
+                            "fill_color": QColor(self._canvas.fg_color),
+                            "stroke_color": None,
+                            "stroke_width": 0.0,
+                        }
                 self._refresh_layers()
                 self._canvas_refresh()
             return
         if not hasattr(self, "_doc_tabs"): return
         for i in range(self._doc_tabs.count()):
             self._doc_tabs.widget(i).tool_opts[key] = value
+        # Every text-option control (toolbar and dock alike) funnels
+        # through here — refresh both so whichever one the user *didn't*
+        # just touch reflects the same state instead of silently drifting
+        # (this was the toolbar-vs-Character-panel desync bug).
+        if hasattr(self, "_character_panel"):
+            self._character_panel.refresh(self._canvas)
+        if hasattr(self, "_paragraph_panel"):
+            self._paragraph_panel.refresh(self._canvas)
+        text_page = self._opts_bar._pages.get("Text") if hasattr(self, "_opts_bar") else None
+        if text_page is not None and hasattr(text_page, "update_from_opts"):
+            text_page.update_from_opts(self._canvas.tool_opts)
+        # tool_opts is stored above, but nothing here ever asked the canvas
+        # to actually repaint — the live text-edit preview (which reads
+        # tool_opts fresh every paintGL() frame) only looked live before
+        # because *something else* happened to trigger a repaint shortly
+        # after. Explicitly: an option change must be visible immediately,
+        # not just eventually.
+        self._canvas.update()
 
     @require_document
     def _on_layer_blend_mode(self, mode: str):
@@ -1157,8 +1222,8 @@ class MainWindow(QMainWindow,
     @require_document
     def _group_layer(self):
         idx = self._document.active_layer_index
-        group = self._document.add_layer(tr("layer.name.group"), idx + 1)
-        group.layer_type = "group"
+        from core.layer import GroupLayer
+        group = self._document.add_layer(tr("layer.name.group"), idx + 1, layer_cls=GroupLayer)
         layer = self._document.layers[idx]
         layer.parent_id = group.layer_id
         self._push_history(tr("history.new_group"))
@@ -1301,9 +1366,9 @@ class MainWindow(QMainWindow,
             qm = self._document.quick_mask_layer.image
             import numpy as np
             from PyQt6.QtGui import QImage, QRegion, QBitmap
-            
-            ptr = qm.bits(); ptr.setsize(qm.sizeInBytes())
-            arr = np.ndarray((qm.height(), qm.bytesPerLine() // 4, 4), dtype=np.uint8, buffer=ptr)[:, :self._document.width, :]
+            from core.pixel_buffer import qimage_argb_view
+
+            arr = qimage_argb_view(qm, writable=True)[:, :self._document.width, :]
             
             gray = 0.299*arr[..., 2] + 0.587*arr[..., 1] + 0.114*arr[..., 0]
             mask_val = (255 - gray) * (arr[..., 3] / 255.0)
@@ -1325,10 +1390,10 @@ class MainWindow(QMainWindow,
                 self._canvas.bg_color = self._qm_old_bg
         else:
             # Enter Quick Mask mode
-            from core.layer import Layer
+            from core.layer import RasterLayer
             from PyQt6.QtGui import QPainter
-            
-            layer = Layer("Quick Mask", self._document.width, self._document.height)
+
+            layer = RasterLayer("Quick Mask", self._document.width, self._document.height)
             layer.is_quick_mask = True
             
             sel = self._document.selection
@@ -1423,20 +1488,14 @@ class MainWindow(QMainWindow,
         p.drawImage((side - w) // 2, (side - h) // 2, img)
         p.end()
         sq_img = sq_img.convertToFormat(QImage.Format.Format_ARGB32_Premultiplied)
-        ptr = sq_img.constBits()
-        ptr.setsize(sq_img.sizeInBytes())
-        arr = np.frombuffer(bytearray(ptr), dtype=np.uint8).reshape((side, side, 4))
-        del ptr
+        from core.pixel_buffer import qimage_argb_view
+        arr = qimage_argb_view(sq_img, writable=False)[:, :side, :]
         luma = (arr[..., 2]*0.299 + arr[..., 1]*0.587 + arr[..., 0]*0.114)
         orig_alpha = arr[..., 3] / 255.0
         brush_img = QImage(side, side, QImage.Format.Format_ARGB32_Premultiplied)
         brush_img.fill(0)
-        b_ptr = brush_img.bits()
-        b_ptr.setsize(brush_img.sizeInBytes())
-        b_arr = np.frombuffer(b_ptr, dtype=np.uint8).reshape((side, side, 4))
+        b_arr = qimage_argb_view(brush_img, writable=True)[:, :side, :]
         b_arr[..., 3] = ((255 - luma) * orig_alpha).astype(np.uint8)
-        del b_arr
-        del b_ptr
         base_dir = os.path.dirname(os.path.dirname(os.path.abspath(__file__)))
         target_dir = os.path.join(base_dir, "brushes")
         os.makedirs(target_dir, exist_ok=True)

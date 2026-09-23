@@ -1,7 +1,6 @@
 import os
 import math
 import numpy as np
-import ctypes
 from PyQt6.QtGui import QImage, QPainter, QColor, QBrush, QLinearGradient, QRadialGradient, QPixmap, QTransform
 from PyQt6.QtCore import QPoint, Qt
 from core.adjustments.hdr_toning import _gauss_blur
@@ -146,9 +145,8 @@ def apply_layer_styles(img: QImage, styles: dict) -> tuple[QImage, QPoint]:
                 bp.fillRect(base_img.rect(), b)
     bp.end()
 
-    ptr = img.constBits()
-    buf = (ctypes.c_uint8 * img.sizeInBytes()).from_address(int(ptr))
-    arr = np.ndarray((h, img.bytesPerLine() // 4, 4), dtype=np.uint8, buffer=buf)[:, :w]
+    from core.pixel_buffer import qimage_argb_view
+    arr = qimage_argb_view(img, writable=False)[:, :w]
     alpha_np = arr[..., 3]
     
     def get_blurred_alpha(blur_r, dx=0, dy=0):
@@ -169,9 +167,7 @@ def apply_layer_styles(img: QImage, styles: dict) -> tuple[QImage, QPoint]:
         if not np.any(mask): return
         eff = QImage(out_w, out_h, QImage.Format.Format_ARGB32_Premultiplied)
         eff.fill(0)
-        e_ptr = eff.bits()
-        e_buf = (ctypes.c_uint8 * eff.sizeInBytes()).from_address(int(e_ptr))
-        e_arr = np.ndarray((out_h, eff.bytesPerLine() // 4, 4), dtype=np.uint8, buffer=e_buf)[:, :out_w]
+        e_arr = qimage_argb_view(eff, writable=True)[:, :out_w]
         c_np = np.array([color.blue(), color.green(), color.red()], dtype=np.float32)
         alpha_f = (mask.astype(np.float32) / 255.0) * (opacity / 100.0)
         e_arr[..., 0] = (c_np[0] * alpha_f).astype(np.uint8)
