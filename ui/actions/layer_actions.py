@@ -159,7 +159,8 @@ class LayerActionsMixin:
     # below rather than through the generic AdjustmentLayerDialog.
 
     def _get_adj_dialog(self, layer, t):
-        is_adj = getattr(layer, "layer_type", "raster") == "adjustment"
+        from core.layer import AdjustmentLayer
+        is_adj = isinstance(layer, AdjustmentLayer)
         if is_adj:
             _saved_adj = layer.adjustment_data
             layer.adjustment_data = {"type": t}
@@ -177,7 +178,7 @@ class LayerActionsMixin:
             def __setattr__(self, name, value):
                 if name == "image":
                     self.__dict__["image"] = value
-                    if getattr(self._real, "layer_type", "raster") != "adjustment":
+                    if not isinstance(self._real, AdjustmentLayer):
                         self._real.image = value
                 elif name == "adjustment_data":
                     self._real.adjustment_data = value
@@ -324,10 +325,10 @@ class LayerActionsMixin:
     @require_document
     def _new_smart_object(self):
         layer = self._document.get_active_layer()
-        if not layer or getattr(layer, "layer_type", "raster") == "smart_object":
+        from core.layer import SmartObjectLayer
+        if not layer or isinstance(layer, SmartObjectLayer):
             return
         self._push_history(tr("history.new_smart_object"))
-        from core.layer import SmartObjectLayer
         layer = self._document.replace_layer(layer, layer.convert_to(SmartObjectLayer))
         layer.smart_data = {"original": layer.image.copy()}
         self._refresh_layers()
@@ -336,8 +337,9 @@ class LayerActionsMixin:
     @require_document
     def _clear_smart_filters(self):
         layer = self._document.get_active_layer()
-        if layer and getattr(layer, "layer_type", "raster") == "smart_object":
-            if hasattr(layer, "smart_data") and layer.smart_data and "original" in layer.smart_data:
+        from core.layer import SmartObjectLayer
+        if isinstance(layer, SmartObjectLayer):
+            if layer.smart_data and "original" in layer.smart_data:
                 self._push_history(tr("history.clear_smart_filters"))
                 layer.image = layer.smart_data["original"].copy()
                 self._canvas_refresh()
@@ -345,25 +347,14 @@ class LayerActionsMixin:
 
     @require_document
     def _rasterize_layer(self):
+        from core.layer import RasterLayer
         layer = self._document.get_active_layer()
-        if not layer or layer.layer_type == "raster":
+        if not layer or type(layer) is RasterLayer:
             return
         self._push_history(tr("history.rasterize_layer"))
-        ltype = layer.layer_type
-        rendered = None
-        if ltype == "vector" and layer.has_vector_geometry():
-            # .image is only the thumbnail bake for vector layers — make
-            # sure it's current (Pen layers created before it was kept).
-            layer.rebake_thumbnail()
-        if ltype == "fill":
-            from core.document import _render_fill_layer
-            rendered = _render_fill_layer(layer, self._document.width,
-                                          self._document.height)
-        from core.layer import RasterLayer
+        pixels = layer.rasterized_image(self._document)
         layer = self._document.replace_layer(layer, layer.convert_to(RasterLayer))
-        if ltype == "fill":
-            layer.image = rendered
-        elif ltype == "adjustment":
-            layer.image.fill(0)
+        if pixels is not None:
+            layer.image = pixels
         self._refresh_layers()
         self._canvas_refresh()

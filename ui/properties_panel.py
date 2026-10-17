@@ -7,17 +7,6 @@ from core.locale import tr
 
 from ui import theme
 
-_TYPE_LABELS = {
-    "raster":       "Raster",
-    "text":         "Text Layer",
-    "vector":       "Vector",
-    "adjustment":   "Adjustment",
-    "fill":         "Fill",
-    "smart_object": "Smart Object",
-    "group":        "Group",
-    "artboard":     "Artboard",
-}
-
 def LABEL_STYLE():
     return (f"color:{theme.SUBTEXT};font-size:11px;background:transparent;")
 def VALUE_STYLE():
@@ -215,12 +204,12 @@ class PropertiesPanel(QWidget):
             if img and not img.isNull():
                 self._w_spin.setValue(img.width())
                 self._h_spin.setValue(img.height())
-            ltype = getattr(layer, "layer_type", "raster")
+            from core.blend_modes import blend_mode_key
             self._val_name.setText(layer.name)
-            self._val_type.setText(_TYPE_LABELS.get(ltype, ltype.capitalize()))
-            self._val_blend.setText(getattr(layer, "blend_mode", "Normal"))
+            self._val_type.setText(tr(f"layer.type.{layer.layer_type}"))
+            self._val_blend.setText(tr(blend_mode_key(getattr(layer, "blend_mode", "Normal"))))
             self._val_op.setText(f"{int(layer.opacity * 100)}%")
-            self._val_vis.setText("Yes" if layer.visible else "No")
+            self._val_vis.setText(tr("common.yes") if layer.visible else tr("common.no"))
             for b in (self._btn_al, self._btn_ac, self._btn_ar,
                       self._btn_at, self._btn_avc, self._btn_ab):
                 b.setEnabled(True)

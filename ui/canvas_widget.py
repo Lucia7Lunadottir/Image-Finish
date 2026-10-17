@@ -513,17 +513,16 @@ class CanvasWidget(QOpenGLWidget):
             painter.translate(self._pan)
             painter.scale(self.zoom, self.zoom)
             painter.setRenderHint(QPainter.RenderHint.TextAntialiasing)
-            for layer in self.document.layers:
-                if getattr(layer, "layer_type", "") == "artboard" and getattr(layer, "artboard_rect", None):
-                    ar = layer.artboard_rect
-                    painter.setPen(QPen(QColor(120, 120, 120), max(1.0, 1.0/self.zoom)))
-                    painter.setBrush(Qt.BrushStyle.NoBrush)
-                    painter.drawRect(ar)
-                    painter.setPen(QColor(200, 200, 200))
-                    font = painter.font()
-                    font.setPointSizeF(max(10.0, 12.0/self.zoom))
-                    painter.setFont(font)
-                    painter.drawText(ar.left(), ar.top() - max(4, int(4/self.zoom)), layer.name)
+            for layer in self.document.artboards():
+                ar = layer.artboard_rect
+                painter.setPen(QPen(QColor(120, 120, 120), max(1.0, 1.0/self.zoom)))
+                painter.setBrush(Qt.BrushStyle.NoBrush)
+                painter.drawRect(ar)
+                painter.setPen(QColor(200, 200, 200))
+                font = painter.font()
+                font.setPointSizeF(max(10.0, 12.0/self.zoom))
+                painter.setFont(font)
+                painter.drawText(ar.left(), ar.top() - max(4, int(4/self.zoom)), layer.name)
             painter.restore()
                 
             # Guarded rendering of custom tool overlays
@@ -651,7 +650,8 @@ class CanvasWidget(QOpenGLWidget):
         available on this widget, False (offscreen-buffer callers, GL init
         failure) always uses the original CPU drawImage() path."""
         dr = self._doc_rect_in_widget()
-        has_artboards = any(getattr(l, "layer_type", "") == "artboard" for l in self.document.layers)
+        from core.layer import ArtboardLayer
+        has_artboards = any(isinstance(l, ArtboardLayer) for l in self.document.layers)
 
         if not has_artboards:
             painter.save()

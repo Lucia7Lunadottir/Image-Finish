@@ -651,7 +651,7 @@ class MainWindow(QMainWindow,
                 # Temporarily restore original layer and selection state for a clean snapshot
                 layer = self._document.get_active_layer()
                 tmp_img, tmp_off, tmp_sel = None, None, None
-                tmp_rect = None
+                kind_geometry = False
                 tmp_kids = []
                 if layer and hasattr(tool, "_layer_backup") and tool._layer_backup is not None:
                     for kid_data in getattr(tool, "_linked_children", []):
@@ -662,10 +662,12 @@ class MainWindow(QMainWindow,
                     tmp_img = layer.image
                     tmp_off = layer.offset
                     tmp_sel = self._document.selection
-                    if getattr(layer, "layer_type", "") == "artboard":
-                        tmp_rect = QRect(layer.artboard_rect) if layer.artboard_rect else None
-                        if t_name == "Move":
-                            layer.artboard_rect = QRect(tool._original_rect) if tool._original_rect else None
+                    # Per-kind geometry the drag/Transform panel already
+                    # moved live (artboard rect, frame rect): back to the
+                    # original for the snapshot, re-applied right after.
+                    kind_geometry = t_name == "Move" and getattr(tool, "_original_rect", None) is not None
+                    if kind_geometry:
+                        layer.move_tool_cancel_extra(tool._original_rect)
                     layer.image = tool._layer_backup
                     layer.offset = tool._offset_backup
                     if getattr(tool, "_sel_origin", None):
@@ -678,8 +680,8 @@ class MainWindow(QMainWindow,
                     layer.image = tmp_img
                     layer.offset = tmp_off
                     self._document.selection = tmp_sel
-                    if getattr(layer, "layer_type", "") == "artboard" and tmp_rect is not None:
-                        layer.artboard_rect = tmp_rect
+                    if kind_geometry:
+                        layer.move_tool_set_params_extra(tool._total_transform, tool._original_rect)
                         
                 for kid, old_off in tmp_kids:
                     kid.offset = old_off
@@ -745,7 +747,7 @@ class MainWindow(QMainWindow,
     @require_document
     def _open_layer_styles(self, index: int):
         layer = self._doc_controller.layer_at(index)
-        if layer is None or getattr(layer, "layer_type", "raster") in ("group", "artboard"):
+        if layer is None or layer.is_container:
             return
         from ui.layer_style_dialog import LayerStyleDialog
         dlg = LayerStyleDialog(layer, self._canvas_refresh, self)
@@ -776,7 +778,7 @@ class MainWindow(QMainWindow,
             
             if to_index < len(self._document.layers) - 1:
                 layer_above_in_ui = self._document.layers[to_index + 1]
-                if getattr(layer_above_in_ui, "layer_type", "raster") in ("group", "artboard"):
+                if layer_above_in_ui.is_container:
                     layer.parent_id = getattr(layer_above_in_ui, "layer_id", None)
                 else:
                     layer.parent_id = getattr(layer_above_in_ui, "parent_id", None)
@@ -1035,24 +1037,13 @@ class MainWindow(QMainWindow,
     def _align_layer(self, alignment: str):
         doc = self._document
         layer = doc.get_active_layer()
-        if not layer or layer.locked or getattr(layer, "layer_type", "raster") == "artboard":
+        from core.layer import ArtboardLayer
+        if not layer or layer.locked or isinstance(layer, ArtboardLayer):
             return
-            
+
         linked = [layer]
-        target_id = getattr(layer, "layer_id", None)
-        visited = set()
-        def get_descendants(p_id):
-            if not p_id or p_id in visited: return []
-            visited.add(p_id)
-            res = []
-            for l in doc.layers:
-                if getattr(l, "parent_id", None) == p_id:
-                    res.append(l)
-                    res.extend(get_descendants(getattr(l, "layer_id", None)))
-            return res
-            
-        if target_id and getattr(layer, "layer_type", "raster") == "group":
-            linked.extend(get_descendants(target_id))
+        if layer.is_container:          # a group aligns as one block
+            linked.extend(doc.descendants(layer))
             
         link_id = getattr(layer, "link_id", None)
         if link_id:
@@ -1062,23 +1053,17 @@ class MainWindow(QMainWindow,
                     
         src_rect = QRectF()
         for l in linked:
-            if getattr(l, "layer_type", "raster") in ("group", "artboard") or l.image.isNull(): continue
-            b = Document._nontransparent_bounds(l.image)
-            if not b.isEmpty(): src_rect = src_rect.united(QRectF(b).translated(QPointF(l.offset)))
+            r = l.content_rect()
+            if not r.isEmpty():
+                src_rect = src_rect.united(r)
                 
         if src_rect.isEmpty(): return
         
         target_rect = None
         if doc.selection and not doc.selection.isEmpty(): target_rect = doc.selection.boundingRect()
         else:
-            p_id = getattr(layer, "parent_id", None)
-            while p_id:
-                parent = next((l for l in doc.layers if getattr(l, "layer_id", None) == p_id), None)
-                if not parent: break
-                if getattr(parent, "layer_type", "") == "artboard" and getattr(parent, "artboard_rect", None):
-                    target_rect = QRectF(parent.artboard_rect); break
-                p_id = getattr(parent, "parent_id", None)
-            if not target_rect: target_rect = QRectF(0, 0, doc.width, doc.height)
+            artboard = doc.enclosing_artboard(layer)
+            target_rect = QRectF(artboard.artboard_rect) if artboard else QRectF(0, 0, doc.width, doc.height)
                 
         dx, dy = 0, 0
         if alignment == "left": dx = target_rect.left() - src_rect.left()
@@ -1179,9 +1164,9 @@ class MainWindow(QMainWindow,
                     elif action == "shape":
                         self._push_history("New Vector Shape")
                         from core.layer import VectorLayer
-                        n = sum(1 for l in self._document.layers if getattr(l, "layer_type", "raster") == "vector") + 1
-                        new_layer = self._document.add_layer(f"Path {n}", self._document.active_layer_index + 1,
-                                                             layer_cls=VectorLayer)
+                        new_layer = self._document.add_layer(
+                            self._document.next_layer_name(VectorLayer, "layer.name.path"),
+                            self._document.active_layer_index + 1, layer_cls=VectorLayer)
                         new_layer.vector_mask = QPainterPath(path)
                         new_layer.vector_mask_enabled = True
                         # Live geometry, not a one-time raster bake: render_into

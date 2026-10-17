@@ -1,6 +1,7 @@
 
 from core.locale import tr
 from core.text_model import CHAR_OPTION_KEYS, EFFECT_OPTION_KEYS, PARAGRAPH_OPTION_KEYS, _coerce
+from core.layer import TextLayer
 
 _TEXT_KEYS = set(CHAR_OPTION_KEYS) | set(PARAGRAPH_OPTION_KEYS) | set(EFFECT_OPTION_KEYS) | {"text_vertical"}
 
@@ -57,7 +58,7 @@ class TextActionsMixin:
         if not self._is_text_tool_active() or self._document is None:
             return False
         layer = self._document.get_active_layer()
-        if getattr(layer, "layer_type", "") != "text" or not layer.has_live_content():
+        if not isinstance(layer, TextLayer) or not layer.has_live_content():
             return False
         data = layer.data()
         from dataclasses import replace
@@ -130,7 +131,7 @@ class TextActionsMixin:
     def _sync_text_options_from_layer(self, layer):
         if not self._is_text_tool_active():
             return
-        if getattr(layer, "layer_type", "") != "text" or not layer.has_live_content():
+        if not isinstance(layer, TextLayer) or not layer.has_live_content():
             return
         data = layer.data()
         opts = data.options_at(0, len(data.text))

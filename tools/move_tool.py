@@ -2,7 +2,6 @@ import math
 from PyQt6.QtCore import QPoint, QPointF, QRectF, Qt
 from PyQt6.QtGui import QColor, QPainter, QImage, QTransform, QPen, QPolygonF
 from tools.base_tool import BaseTool
-from core.document import Document
 from core.layer import TextLayer
 
 
@@ -84,29 +83,9 @@ class MoveTool(BaseTool):
         if not self.is_transforming and opts.get("move_auto_select", False):
             for i in range(len(doc.layers) - 1, -1, -1):
                 l = doc.layers[i]
-                if not l.visible or l.locked: continue
-                
-                if getattr(l, "layer_type", "raster") == "artboard":
-                    if l.artboard_rect and l.artboard_rect.contains(pos):
-                        doc.active_layer_index = i
-                        break
-                elif getattr(l, "layer_type", "raster") == "group":
-                    continue
-                elif getattr(l, "layer_type", "raster") == "text":
-                    if l.image.isNull(): continue
-                    br = Document._nontransparent_bounds(l.image)
-                    if not br.isEmpty():
-                        check = br.adjusted(-4, -4, 4, 4).translated(l.offset)
-                        if check.contains(pos):
-                            doc.active_layer_index = i
-                            break
-                else:
-                    if l.image.isNull(): continue
-                    lx, ly = int(pos.x() - l.offset.x()), int(pos.y() - l.offset.y())
-                    if 0 <= lx < l.width() and 0 <= ly < l.height():
-                        if (l.image.pixel(lx, ly) >> 24) & 0xFF > 0:
-                            doc.active_layer_index = i
-                            break
+                if l.visible and not l.locked and l.hit_test(pos):
+                    doc.active_layer_index = i
+                    break
                             
         layer = doc.get_active_layer()
         if not layer or layer.locked: return
@@ -136,29 +115,12 @@ class MoveTool(BaseTool):
             if getattr(doc, "snap_to_layers", True):
                 for l in doc.layers:
                     if l is layer or not l.visible: continue
-                    lr = None
-                    if getattr(l, "layer_type", "raster") == "artboard" and getattr(l, "artboard_rect", None):
-                        lr = QRectF(l.artboard_rect)
-                    elif not l.image.isNull():
-                        b = Document._nontransparent_bounds(l.image)
-                        if not b.isEmpty(): lr = QRectF(b).translated(QPointF(l.offset))
-                    if lr:
+                    lr = l.snap_rect()
+                    if not lr.isEmpty():
                         self._snap_targets.append(lr)
             
-            target_id = getattr(layer, "layer_id", None)
-            visited_ids = set()
-            def get_descendants(p_id):
-                if not p_id or p_id in visited_ids: return []
-                visited_ids.add(p_id)
-                res = []
-                for l in doc.layers:
-                    if getattr(l, "parent_id", None) == p_id:
-                        res.append(l)
-                        res.extend(get_descendants(getattr(l, "layer_id", None)))
-                return res
-                
-            if target_id and layer._is_container:
-                for kid in get_descendants(target_id):
+            if layer.is_container:
+                for kid in doc.descendants(layer):
                     self._linked_children.append({"layer": kid, "backup_offset": QPoint(kid.offset)})
 
             link_id = getattr(layer, "link_id", None)
@@ -427,9 +389,10 @@ class MoveTool(BaseTool):
         if ok:
             self._total_transform = final_t
             
-            if getattr(layer, "layer_type", "raster") == "artboard":
-                layer.artboard_rect = final_t.mapRect(QRectF(self._original_rect)).toRect()
-            elif self._is_floating and self._sel_origin:
+            # Same per-kind geometry as the numeric Transform panel
+            # (set_transform_params): artboard / frame rects follow the drag.
+            handled = layer.move_tool_set_params_extra(final_t, self._original_rect)
+            if not handled and self._is_floating and self._sel_origin:
                 doc.selection = final_t.map(self._sel_origin)
                 
             if self._mode == 'move':

@@ -6,6 +6,7 @@ from PyQt6.QtWidgets import (QDialog, QVBoxLayout, QPlainTextEdit,
 from tools.base_tool import BaseTool
 from core.locale import tr
 from core.text_model import TextData
+from core.layer import TextLayer
 from core.text_engine import (layout_device, paint_text, qfont, text_transform,
                               text_outline_in_document, PT_TO_PX)
 
@@ -198,9 +199,9 @@ class _BaseTypeTool(BaseTool):
     def _text_layer_at(doc, pt: QPointF):
         for i in range(len(doc.layers) - 1, -1, -1):
             l = doc.layers[i]
-            if not l.visible or l.locked or getattr(l, "layer_type", "") != "text":
+            if not l.visible or l.locked or not isinstance(l, TextLayer):
                 continue
-            if hasattr(l, "contains_doc_point") and l.has_live_content() and l.contains_doc_point(pt):
+            if l.has_live_content() and l.contains_doc_point(pt):
                 return i, l
         return None, None
 

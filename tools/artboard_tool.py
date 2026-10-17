@@ -33,7 +33,7 @@ class ArtboardTool(BaseTool):
             self._start = None
             return
 
-        count = sum(1 for l in doc.layers if getattr(l, "layer_type", "") == "artboard")
+        count = sum(1 for l in doc.layers if isinstance(l, ArtboardLayer))
         
         if count == 0:
             # Gather all current layers into base Artboard 1
@@ -44,7 +44,7 @@ class ArtboardTool(BaseTool):
             bg_art.image.fill(Qt.GlobalColor.transparent)
             
             for l in doc.layers:
-                if l is not bg_art and getattr(l, "layer_type", "raster") != "artboard":
+                if l is not bg_art and not isinstance(l, ArtboardLayer):
                     if not getattr(l, "parent_id", None):
                         l.parent_id = bg_art.layer_id
             

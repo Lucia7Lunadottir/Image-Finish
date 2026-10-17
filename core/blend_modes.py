@@ -32,6 +32,15 @@ def composition_mode(name: str) -> QPainter.CompositionMode:
     return _MODES.get(name, _CM.CompositionMode_SourceOver)
 
 
+_KEYS = dict(BLEND_MODES)
+_KEYS["Normal"] = "blend.normal"     # layers' default value
+
+
+def blend_mode_key(name: str) -> str:
+    """Translation key of a stored blend-mode name (unknown -> Normal)."""
+    return _KEYS.get(name, "blend.normal")
+
+
 def blend_mode_items(tr) -> list:
     """[(translated label, value)] for combo boxes."""
     return [(tr(key), value) for value, key in BLEND_MODES]

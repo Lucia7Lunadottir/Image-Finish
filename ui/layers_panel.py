@@ -139,8 +139,7 @@ class LayerItem(QWidget):
             indent.setFixedWidth(depth * 16)
             lo.addWidget(indent)
             
-        ltype = getattr(layer, "layer_type", "raster")
-        if ltype in ("group", "artboard"):
+        if layer.is_container:
             self._exp_btn = QPushButton("▼" if getattr(layer, "expanded", True) else "▶")
             self._exp_btn.setFixedSize(16, 16)
             theme.apply_style(self._exp_btn, lambda: f"border: none; background: transparent; color: {theme.SUBTEXT}; font-size: 10px; padding: 0;")

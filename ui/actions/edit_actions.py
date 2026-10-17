@@ -452,7 +452,8 @@ class EditActionsMixin:
         self._push_history(tr("history.paste"))
         
         layer = self._document and self._document.get_active_layer()
-        if layer and getattr(layer, "layer_type", "") == "frame":
+        from core.layer import FrameLayer
+        if isinstance(layer, FrameLayer):
             fd = getattr(layer, "frame_data", {})
             f_rect = fd.get("rect", QRectF(0,0,100,100))
             

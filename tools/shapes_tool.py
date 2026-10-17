@@ -117,8 +117,7 @@ class ShapesTool(BaseTool):
             target.combine_with(ShapeSpec.from_dict(shape_data).boolean_operand(), op)
             return
 
-        n = sum(1 for l in doc.layers if getattr(l, "layer_type", "raster") == "vector") + 1
-        new_layer = VectorLayer(f"Shape {n}", doc.width, doc.height)
+        new_layer = VectorLayer(doc.next_layer_name(VectorLayer, "layer.name.shape"), doc.width, doc.height)
         new_layer.shape_data = shape_data
         self._bake_shape(new_layer.image, shape_data)
 

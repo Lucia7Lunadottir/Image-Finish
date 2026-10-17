@@ -8,6 +8,7 @@ from PyQt6.QtWidgets import (QApplication, QGraphicsView, QGraphicsScene,
 
 from tools.shapes_tool import ShapesTool
 from core.shape_model import ShapeSpec
+from core.layer import VectorLayer
 from core.locale import tr
 
 _HANDLE_SIZE = 8
@@ -517,7 +518,7 @@ class ShapeSceneOverlay(QGraphicsView):
 
         live_ids = set()
         for layer in doc.layers:
-            if getattr(layer, "layer_type", "raster") != "vector":
+            if not isinstance(layer, VectorLayer):
                 continue
             sd = getattr(layer, "shape_data", None)
             if not sd or "rect" not in sd:

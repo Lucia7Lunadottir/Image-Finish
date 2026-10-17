@@ -419,6 +419,40 @@ class Layer:
     def height(self) -> int:
         return self.image.height()
 
+    # ------------------------------------------------------------- Geometry queries
+    # What used to be `layer_type == "artboard"/"group"/"text"` checks in
+    # MoveTool/WarpTool auto-select, snapping and Align.
+    @property
+    def is_container(self) -> bool:
+        return self._is_container
+
+    def content_rect(self) -> QRectF:
+        """Document-space bounds of the visible pixels (empty if none);
+        containers have none of their own."""
+        if self._is_container or self.image is None or self.image.isNull():
+            return QRectF()
+        from core.document import Document
+        br = Document._nontransparent_bounds(self.image)
+        return QRectF() if br.isEmpty() else QRectF(br).translated(QPointF(self.offset))
+
+    def snap_rect(self) -> QRectF:
+        """What other layers snap to while being moved."""
+        return self.content_rect()
+
+    def rasterized_image(self, document) -> QImage | None:
+        """Pixels for Layer > Rasterize, called before the conversion: a new
+        image, or None to keep the `image` the conversion copies (default —
+        for layers whose `image` already is what they show)."""
+        return None
+
+    def hit_test(self, pos) -> bool:
+        """Does a click at document point `pos` pick this layer (Move/Warp
+        auto-select)? Default: an opaque pixel under the cursor."""
+        if self._is_container or self.image is None or self.image.isNull():
+            return False
+        lx, ly = int(pos.x() - self.offset.x()), int(pos.y() - self.offset.y())
+        return 0 <= lx < self.width() and 0 <= ly < self.height() and (self.image.pixel(lx, ly) >> 24) & 0xFF > 0
+
     # ------------------------------------------------------------- Move-tool hooks
     # `tools/move_tool.py` used to dispatch on `layer_type == "artboard"/
     # "frame"/"text"/"group"` in four separate places (bounds setup, apply,
@@ -749,6 +783,14 @@ class TextLayer(LiveRenderedLayer):
     text_data = None
     _layout_cache = None
 
+    def hit_test(self, pos) -> bool:
+        # Glyphs are thin: anywhere within 4 px of the text's bounds counts.
+        if self.image is None or self.image.isNull():
+            return False
+        from core.document import Document
+        br = Document._nontransparent_bounds(self.image)
+        return not br.isEmpty() and br.adjusted(-4, -4, 4, 4).translated(self.offset).contains(pos)
+
     def __init__(self, name: str, width: int, height: int, fill_color: QColor = None):
         super().__init__(name, width, height, fill_color)
         self.text_data: dict | None = None
@@ -1008,6 +1050,13 @@ class VectorLayer(LiveRenderedLayer):
     def content_bounds(self) -> QRectF:
         return self.vector_bounds()
 
+    def rasterized_image(self, document):
+        # .image is only the thumbnail bake — make sure it's current (Pen
+        # layers created before it was kept).
+        if self.has_vector_geometry():
+            self.rebake_thumbnail()
+        return None
+
     def rebake_thumbnail(self) -> None:
         """Bakes into the existing (document-sized) image at self.offset —
         shape_data geometry depends on the offset, so it can't be moved
@@ -1072,6 +1121,12 @@ class AdjustmentLayer(Layer):
 
     def _from_dict_extra(self, d):
         self.adjustment_data = d.get("adjustment_data")
+
+    def rasterized_image(self, document):
+        # No pixels of its own: rasterizing leaves an empty layer.
+        img = self.image.copy()
+        img.fill(0)
+        return img
 
     def render_into(self, ctx, layer_artboard_rect, is_clipping, next_clipping):
         """Adjustment layers don't draw pixels of their own — they re-grade
@@ -1210,6 +1265,10 @@ class FillLayer(Layer):
         img.is_copy = True
         return img
 
+    def rasterized_image(self, document):
+        from core.document import _render_fill_layer
+        return _render_fill_layer(self, document.width, document.height)
+
 
 class SmartObjectLayer(Layer):
     _LAYER_TAG = "smart_object"
@@ -1298,6 +1357,12 @@ class ArtboardLayer(Layer):
 
     def move_tool_container_bounds(self, linked_children: list[dict]) -> QRectF:
         return QRectF(self.artboard_rect or QRect())
+
+    def snap_rect(self) -> QRectF:
+        return QRectF(self.artboard_rect) if self.artboard_rect else QRectF()
+
+    def hit_test(self, pos) -> bool:
+        return bool(self.artboard_rect) and self.artboard_rect.contains(pos)
 
     def move_tool_apply_extra(self, doc, final_transform, original_rect, original_img) -> bool:
         self.artboard_rect = final_transform.mapRect(QRectF(original_rect)).toRect()

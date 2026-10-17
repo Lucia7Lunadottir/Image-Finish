@@ -1,6 +1,7 @@
 from PyQt6.QtCore import Qt, QPointF
 from PyQt6.QtGui import QPainter, QImage, QPolygonF, QColor
 from core.locale import tr
+from core.layer import RasterLayer
 from ui.document_controller import require_document
 
 
@@ -139,7 +140,7 @@ class ImageActionsMixin:
         self._document.color_mode = new_mode
         
         for layer in self._document.layers:
-            if layer.image.isNull() or getattr(layer, "layer_type", "raster") != "raster":
+            if layer.image.isNull() or type(layer) is not RasterLayer:
                 continue
                 
             img = layer.image.copy()

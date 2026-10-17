@@ -102,7 +102,7 @@ class Document:
         parent_id = None
         if self.layers and 0 <= self.active_layer_index < len(self.layers):
             active = self.layers[self.active_layer_index]
-            if getattr(active, "layer_type", "raster") in ("artboard", "group"):
+            if active.is_container:
                 parent_id = getattr(active, "layer_id", None)
             else:
                 parent_id = getattr(active, "parent_id", None)
@@ -142,6 +142,50 @@ class Document:
         layer = self.layers.pop(from_index)
         self.layers.insert(to_index, layer)
         self.active_layer_index = to_index
+
+    # ── layer tree queries ────────────────────────────────────────────────
+    def layer_by_id(self, layer_id) -> Layer | None:
+        if not layer_id:
+            return None
+        return next((l for l in self.layers if l.layer_id == layer_id), None)
+
+    def descendants(self, layer: Layer) -> list[Layer]:
+        """Every layer nested under `layer` (children, grandchildren...)."""
+        out, seen, stack = [], set(), [layer.layer_id]
+        while stack:
+            pid = stack.pop(0)
+            if not pid or pid in seen:
+                continue
+            seen.add(pid)
+            for l in self.layers:
+                if l.parent_id == pid:
+                    out.append(l)
+                    stack.append(l.layer_id)
+        return out
+
+    def artboards(self) -> list:
+        """Artboard layers that have a rectangle."""
+        from core.layer import ArtboardLayer
+        return [l for l in self.layers if isinstance(l, ArtboardLayer) and l.artboard_rect]
+
+    def enclosing_artboard(self, layer: Layer):
+        """The artboard `layer` sits in (through any groups), or None."""
+        from core.layer import ArtboardLayer
+        seen = set()
+        parent = self.layer_by_id(layer.parent_id)
+        while parent is not None and parent.layer_id not in seen:
+            seen.add(parent.layer_id)
+            if isinstance(parent, ArtboardLayer) and parent.artboard_rect:
+                return parent
+            parent = self.layer_by_id(parent.parent_id)
+        return None
+
+    def next_layer_name(self, layer_cls: type, name_key: str) -> str:
+        """Auto-name for a new layer: "<translated kind> <n>", n = how many
+        layers of that class exist + 1."""
+        from core.locale import tr
+        n = sum(1 for l in self.layers if isinstance(l, layer_cls)) + 1
+        return f"{tr(name_key)} {n}"
 
     def get_active_layer(self) -> Layer | None:
         if getattr(self, "quick_mask_layer", None) is not None:
@@ -433,7 +477,7 @@ class Document:
     def apply_layer_mask(self, layer):
         if getattr(layer, "mask", None) is None: return
         import numpy as np
-        if getattr(layer, "layer_type", "raster") != "raster":
+        if type(layer) is not RasterLayer:
             # Baking the mask into pixels can carve alpha in ways the
             # original type's data (text_data, shape_data, ...) can no
             # longer reproduce — demote to plain raster first.
@@ -603,15 +647,12 @@ class Document:
 
     def fit_to_artboards(self) -> bool:
         """Wrap document bounds tightly around all artboards and shift layers if they go negative."""
-        bounds = None
-        has_artboards = False
-        for layer in self.layers:
-            if getattr(layer, "layer_type", "") == "artboard" and getattr(layer, "artboard_rect", None):
-                has_artboards = True
-                bounds = layer.artboard_rect if bounds is None else bounds.united(layer.artboard_rect)
-
-        if not has_artboards or bounds is None:
+        artboards = self.artboards()
+        if not artboards:
             return False
+        bounds = artboards[0].artboard_rect
+        for a in artboards[1:]:
+            bounds = bounds.united(a.artboard_rect)
 
         shift = bounds.topLeft()
         if shift == QPoint(0, 0) and self.width == bounds.width() and self.height == bounds.height():
@@ -619,8 +660,8 @@ class Document:
 
         for layer in self.layers:
             layer.offset = layer.offset - shift
-            if getattr(layer, "layer_type", "") == "artboard" and getattr(layer, "artboard_rect", None):
-                layer.artboard_rect.translate(-shift)
+        for a in artboards:
+            a.artboard_rect.translate(-shift)
 
         self.width = bounds.width()
         self.height = bounds.height()

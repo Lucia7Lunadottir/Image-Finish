@@ -254,8 +254,8 @@ class TextEditSession(QObject):
             self._history_state = object()   # no window (tests): still mark as started
         if self.layer is None:
             from core.layer import TextLayer
-            n = sum(1 for l in self.doc.layers if getattr(l, "layer_type", "") == "text") + 1
-            self.layer = TextLayer(f"Text {n}", self.doc.width, self.doc.height)
+            self.layer = TextLayer(self.doc.next_layer_name(TextLayer, "layer.name.text"),
+                                   self.doc.width, self.doc.height)
             self.layer.set_data(self.data)
             self.doc.layers.append(self.layer)
             self.doc.active_layer_index = len(self.doc.layers) - 1

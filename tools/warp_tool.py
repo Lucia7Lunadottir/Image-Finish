@@ -50,19 +50,9 @@ class WarpTool(BaseTool):
         if not self.is_transforming and opts.get("move_auto_select", False):
             for i in range(len(doc.layers) - 1, -1, -1):
                 l = doc.layers[i]
-                if not l.visible or l.locked: continue
-                if getattr(l, "layer_type", "raster") == "artboard":
-                    if l.artboard_rect and l.artboard_rect.contains(pos):
-                        doc.active_layer_index = i
-                        break
-                elif getattr(l, "layer_type", "raster") == "group": continue
-                else:
-                    if l.image.isNull(): continue
-                    lx, ly = int(pos.x() - l.offset.x()), int(pos.y() - l.offset.y())
-                    if 0 <= lx < l.width() and 0 <= ly < l.height():
-                        if (l.image.pixel(lx, ly) >> 24) & 0xFF > 0:
-                            doc.active_layer_index = i
-                            break
+                if l.visible and not l.locked and l.hit_test(pos):
+                    doc.active_layer_index = i
+                    break
 
         layer = doc.get_active_layer()
         if not layer or layer.locked: return
