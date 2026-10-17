@@ -78,15 +78,13 @@ def apply_vibrance(src: QImage, vibrance: int, saturation: int) -> QImage:
 
 
 class VibranceDialog(_AdjustDialog):
+    ADJUSTMENT_TYPE = "vibrance"
+
     def __init__(self, layer, canvas_refresh, parent=None):
         super().__init__(tr("adj.vibrance.title"), layer, canvas_refresh, parent)
-        self._vib = _SliderRow(tr("adj.vibrance.vibrance"),   -100, 100)
-        self._sat = _SliderRow(tr("adj.vibrance.saturation"), -100, 100)
+        self._vib = self._bind("vibrance", _SliderRow(tr("adj.vibrance.vibrance"),   -100, 100))
+        self._sat = self._bind("saturation", _SliderRow(tr("adj.vibrance.saturation"), -100, 100))
         self._add_row(self._vib)
         self._add_row(self._sat)
         self._seal()
 
-    def _apply_preview(self):
-        self._layer.image = apply_vibrance(
-            self._orig_argb32, self._vib.value(), self._sat.value())
-        self._canvas_refresh()

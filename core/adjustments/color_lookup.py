@@ -178,6 +178,8 @@ def apply_color_lookup(src: QImage, lut: dict, intensity: int) -> QImage:
 # ── dialog ────────────────────────────────────────────────────────────────────
 
 class ColorLookupDialog(_AdjustDialog):
+    ADJUSTMENT_TYPE = "color_lookup"
+
     def __init__(self, layer, canvas_refresh, parent=None):
         super().__init__(tr("adj.color_lookup.title"), layer, canvas_refresh, parent)
         self.setMinimumWidth(400)
@@ -194,7 +196,7 @@ class ColorLookupDialog(_AdjustDialog):
         self._vbox.addLayout(file_row)
 
         # ── Intensity slider ──────────────────────────────────────────────────
-        self._intensity = _SliderRow(tr("adj.color_lookup.intensity"), 0, 100, 100)
+        self._intensity = self._bind("intensity", _SliderRow(tr("adj.color_lookup.intensity"), 0, 100, 100))
         self._add_row(self._intensity)
 
         self._seal(reset_fn=self._do_reset)
@@ -226,11 +228,14 @@ class ColorLookupDialog(_AdjustDialog):
         self._intensity.reset()
         self._apply_preview()
 
-    def _apply_preview(self):
-        if not getattr(self, "_is_adj_layer", False):
-            if self._lut is None:
-                self._layer.image = self._original.copy()
-            else:
-                self._layer.image = apply_color_lookup(
-                    self._orig_argb32, self._lut, self._intensity.value())
-        self._canvas_refresh()
+    # The loaded table isn't a control, so it's added to the bound values.
+    def adjustment_data(self) -> dict:
+        d = super().adjustment_data()
+        d["lut"] = self._lut
+        return d
+
+    def _after_load(self, params: dict):
+        self._lut = params.get("lut")
+        if self._lut:
+            self._file_lbl.setText(tr("adj.color_lookup.loaded"))
+            self._file_lbl.setStyleSheet("color: #a6e3a1; font-size: 11px;")

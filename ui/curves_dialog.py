@@ -574,6 +574,21 @@ class CurvesDialog(BaseDialog):
         self._stop_picking()
         super().done(result)
 
+    # ── adjustment-layer data (core/adjustments/registry.py "curves") ─────────
+
+    ADJUSTMENT_TYPE = "curves"
+
+    def adjustment_data(self) -> dict:
+        return {"type": "curves", "points": {ch: [tuple(p) for p in pts]
+                                             for ch, pts in self._curve_points.items()}}
+
+    def load_adjustment_data(self, data: dict):
+        from core.adjustments.registry import get_kind
+        points = get_kind("curves").normalize(data)["points"] or {}
+        self._curve.set_points(points)
+        self._curve_points = self._curve.points()
+        self._apply_preview()
+
     # ── preview + apply ───────────────────────────────────────────────────────
 
     def _apply_preview(self):

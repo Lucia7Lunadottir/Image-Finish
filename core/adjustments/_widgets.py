@@ -41,12 +41,17 @@ class _FSliderRow(QHBoxLayout):
     def value(self) -> float:
         return self._slider.value() / self._divisor
 
-    def reset(self):
+    def set_value(self, v: float):
+        """Set the (divided) value without triggering valueChanged."""
+        raw = int(round(float(v) * self._divisor))
         self._slider.blockSignals(True)
-        self._slider.setValue(self._default)
+        self._slider.setValue(raw)
         self._slider.blockSignals(False)
         fmt = f"{{:.{self._decimals}f}}"
-        self._val_lbl.setText(fmt.format(self._default / self._divisor))
+        self._val_lbl.setText(fmt.format(self._slider.value() / self._divisor))
+
+    def reset(self):
+        self.set_value(self._default / self._divisor)
 
     @property
     def valueChanged(self):

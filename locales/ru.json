@@ -1108,5 +1108,6 @@
   "opts.text.vertical_tip": "Переключить ориентацию текста (горизонтально / вертикально)",
   "opts.text.commit_tip": "Применить текст (Ctrl+Enter)",
   "opts.text.cancel_tip": "Отменить правку (Esc)",
-  "opts.gradient.edit_tip": "Градиент — щёлкните, чтобы изменить"
+  "opts.gradient.edit_tip": "Градиент — щёлкните, чтобы изменить",
+  "adj.color_lookup.loaded": "Таблица загружена"
 }

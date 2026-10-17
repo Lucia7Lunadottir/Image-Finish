@@ -40,18 +40,15 @@ def apply_exposure(src: QImage, exposure: float, offset: float,
 
 
 class ExposureDialog(_AdjustDialog):
+    ADJUSTMENT_TYPE = "exposure"
+
     def __init__(self, layer, canvas_refresh, parent=None):
         super().__init__(tr("adj.exposure.title"), layer, canvas_refresh, parent)
         # Slider integers / 100 = actual float value
-        self._exp    = _FSliderRow(tr("adj.exposure.exposure"),  -500, 500,   0, 100.0, 2)
-        self._offset = _FSliderRow(tr("adj.exposure.offset"),     -50,  50,   0, 100.0, 2)
-        self._gamma  = _FSliderRow(tr("adj.exposure.gamma"),       10, 999, 100, 100.0, 2)
+        self._exp    = self._bind("exposure", _FSliderRow(tr("adj.exposure.exposure"),  -500, 500,   0, 100.0, 2))
+        self._offset = self._bind("offset", _FSliderRow(tr("adj.exposure.offset"),     -50,  50,   0, 100.0, 2))
+        self._gamma  = self._bind("gamma", _FSliderRow(tr("adj.exposure.gamma"),       10, 999, 100, 100.0, 2))
         for row in (self._exp, self._offset, self._gamma):
             self._add_row(row)
         self._seal()
 
-    def _apply_preview(self):
-        self._layer.image = apply_exposure(
-            self._orig_argb32,
-            self._exp.value(), self._offset.value(), self._gamma.value())
-        self._canvas_refresh()

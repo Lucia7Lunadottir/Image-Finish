@@ -63,6 +63,7 @@ def apply_photo_filter(src: QImage, r: int, g: int, b: int,
 
 
 class PhotoFilterDialog(_AdjustDialog):
+    ADJUSTMENT_TYPE = "photo_filter"
     _DEFAULT_COLOR   = QColor(235, 115, 25)   # warm Kodak orange
     _DEFAULT_DENSITY = 25
 
@@ -72,17 +73,17 @@ class PhotoFilterDialog(_AdjustDialog):
         color_row = QHBoxLayout()
         color_lbl = QLabel(tr("adj.photo_filter.color"))
         color_lbl.setFixedWidth(90)
-        self._color_btn = _ColorButton(self._DEFAULT_COLOR)
+        self._color_btn = self._bind("color", _ColorButton(self._DEFAULT_COLOR))
         self._color_btn.colorChanged.connect(self._on_change)
         color_row.addWidget(color_lbl)
         color_row.addWidget(self._color_btn)
         color_row.addStretch()
         self._vbox.addLayout(color_row)
 
-        self._density = _SliderRow(tr("adj.photo_filter.density"), 1, 100, self._DEFAULT_DENSITY)
+        self._density = self._bind("density", _SliderRow(tr("adj.photo_filter.density"), 1, 100, self._DEFAULT_DENSITY))
         self._add_row(self._density)
 
-        self._preserve = QCheckBox(tr("adj.photo_filter.preserve"))
+        self._preserve = self._bind("preserve", QCheckBox(tr("adj.photo_filter.preserve")))
         self._preserve.setChecked(True)
         self._preserve.stateChanged.connect(self._on_change)
         self._vbox.addWidget(self._preserve)
@@ -98,10 +99,3 @@ class PhotoFilterDialog(_AdjustDialog):
         self._preserve.blockSignals(False)
         self._apply_preview()
 
-    def _apply_preview(self):
-        c = self._color_btn.color()
-        self._layer.image = apply_photo_filter(
-            self._orig_argb32,
-            c.red(), c.green(), c.blue(),
-            self._density.value(), self._preserve.isChecked())
-        self._canvas_refresh()

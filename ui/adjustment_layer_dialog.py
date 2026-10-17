@@ -21,6 +21,11 @@ class AdjustmentLayerDialog(QDialog):
         self._original_data = dict(layer.adjustment_data) if layer.adjustment_data else {}
         self._data = dict(self._original_data) if self._original_data else {"type": "brightness_contrast",
                                                                             "brightness": 0, "contrast": 0}
+        # Older saves used other key names; the registry maps them.
+        from core.adjustments.registry import get_kind
+        _kind = get_kind(self._data.get("type", ""))
+        if _kind is not None:
+            self._data = {"type": self._data["type"], **_kind.normalize(self._data)}
 
         lo = QVBoxLayout(self)
         lo.setSpacing(8)
@@ -119,7 +124,7 @@ class AdjustmentLayerDialog(QDialog):
 
     # ── Result ───────────────────────────────────────────────────────────
 
-    def result_data(self) -> dict:
+    def adjustment_data(self) -> dict:
         t = self._type_combo.currentData()
         if t == "brightness_contrast":
             return {"type": t,
@@ -133,11 +138,11 @@ class AdjustmentLayerDialog(QDialog):
         return {"type": "invert"}
 
     def _trigger_preview(self, *args):
-        self.layer.adjustment_data = self.result_data()
+        self.layer.adjustment_data = self.adjustment_data()
         self.canvas_refresh()
 
     def accept(self):
-        self.layer.adjustment_data = self.result_data()
+        self.layer.adjustment_data = self.adjustment_data()
         super().accept()
 
     def reject(self):

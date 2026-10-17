@@ -3,7 +3,7 @@
 import math
 
 from PyQt6.QtWidgets import (
-    QDialog, QVBoxLayout, QHBoxLayout, QLabel, QDialogButtonBox,
+    QVBoxLayout, QHBoxLayout, QLabel, QDialogButtonBox,
     QPushButton, QSpinBox, QDoubleSpinBox, QWidget,
 )
 from PyQt6.QtCore import Qt, QTimer, QPoint, pyqtSignal
@@ -568,6 +568,20 @@ class LevelsDialog(BaseDialog):
         self._out_max = max(v, self._out_min + 1)
         self._out_w.set_values(self._out_min, self._out_max)
         self._timer.start()
+
+    # ── adjustment-layer data (core/adjustments/registry.py "levels") ─────────
+
+    ADJUSTMENT_TYPE = "levels"
+
+    def adjustment_data(self) -> dict:
+        return {"type": "levels", "black": self._black, "gamma": self._gamma, "white": self._white,
+                "out_min": self._out_min, "out_max": self._out_max}
+
+    def load_adjustment_data(self, data: dict):
+        from core.adjustments.registry import get_kind
+        p = get_kind("levels").normalize(data)
+        self._set_all(p["black"], p["gamma"], p["white"], p["out_min"], p["out_max"])
+        self._apply_preview()
 
     # ── preview + apply ───────────────────────────────────────────────────────
 

@@ -41,6 +41,7 @@ def apply_gradient_map(src: QImage, gradient: Gradient) -> QImage:
 class GradientMapDialog(_AdjustDialog):
     """Gradient Map with the full gradient editor (stops, midpoints,
     presets) instead of two fixed color swatches."""
+    ADJUSTMENT_TYPE = "gradient_map"
 
     def __init__(self, layer, canvas_refresh, parent=None):
         super().__init__(tr("adj.gradient_map.title"), layer, canvas_refresh, parent)

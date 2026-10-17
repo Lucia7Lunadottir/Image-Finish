@@ -1108,5 +1108,6 @@
   "opts.text.vertical_tip": "切换文本方向（横排 / 直排）",
   "opts.text.commit_tip": "提交文本（Ctrl+Enter）",
   "opts.text.cancel_tip": "取消编辑（Esc）",
-  "opts.gradient.edit_tip": "渐变 — 单击编辑"
+  "opts.gradient.edit_tip": "渐变 — 单击编辑",
+  "adj.color_lookup.loaded": "查找表已加载"
 }

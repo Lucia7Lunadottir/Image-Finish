@@ -1108,5 +1108,6 @@
   "opts.text.vertical_tip": "Перемкнути орієнтацію тексту (горизонтально / вертикально)",
   "opts.text.commit_tip": "Застосувати текст (Ctrl+Enter)",
   "opts.text.cancel_tip": "Скасувати редагування (Esc)",
-  "opts.gradient.edit_tip": "Градієнт — клацніть, щоб змінити"
+  "opts.gradient.edit_tip": "Градієнт — клацніть, щоб змінити",
+  "adj.color_lookup.loaded": "Таблицю завантажено"
 }

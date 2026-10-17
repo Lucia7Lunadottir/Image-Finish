@@ -1108,5 +1108,6 @@
   "opts.text.vertical_tip": "テキストの方向を切り替え（横書き / 縦書き）",
   "opts.text.commit_tip": "テキストを確定（Ctrl+Enter）",
   "opts.text.cancel_tip": "編集をキャンセル（Esc）",
-  "opts.gradient.edit_tip": "グラデーション — クリックして編集"
+  "opts.gradient.edit_tip": "グラデーション — クリックして編集",
+  "adj.color_lookup.loaded": "テーブルを読み込みました"
 }

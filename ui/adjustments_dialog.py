@@ -5,7 +5,7 @@ from PyQt6.QtWidgets import (
     QPushButton,
 )
 from PyQt6.QtCore import Qt, QTimer
-from PyQt6.QtGui import QImage, QMouseEvent
+from PyQt6.QtGui import QImage, QMouseEvent, QColor
 
 from core.app_logging import get_logger
 from core.locale import tr
@@ -157,7 +157,7 @@ def apply_invert(src: QImage) -> QImage:
     """Invert RGB channels; alpha is preserved."""
     img = _to_argb32(src)
     try:
-        import numpy as np
+        pass
         img = img.copy()
         arr = _in_place_arr(img)
         arr[:, :, :3] = 255 - arr[:, :, :3]
@@ -233,6 +233,41 @@ class _SliderRow(QHBoxLayout):
         return self._slider.valueChanged
 
 
+# ── control adapters (read/write a bound control's value) ─────────────────────
+
+def _read_control(w):
+    from PyQt6.QtWidgets import QAbstractButton, QComboBox
+    if hasattr(w, "color") and callable(w.color) and hasattr(w, "set_color"):
+        return QColor(w.color())
+    if isinstance(w, QAbstractButton) and w.isCheckable():
+        return w.isChecked()
+    if isinstance(w, QComboBox):
+        return w.currentData()
+    return w.value()
+
+
+def _write_control(w, v):
+    """Sets a control without firing its change signal."""
+    from PyQt6.QtWidgets import QAbstractButton, QComboBox
+    if hasattr(w, "set_color"):
+        w.set_color(QColor(v))
+    elif hasattr(w, "set_value"):
+        w.set_value(v)
+    else:
+        w.blockSignals(True)
+        try:
+            if isinstance(w, QAbstractButton):
+                w.setChecked(bool(v))
+            elif isinstance(w, QComboBox):
+                idx = w.findData(v)
+                if idx >= 0:
+                    w.setCurrentIndex(idx)
+            else:
+                w.setValue(v)
+        finally:
+            w.blockSignals(False)
+
+
 # ── base adjustment dialog ────────────────────────────────────────────────────
 
 class _AdjustDialog(BaseDialog):
@@ -302,6 +337,10 @@ class _AdjustDialog(BaseDialog):
         self._timer.setSingleShot(True)
         self._timer.setInterval(self._DEBOUNCE_MS)
         self._timer.timeout.connect(self._apply_preview)
+        self._bindings: dict = {}
+        # Parameters captured on the GUI thread for the full-resolution
+        # apply, which runs on a worker thread and must not read widgets.
+        self._frozen_data = None
 
         self._vbox = QVBoxLayout(self)
         self._btns = QDialogButtonBox(
@@ -340,53 +379,52 @@ class _AdjustDialog(BaseDialog):
             self._btns.addButton(reset_btn, QDialogButtonBox.ButtonRole.ResetRole)
         self._vbox.addWidget(self._btns)
 
-    def _get_auto_data(self):
-        # A dialog that knows its own data (adjustment_data()) is the
-        # source of truth; scraping widget attributes by name is the legacy
-        # fallback (it silently stored wrong keys for Gradient Map).
-        if hasattr(self, "adjustment_data"):
-            return self.adjustment_data()
-        d = {}
-        for k, v in self.__dict__.items():
-            if k == "_lut": d["lut"] = v
-            elif k == "_color": d["color"] = v
-            elif k == "_shadows": d["shadows"] = v
-            elif k == "_highlights": d["highlights"] = v
-            elif hasattr(v, "value") and callable(v.value):
-                try: d[k.lstrip('_')] = v.value()
-                except TypeError: pass
-            elif hasattr(v, "color") and callable(v.color):
-                try: d[k.lstrip('_')] = v.color()
-                except TypeError: pass
-            elif hasattr(v, "isChecked") and callable(v.isChecked):
-                try: d[k.lstrip('_')] = v.isChecked()
-                except TypeError: pass
-        
-        d["type"] = getattr(self, "_adj_type", "unknown")
-        if d["type"] in ("", "unknown"):
-            n = self.__class__.__name__.lower()
-            if "level" in n: d["type"] = "levels"
-            elif "exposure" in n: d["type"] = "exposure"
-            elif "vibrance" in n: d["type"] = "vibrance"
-            elif "black" in n: d["type"] = "black_white"
-            elif "poster" in n: d["type"] = "posterize"
-            elif "thresh" in n: d["type"] = "threshold"
-            elif "photo" in n: d["type"] = "photo_filter"
-            elif "grad" in n: d["type"] = "gradient_map"
-            elif "lookup" in n: d["type"] = "color_lookup"
-            elif "hdr" in n: d["type"] = "hdr_toning"
-            elif "brightness" in n: d["type"] = "brightness_contrast"
-            elif "hue" in n: d["type"] = "hue_saturation"
+    # ── parameters: explicit widget <-> key bindings ─────────────────
+    # A dialog declares `ADJUSTMENT_TYPE` and binds each control to its
+    # parameter key (core/adjustments/registry.py). From that alone the
+    # base class saves the adjustment layer's data, restores it when the
+    # layer is re-opened, and renders the preview through the same
+    # AdjustmentKind.apply as the layer itself.
+    ADJUSTMENT_TYPE: str | None = None
+
+    def _bind(self, key: str, widget):
+        self._bindings[key] = widget
+        return widget
+
+    def adjustment_data(self) -> dict:
+        d = {"type": self.ADJUSTMENT_TYPE}
+        d.update({k: _read_control(w) for k, w in self._bindings.items()})
         return d
+
+    def load_adjustment_data(self, data: dict):
+        from core.adjustments.registry import get_kind
+        kind = get_kind(self.ADJUSTMENT_TYPE)
+        if kind is None:
+            return
+        params = kind.normalize(data)
+        for k, w in self._bindings.items():
+            if k in params:
+                _write_control(w, params[k])
+        self._after_load(params)
+        self._apply_preview()
+
+    def _after_load(self, params: dict):
+        """Hook for parameters that aren't plain bound controls."""
 
     def _on_change(self):
         """Slider moved — (re)start debounce timer."""
         if getattr(self, "_is_adj_layer", False):
-            self._layer.adjustment_data = self._get_auto_data()
+            self._layer.adjustment_data = self.adjustment_data()
         self._timer.start()
 
     def _apply_preview(self):
-        raise NotImplementedError
+        """Default preview: the registered adjustment, applied with the
+        bound controls' values — exactly what the adjustment layer renders."""
+        from core.adjustments.registry import get_kind
+        kind = get_kind(self.ADJUSTMENT_TYPE)
+        data = self._frozen_data if self._frozen_data is not None else self.adjustment_data()
+        self._layer.image = kind.apply(self._orig_argb32, kind.normalize(data))
+        self._canvas_refresh()
 
     def _on_full_res_restored(self):
         """Hook for subclasses that cache numpy arrays derived from
@@ -402,8 +440,9 @@ class _AdjustDialog(BaseDialog):
 
     def accept(self):
         self._timer.stop()
+        self._frozen_data = self.adjustment_data()
         if getattr(self, "_is_adj_layer", False):
-            self._layer.adjustment_data = self._get_auto_data()
+            self._layer.adjustment_data = self._frozen_data
         if self._orig_argb32_full is not None:
             self._orig_argb32      = self._orig_argb32_full
             self._orig_argb32_full = None
@@ -458,32 +497,26 @@ class _AdjustDialog(BaseDialog):
 # ── concrete dialogs ──────────────────────────────────────────────────────────
 
 class BrightnessContrastDialog(_AdjustDialog):
+    ADJUSTMENT_TYPE = "brightness_contrast"
+
     def __init__(self, layer, canvas_refresh, parent=None):
         super().__init__(tr("adj.bc.title"), layer, canvas_refresh, parent)
-        self._bright = _SliderRow(tr("adj.bc.brightness"), -100, 100)
-        self._contr  = _SliderRow(tr("adj.bc.contrast"),   -100, 100)
+        self._bright = self._bind("brightness", _SliderRow(tr("adj.bc.brightness"), -100, 100))
+        self._contr  = self._bind("contrast", _SliderRow(tr("adj.bc.contrast"),   -100, 100))
         self._add_row(self._bright)
         self._add_row(self._contr)
         self._seal()
 
-    def _apply_preview(self):
-        self._layer.image = apply_brightness_contrast(
-            self._orig_argb32, self._bright.value(), self._contr.value())
-        self._canvas_refresh()
-
 
 class HueSaturationDialog(_AdjustDialog):
+    ADJUSTMENT_TYPE = "hue_saturation"
+
     def __init__(self, layer, canvas_refresh, parent=None):
         super().__init__(tr("adj.hs.title"), layer, canvas_refresh, parent)
-        self._hue  = _SliderRow(tr("adj.hs.hue"),        -180, 180)
-        self._sat  = _SliderRow(tr("adj.hs.saturation"), -100, 100)
-        self._lght = _SliderRow(tr("adj.hs.lightness"),  -100, 100)
+        self._hue  = self._bind("hue", _SliderRow(tr("adj.hs.hue"),        -180, 180))
+        self._sat  = self._bind("saturation", _SliderRow(tr("adj.hs.saturation"), -100, 100))
+        self._lght = self._bind("lightness", _SliderRow(tr("adj.hs.lightness"),  -100, 100))
         for row in (self._hue, self._sat, self._lght):
             self._add_row(row)
         self._seal()
 
-    def _apply_preview(self):
-        self._layer.image = apply_hue_saturation(
-            self._orig_argb32,
-            self._hue.value(), self._sat.value(), self._lght.value())
-        self._canvas_refresh()

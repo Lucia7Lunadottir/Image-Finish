@@ -1115,5 +1115,6 @@
   "opts.text.vertical_tip": "Toggle text orientation (horizontal / vertical)",
   "opts.text.commit_tip": "Commit text (Ctrl+Enter)",
   "opts.text.cancel_tip": "Cancel editing (Esc)",
-  "opts.gradient.edit_tip": "Gradient — click to edit"
+  "opts.gradient.edit_tip": "Gradient — click to edit",
+  "adj.color_lookup.loaded": "Lookup table loaded"
 }

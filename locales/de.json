@@ -1108,5 +1108,6 @@
   "opts.text.vertical_tip": "Textausrichtung umschalten (horizontal / vertikal)",
   "opts.text.commit_tip": "Text bestätigen (Strg+Eingabe)",
   "opts.text.cancel_tip": "Bearbeitung abbrechen (Esc)",
-  "opts.gradient.edit_tip": "Verlauf – zum Bearbeiten klicken"
+  "opts.gradient.edit_tip": "Verlauf – zum Bearbeiten klicken",
+  "adj.color_lookup.loaded": "Tabelle geladen"
 }

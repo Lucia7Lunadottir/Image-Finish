@@ -1108,5 +1108,6 @@
   "opts.text.vertical_tip": "Przełącz orientację tekstu (poziomo / pionowo)",
   "opts.text.commit_tip": "Zatwierdź tekst (Ctrl+Enter)",
   "opts.text.cancel_tip": "Anuluj edycję (Esc)",
-  "opts.gradient.edit_tip": "Gradient — kliknij, aby edytować"
+  "opts.gradient.edit_tip": "Gradient — kliknij, aby edytować",
+  "adj.color_lookup.loaded": "Tabela wczytana"
 }

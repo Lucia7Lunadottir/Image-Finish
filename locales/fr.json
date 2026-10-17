@@ -1108,5 +1108,6 @@
   "opts.text.vertical_tip": "Basculer l'orientation du texte (horizontale / verticale)",
   "opts.text.commit_tip": "Valider le texte (Ctrl+Entrée)",
   "opts.text.cancel_tip": "Annuler la modification (Échap)",
-  "opts.gradient.edit_tip": "Dégradé — cliquez pour modifier"
+  "opts.gradient.edit_tip": "Dégradé — cliquez pour modifier",
+  "adj.color_lookup.loaded": "Table chargée"
 }

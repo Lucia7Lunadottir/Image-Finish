@@ -128,6 +128,7 @@ def _hdr_fallback(img, radius, strength, gamma, detail):
 # ── dialog ─────────────────────────────────────────────────────────────────────
 
 class HDRToningDialog(_AdjustDialog):
+    ADJUSTMENT_TYPE = "hdr_toning"
     """HDR Toning dialog with real-time preview.
 
     Optimisations
@@ -156,10 +157,10 @@ class HDRToningDialog(_AdjustDialog):
         self._blur_radius = None
         self._blur_cache  = None   # H×W×3 float32, blur of _orig_f
 
-        self._radius   = _FSliderRow(tr("adj.hdr.radius"),    1, 500, 50,  1.0,   0)
-        self._strength = _FSliderRow(tr("adj.hdr.strength"),  0, 100, 50,  1.0,   0)
-        self._gamma    = _FSliderRow(tr("adj.hdr.gamma"),    10, 300, 100, 100.0, 2)
-        self._detail   = _FSliderRow(tr("adj.hdr.detail"),    0, 100,  0,  1.0,   0)
+        self._radius   = self._bind("radius", _FSliderRow(tr("adj.hdr.radius"),    1, 500, 50,  1.0,   0))
+        self._strength = self._bind("strength", _FSliderRow(tr("adj.hdr.strength"),  0, 100, 50,  1.0,   0))
+        self._gamma    = self._bind("gamma", _FSliderRow(tr("adj.hdr.gamma"),    10, 300, 100, 100.0, 2))
+        self._detail   = self._bind("detail", _FSliderRow(tr("adj.hdr.detail"),    0, 100,  0,  1.0,   0))
 
         for row in (self._radius, self._strength, self._gamma, self._detail):
             self._add_row(row)

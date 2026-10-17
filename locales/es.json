@@ -1108,5 +1108,6 @@
   "opts.text.vertical_tip": "Cambiar orientación del texto (horizontal / vertical)",
   "opts.text.commit_tip": "Confirmar texto (Ctrl+Intro)",
   "opts.text.cancel_tip": "Cancelar edición (Esc)",
-  "opts.gradient.edit_tip": "Degradado: haga clic para editar"
+  "opts.gradient.edit_tip": "Degradado: haga clic para editar",
+  "adj.color_lookup.loaded": "Tabla cargada"
 }

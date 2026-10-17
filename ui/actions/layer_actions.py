@@ -159,29 +159,21 @@ class LayerActionsMixin:
         proxy = LayerProxy(layer, target_img)
         dlg_ref = [None]
 
-        def scrape_data():
-            d = {"type": t}
+        def layer_data():
+            """The dialog's own parameters (adjustment_data(), backed by
+            core/adjustments/registry.py) — never guessed from widget
+            attribute names, which is how layers used to lose or garble
+            their settings."""
             dlg = dlg_ref[0]
-            if not dlg: return d
-            if hasattr(dlg, "adjustment_data"):
-                return dlg.adjustment_data()
-            for k, v in dlg.__dict__.items():
-                if k == "_lut": d["lut"] = v
-                elif k == "_curve_points": d["points"] = v
-                elif hasattr(v, "value") and callable(v.value):
-                    try: d[k.lstrip('_')] = v.value()
-                    except TypeError: pass
-                elif hasattr(v, "color") and callable(v.color):
-                    try: d[k.lstrip('_')] = v.color()
-                    except TypeError: pass
-                elif hasattr(v, "isChecked") and callable(v.isChecked):
-                    try: d[k.lstrip('_')] = v.isChecked()
-                    except TypeError: pass
+            if dlg is None or not hasattr(dlg, "adjustment_data"):
+                return {"type": t}
+            d = dlg.adjustment_data()
+            d["type"] = t
             return d
 
         def wrapped_refresh():
             if is_adj:
-                layer.adjustment_data = scrape_data()
+                layer.adjustment_data = layer_data()
             self._canvas_refresh()
 
         import inspect
@@ -240,13 +232,13 @@ class LayerActionsMixin:
             dlg._orig_adj_data = copy.deepcopy(layer.adjustment_data) if layer.adjustment_data else {}
             dlg._adj_type = t
 
-            if hasattr(dlg, "load_adjustment_data") and dlg._orig_adj_data:
+            if hasattr(dlg, "load_adjustment_data") and len(dlg._orig_adj_data) > 1:
                 # Re-opening an existing adjustment layer starts from its
                 # saved settings, not the dialog's defaults.
                 dlg.load_adjustment_data(dlg._orig_adj_data)
-            layer.adjustment_data = scrape_data()
+            layer.adjustment_data = layer_data()
 
-            dlg.accepted.connect(lambda: setattr(layer, "adjustment_data", scrape_data()))
+            dlg.accepted.connect(lambda: setattr(layer, "adjustment_data", layer_data()))
             def on_reject():
                 layer.adjustment_data = dlg._orig_adj_data
                 self._canvas_refresh()

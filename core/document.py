@@ -11,91 +11,13 @@ logger = get_logger("document")
 
 
 def _apply_layer_adjustment(image: QImage, layer) -> QImage:
-    d = layer.adjustment_data or {}
-    t = d.get("type", "")
-    
-    def get_v(keywords, default):
-        for kw in keywords:
-            if kw in d: return d[kw]
-        best_val = default
-        for k, v in d.items():
-            if not isinstance(v, (int, float)): continue
-            kl = k.lower()
-            if any(kw in kl for kw in keywords):
-                if "max" in keywords[0] and "min" in kl: continue
-                if "min" in keywords[0] and "max" in kl: continue
-                if "out" in keywords[0] and "in" in kl: continue
-                if "in" in keywords[0] and "out" in kl: continue
-                best_val = v
-                if isinstance(v, float): return v
-        return best_val
-
+    """An adjustment layer's effect — see core/adjustments/registry.py."""
+    from core.adjustments.registry import apply_adjustment
     try:
-        if t == "brightness_contrast":
-            from ui.adjustments_dialog import apply_brightness_contrast
-            return apply_brightness_contrast(image, int(get_v(["brightness", "bright"], 0)), int(get_v(["contrast", "contr"], 0)))
-        elif t == "hue_saturation":
-            from ui.adjustments_dialog import apply_hue_saturation
-            return apply_hue_saturation(image, int(get_v(["hue"], 0)), int(get_v(["saturation", "sat"], 0)), int(get_v(["lightness", "light"], 0)))
-        elif t == "invert":
-            from ui.adjustments_dialog import apply_invert
-            return apply_invert(image)
-        elif t == "curves":
-            from core.adjustments.curves import apply_curves
-            return apply_curves(image, d.get("points") or {})
-        elif t == "levels":
-            from ui.levels_dialog import apply_levels
-            in_min = int(get_v(["in_min", "in_black", "in_low", "black_sp"], 0))
-            in_max = int(get_v(["in_max", "in_white", "in_high", "white_sp"], 255))
-            gamma  = float(get_v(["gamma", "mid", "gamma_sp"], 1.0))
-            out_min = int(get_v(["out_min", "out_black", "out_low", "out_min_sp"], 0))
-            out_max = int(get_v(["out_max", "out_white", "out_high", "out_max_sp"], 255))
-            
-            if gamma > 5.0: gamma /= 100.0
-            if gamma <= 0.0: gamma = 1.0
-            if in_max <= in_min: in_max = in_min + 1
-            
-            return apply_levels(image, in_min, gamma, in_max, out_min, out_max)
-        elif t == "exposure":
-            from core.adjustments.exposure import apply_exposure
-            exp = float(get_v(["exposure", "exp"], 0.0))
-            off = float(get_v(["offset", "off"], 0.0))
-            gam = float(get_v(["gamma", "gam"], 1.0))
-            
-            if exp > 20.0 or exp < -20.0: exp /= 100.0
-            if off > 1.0 or off < -1.0: off /= 1000.0
-            if gam > 5.0: gam /= 100.0
-            if gam <= 0.0: gam = 1.0
-            
-            return apply_exposure(image, exp, off, gam)
-        elif t == "vibrance":
-            from core.adjustments.vibrance import apply_vibrance
-            return apply_vibrance(image, int(get_v(["vibrance", "vib"], 0)), int(get_v(["saturation", "sat"], 0)))
-        elif t == "black_white":
-            from core.adjustments.black_white import apply_black_white
-            return apply_black_white(image, int(get_v(["red"], 40)), int(get_v(["yellow"], 60)), int(get_v(["green"], 40)), int(get_v(["cyan"], 60)), int(get_v(["blue"], 20)), int(get_v(["magenta"], 80)))
-        elif t == "posterize":
-            from core.adjustments.posterize import apply_posterize
-            return apply_posterize(image, int(get_v(["level", "lvl"], 4)))
-        elif t == "threshold":
-            from core.adjustments.threshold import apply_threshold
-            return apply_threshold(image, int(get_v(["threshold", "thresh"], 128)))
-        elif t == "photo_filter":
-            from core.adjustments.photo_filter import apply_photo_filter
-            color = d.get("color", QColor(255, 140, 0))
-            return apply_photo_filter(image, color, int(get_v(["density", "dens"], 25)), bool(get_v(["preserve"], True)))
-        elif t == "gradient_map":
-            from core.adjustments.gradient_map import apply_gradient_map, gradient_map_from_data
-            return apply_gradient_map(image, gradient_map_from_data(d))
-        elif t == "color_lookup":
-            from core.adjustments.color_lookup import apply_color_lookup
-            return apply_color_lookup(image, d.get("lut", None), int(get_v(["intensity"], 100)))
-        elif t == "hdr_toning":
-            from core.adjustments.hdr_toning import apply_hdr_toning
-            return apply_hdr_toning(image, int(get_v(["radius", "rad"], 10)), float(get_v(["strength", "str"], 0.5)), float(get_v(["gamma"], 1.0)), float(get_v(["detail", "det"], 1.0)))
+        return apply_adjustment(image, layer.adjustment_data or {})
     except Exception:
-        logger.exception("Error applying adjustment layer %r", t)
-    return image
+        logger.exception("Error applying adjustment layer %r", (layer.adjustment_data or {}).get("type"))
+        return image
 
 
 def _composite_active_stroke(target: QImage, stroke_img: QImage, active_stroke: dict, offset: QPoint) -> None:

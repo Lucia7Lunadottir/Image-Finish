@@ -32,13 +32,11 @@ def apply_posterize(src: QImage, levels: int) -> QImage:
 
 
 class PosterizeDialog(_AdjustDialog):
+    ADJUSTMENT_TYPE = "posterize"
+
     def __init__(self, layer, canvas_refresh, parent=None):
         super().__init__(tr("adj.posterize.title"), layer, canvas_refresh, parent)
-        self._levels = _SliderRow(tr("adj.posterize.levels"), 2, 255, 4)
+        self._levels = self._bind("levels", _SliderRow(tr("adj.posterize.levels"), 2, 255, 4))
         self._add_row(self._levels)
         self._seal()
 
-    def _apply_preview(self):
-        self._layer.image = apply_posterize(
-            self._orig_argb32, self._levels.value())
-        self._canvas_refresh()

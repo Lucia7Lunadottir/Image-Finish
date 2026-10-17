@@ -35,13 +35,11 @@ def apply_threshold(src: QImage, threshold: int) -> QImage:
 
 
 class ThresholdDialog(_AdjustDialog):
+    ADJUSTMENT_TYPE = "threshold"
+
     def __init__(self, layer, canvas_refresh, parent=None):
         super().__init__(tr("adj.threshold.title"), layer, canvas_refresh, parent)
-        self._thresh = _SliderRow(tr("adj.threshold.threshold"), 0, 255, 128)
+        self._thresh = self._bind("threshold", _SliderRow(tr("adj.threshold.threshold"), 0, 255, 128))
         self._add_row(self._thresh)
         self._seal()
 
-    def _apply_preview(self):
-        self._layer.image = apply_threshold(
-            self._orig_argb32, self._thresh.value())
-        self._canvas_refresh()

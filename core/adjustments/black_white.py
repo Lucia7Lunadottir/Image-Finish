@@ -80,22 +80,18 @@ def apply_black_white(src: QImage, reds: int, yellows: int, greens: int,
 
 
 class BlackWhiteDialog(_AdjustDialog):
+    ADJUSTMENT_TYPE = "black_white"
+
     def __init__(self, layer, canvas_refresh, parent=None):
         super().__init__(tr("adj.bw.title"), layer, canvas_refresh, parent)
-        self._reds     = _SliderRow(tr("adj.bw.reds"),     0, 200, 100)
-        self._yellows  = _SliderRow(tr("adj.bw.yellows"),  0, 200, 100)
-        self._greens   = _SliderRow(tr("adj.bw.greens"),   0, 200, 100)
-        self._cyans    = _SliderRow(tr("adj.bw.cyans"),    0, 200, 100)
-        self._blues    = _SliderRow(tr("adj.bw.blues"),    0, 200, 100)
-        self._magentas = _SliderRow(tr("adj.bw.magentas"), 0, 200, 100)
+        self._reds     = self._bind("reds", _SliderRow(tr("adj.bw.reds"),     0, 200, 100))
+        self._yellows  = self._bind("yellows", _SliderRow(tr("adj.bw.yellows"),  0, 200, 100))
+        self._greens   = self._bind("greens", _SliderRow(tr("adj.bw.greens"),   0, 200, 100))
+        self._cyans    = self._bind("cyans", _SliderRow(tr("adj.bw.cyans"),    0, 200, 100))
+        self._blues    = self._bind("blues", _SliderRow(tr("adj.bw.blues"),    0, 200, 100))
+        self._magentas = self._bind("magentas", _SliderRow(tr("adj.bw.magentas"), 0, 200, 100))
         for row in (self._reds, self._yellows, self._greens,
                     self._cyans, self._blues, self._magentas):
             self._add_row(row)
         self._seal()
 
-    def _apply_preview(self):
-        self._layer.image = apply_black_white(
-            self._orig_argb32,
-            self._reds.value(), self._yellows.value(), self._greens.value(),
-            self._cyans.value(), self._blues.value(), self._magentas.value())
-        self._canvas_refresh()
