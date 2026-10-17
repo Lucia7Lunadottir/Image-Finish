@@ -101,6 +101,7 @@ def apply_gaussian_blur(src: QImage, radius: float) -> QImage:
 
 class GaussianBlurDialog(_AdjustDialog):
     """Gaussian Blur dialog with live preview. Radius 0.1–250 px."""
+    SPATIAL_PARAMS = ("radius",)
 
     def __init__(self, layer, canvas_refresh, parent=None):
         super().__init__(tr("flt.gaussian.title"), layer, canvas_refresh, parent)
@@ -156,6 +157,7 @@ def apply_box_blur(src: QImage, radius: int) -> QImage:
 
 
 class BoxBlurDialog(_AdjustDialog):
+    SPATIAL_PARAMS = ("radius",)
     def __init__(self, layer, canvas_refresh, parent=None):
         super().__init__(tr("flt.box.title"), layer, canvas_refresh, parent)
         self._radius = self._bind("radius", _SliderRow(tr("flt.radius_px"), 1, 100, 5))
@@ -224,6 +226,7 @@ def apply_surface_blur(src: QImage, radius: int, threshold: int) -> QImage:
 
 
 class SurfaceBlurDialog(_AdjustDialog):
+    SPATIAL_PARAMS = ("radius",)
     def __init__(self, layer, canvas_refresh, parent=None):
         super().__init__(tr("flt.surface.title"), layer, canvas_refresh, parent)
         self._radius    = self._bind("radius", _SliderRow(tr("flt.radius"), 1, 100, 5))
@@ -237,6 +240,7 @@ class SurfaceBlurDialog(_AdjustDialog):
 
 
 class SmartBlurDialog(_AdjustDialog):
+    SPATIAL_PARAMS = ("radius",)
     def __init__(self, layer, canvas_refresh, parent=None):
         super().__init__(tr("flt.smart.title"), layer, canvas_refresh, parent)
         self._radius    = self._bind("radius", _SliderRow(tr("flt.radius"), 1, 100, 5))
@@ -301,6 +305,7 @@ def apply_shape_blur(src: QImage, radius: int, shape: str) -> QImage:
 
 
 class ShapeBlurDialog(_AdjustDialog):
+    SPATIAL_PARAMS = ("radius",)
     def __init__(self, layer, canvas_refresh, parent=None):
         super().__init__(tr("flt.shape.title"), layer, canvas_refresh, parent)
 
@@ -373,6 +378,7 @@ def apply_lens_blur(src: QImage, radius: int, curvature: int) -> QImage:
 
 
 class LensBlurDialog(_AdjustDialog):
+    SPATIAL_PARAMS = ("radius",)
     def __init__(self, layer, canvas_refresh, parent=None):
         super().__init__(tr("flt.lens.title"), layer, canvas_refresh, parent)
         self._radius    = self._bind("radius", _SliderRow(tr("flt.radius"), 1, 100, 10))

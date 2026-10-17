@@ -153,3 +153,23 @@ def test_radial_blur_both_modes_run(qapp, mode):
     from core.filters.radial_blur import apply_radial_blur
     out = apply_radial_blur(_img(), mode, 30)
     assert out.size() == _img().size() and not _same(out, _img())
+
+
+def test_pixel_distances_scale_with_the_preview_proxy(qapp, monkeypatch):
+    """A large image is previewed on a downscaled copy: the blur radius has
+    to shrink with it, or the preview blurs several times stronger than OK
+    will. The final full-resolution pass gets the real radius."""
+    from core.filters.blur_filters import GaussianBlurDialog
+    big = RasterLayer("big", 3200, 40)
+    big.image.fill(QColor(90, 120, 30))
+    dlg = GaussianBlurDialog(big, lambda: None)
+    seen = []
+    monkeypatch.setattr(dlg, "_render", lambda src, p: (seen.append((src.width(), p["radius"])), src)[1])
+    dlg._radius.set_value(4.0)
+    dlg._apply_preview()
+    assert seen[-1] == (1600, pytest.approx(2.0))
+    dlg._frozen_data = dlg.adjustment_data()
+    dlg._orig_argb32 = dlg._orig_argb32_full          # what accept() swaps in
+    dlg._orig_argb32_full = None
+    dlg._apply_preview()
+    assert seen[-1] == (3200, pytest.approx(4.0))

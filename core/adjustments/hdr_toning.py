@@ -128,6 +128,7 @@ def _hdr_fallback(img, radius, strength, gamma, detail):
 # ── dialog ─────────────────────────────────────────────────────────────────────
 
 class HDRToningDialog(_AdjustDialog):
+    SPATIAL_PARAMS = ("radius",)
     ADJUSTMENT_TYPE = "hdr_toning"
     """HDR Toning dialog with real-time preview.
 

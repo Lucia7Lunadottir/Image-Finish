@@ -414,6 +414,10 @@ class _AdjustDialog(BaseDialog):
     # Image > Adjustments and the adjustment layer all use one
     # AdjustmentKind.apply.
     ADJUSTMENT_TYPE: str | None = None
+    # Parameter keys that are pixel distances (blur radius...): on the
+    # downscaled live-preview proxy they are scaled with it, so a large
+    # image previews the blur it will get, not a several times stronger one.
+    SPATIAL_PARAMS: tuple = ()
 
     def _bind(self, key: str, widget):
         self._bindings[key] = widget
@@ -475,8 +479,23 @@ class _AdjustDialog(BaseDialog):
         Registered adjustments use their AdjustmentKind; filters override."""
         return self._kind().apply(src, params)
 
+    def _preview_scale(self) -> float:
+        full = self._orig_argb32_full
+        return 1.0 if full is None else self._orig_argb32.width() / max(1, full.width())
+
+    def _scaled_for_preview(self, params: dict) -> dict:
+        scale = self._preview_scale()
+        if scale >= 1.0 or not self.SPATIAL_PARAMS:
+            return params
+        from ui.filter_gallery import scale_spatial
+        out = dict(params)
+        for k in self.SPATIAL_PARAMS:
+            v = out[k]
+            out[k] = v * scale if isinstance(v, float) else scale_spatial(v, scale)
+        return out
+
     def _apply_preview(self):
-        self._layer.image = self._render(self._orig_argb32, self._params())
+        self._layer.image = self._render(self._orig_argb32, self._scaled_for_preview(self._params()))
         self._preview_stale = False
         self._canvas_refresh()
 

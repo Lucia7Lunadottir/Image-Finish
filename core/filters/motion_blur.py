@@ -98,6 +98,7 @@ def apply_motion_blur(src: QImage, angle_deg: float, strength: int) -> QImage:
 
 class MotionBlurDialog(_AdjustDialog):
     """Motion Blur dialog with live preview."""
+    SPATIAL_PARAMS = ("strength",)
 
     def __init__(self, layer, canvas_refresh, parent=None):
         super().__init__(tr("flt.motion.title"), layer, canvas_refresh, parent)
