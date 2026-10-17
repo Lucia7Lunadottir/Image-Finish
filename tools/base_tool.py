@@ -1,4 +1,4 @@
-from abc import ABC, abstractmethod
+from abc import ABC
 import traceback
 from PyQt6.QtCore import QPoint, Qt, QObject, pyqtSignal, QRunnable, QThreadPool
 from PyQt6.QtGui import QColor
@@ -14,6 +14,12 @@ class BaseTool(ABC):
     icon_name: str = "move.svg"
     shortcut: str = ""
     modifies_canvas_on_move: bool = False
+    # What the tool does to the active layer's pixels — the canvas checks
+    # it against `Layer.pixel_access_for` before a press reaches the tool
+    # (ui/actions/pixel_target.py): None = nothing (selection, view, vector
+    # tools...), "paint" = draws into `image` (or the mask being edited),
+    # "transform" = reshapes `image` (warps).
+    PIXEL_OP: str | None = None
 
     def on_press(self, pos: QPoint, doc, fg: QColor, bg: QColor, opts: dict):
         """Called on mouse button press."""

@@ -117,6 +117,13 @@ class Layer:
     def pixel_access(self) -> str:
         return "none" if self._is_container else self._PIXEL_ACCESS
 
+    def pixel_access_for(self, op: str) -> str:
+        """`pixel_access` for one kind of pixel operation: "filter" (Filter
+        menu, Image > Adjustments), "paint" (brush-like tools) or
+        "transform" (warps). Same answer for all three except where a layer
+        kind says otherwise (smart objects take filters but not paint)."""
+        return self.pixel_access
+
     def content_image(self, document) -> QImage:
         """What the layer looks like, as pixels at its own size/offset —
         also for layers drawn from data (fill layers render on demand)."""
@@ -1206,6 +1213,11 @@ class FillLayer(Layer):
 
 class SmartObjectLayer(Layer):
     _LAYER_TAG = "smart_object"
+
+    def pixel_access_for(self, op: str) -> str:
+        # Filters/warps apply to the placed image (smart filters keep the
+        # original); painting into it has to rasterize it first.
+        return "rasterize" if op == "paint" else self.pixel_access
 
     def __init__(self, name: str, width: int, height: int, fill_color: QColor = None):
         super().__init__(name, width, height, fill_color)

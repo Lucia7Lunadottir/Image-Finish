@@ -6,6 +6,7 @@ from tools.lasso_tools import LassoMixin
 from tools.effect_tools import _box_blur_np
 
 class PatchTool(BaseTool, LassoMixin):
+    PIXEL_OP = "paint"
     name = "Patch"
     icon = "🩹"
     shortcut = "J"
@@ -176,6 +177,7 @@ class PatchTool(BaseTool, LassoMixin):
 
 
 class SpotHealingTool(BaseTool):
+    PIXEL_OP = "paint"
     name = "SpotHealing"
     icon = "🩹✨"
     shortcut = "J"
@@ -286,6 +288,7 @@ class SpotHealingTool(BaseTool):
 
 
 class RedEyeTool(BaseTool):
+    PIXEL_OP = "paint"
     name = "RedEye"
     icon = "👁️"
     shortcut = "J"
@@ -364,6 +367,7 @@ class RedEyeTool(BaseTool):
 
 
 class HealingBrushTool(BaseTool):
+    PIXEL_OP = "paint"
     name = "HealingBrush"
     icon = "🩹🖌️"
     shortcut = "J"

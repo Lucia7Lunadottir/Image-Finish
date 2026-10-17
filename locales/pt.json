@@ -344,12 +344,10 @@
   "err.no_selection_shape": "Uma seleção vetorial é necessária para definir uma forma.",
   "err.could_not_open":     "Não foi possível abrir:\n{path}",
   "err.could_not_save":     "Não foi possível salvar:\n{path}",
-  "err.text_layer_no_draw": "Esta é uma camada de texto. Rasterize para desenhar.",
-  "err.smart_object_no_draw": "Este é um objeto inteligente. Rasterize para desenhar.",
 
   "err.layer_no_pixels": "Indisponível: camadas de ajuste e grupos não têm pixels próprios.",
   "dlg.rasterize.title": "Rasterizar camada?",
-  "dlg.rasterize.text": "A camada “{name}” é desenhada a partir de dados (texto, forma ou preenchimento) e este comando trabalha com pixels. Rasterizá-la? O texto ou a forma deixarão de ser editáveis.",
+  "dlg.rasterize.text": "A camada “{name}” não pode ser alterada diretamente: é texto, uma forma, um preenchimento ou um objeto inteligente. Rasterizá-la? Ela deixará de ser editável como antes.",
   "title.untitled":  "ImageFinish — sem título ({mode})",
   "title.with_file": "ImageFinish — {name} ({mode})",
   "title.canvas":    "ImageFinish — {w}×{h} ({mode})",

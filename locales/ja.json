@@ -344,12 +344,10 @@
   "err.no_selection_shape": "シェイプを定義するにはベクトル選択が必要です。",
   "err.could_not_open":     "開けませんでした:\n{path}",
   "err.could_not_save":     "保存できませんでした:\n{path}",
-  "err.text_layer_no_draw": "テキストレイヤーです。描画するにはラスタライズしてください。",
-  "err.smart_object_no_draw": "スマートオブジェクトです。描画するにはラスタライズしてください。",
 
   "err.layer_no_pixels": "使用できません：調整レイヤーとグループには独自のピクセルがありません。",
   "dlg.rasterize.title": "レイヤーをラスタライズしますか？",
-  "dlg.rasterize.text": "レイヤー「{name}」はデータ（テキスト・シェイプ・塗りつぶし）から描画されていますが、このコマンドはピクセルを扱います。ラスタライズしますか？ テキストやシェイプは編集できなくなります。",
+  "dlg.rasterize.text": "レイヤー「{name}」は直接変更できません（テキスト・シェイプ・塗りつぶし・スマートオブジェクト）。ラスタライズしますか？ 以前のようには編集できなくなります。",
   "title.untitled":  "ImageFinish — 名称未設定 ({mode})",
   "title.with_file": "ImageFinish — {name} ({mode})",
   "title.canvas":    "ImageFinish — {w}×{h} ({mode})",

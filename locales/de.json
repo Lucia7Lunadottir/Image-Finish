@@ -344,12 +344,10 @@
   "err.no_selection_shape": "Vektorauswahl erforderlich, um eine Form zu definieren.",
   "err.could_not_open":     "Öffnen fehlgeschlagen:\n{path}",
   "err.could_not_save":     "Speichern fehlgeschlagen:\n{path}",
-  "err.text_layer_no_draw": "Dies ist eine Textebene. Rastern Sie diese zuerst, um darauf zu zeichnen.",
-  "err.smart_object_no_draw": "Smartobjekt-Ebene. Rastern Sie diese, um darauf zu zeichnen.",
 
   "err.layer_no_pixels": "Nicht verfügbar: Einstellungsebenen und Gruppen haben keine eigenen Pixel.",
   "dlg.rasterize.title": "Ebene rastern?",
-  "dlg.rasterize.text": "Die Ebene „{name}“ wird aus Daten gezeichnet (Text, Form oder Füllung), dieser Befehl arbeitet jedoch mit Pixeln. Jetzt rastern? Text bzw. Form sind danach nicht mehr bearbeitbar.",
+  "dlg.rasterize.text": "Die Ebene „{name}“ kann nicht direkt geändert werden: Sie ist Text, eine Form, eine Füllung oder ein Smartobjekt. Jetzt rastern? Danach ist sie nicht mehr wie bisher bearbeitbar.",
   "title.untitled":  "ImageFinish — Unbenannt ({mode})",
   "title.with_file": "ImageFinish — {name} ({mode})",
   "title.canvas":    "ImageFinish — {w}×{h} ({mode})",

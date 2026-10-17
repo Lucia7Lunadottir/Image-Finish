@@ -344,12 +344,10 @@
   "err.no_selection_shape": "定义形状需要矢量选区。",
   "err.could_not_open":     "无法打开:\n{path}",
   "err.could_not_save":     "无法保存:\n{path}",
-  "err.text_layer_no_draw": "这是一个文字图层。请先栅格化才能绘图。",
-  "err.smart_object_no_draw": "这是一个智能对象。请先栅格化才能绘图。",
 
   "err.layer_no_pixels": "不可用：调整图层和组没有自己的像素。",
   "dlg.rasterize.title": "栅格化图层？",
-  "dlg.rasterize.text": "图层“{name}”由数据（文字、形状或填充）绘制，而此命令作用于像素。要栅格化吗？之后文字或形状将无法再编辑。",
+  "dlg.rasterize.text": "无法直接修改图层“{name}”：它是文字、形状、填充或智能对象。要栅格化吗？之后将无法像以前那样编辑。",
   "title.untitled":  "ImageFinish — 未命名 ({mode})",
   "title.with_file": "ImageFinish — {name} ({mode})",
   "title.canvas":    "ImageFinish — {w}×{h} ({mode})",

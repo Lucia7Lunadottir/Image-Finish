@@ -7,6 +7,7 @@ from core.document import Document
 from tools.warp_tool import WarpTool
 
 class PuppetWarpTool(BaseTool):
+    PIXEL_OP = "transform"
     name = "PuppetWarp"
     icon = "📌"
     shortcut = "W"

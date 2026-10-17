@@ -5,6 +5,7 @@ from tools.base_tool import BaseTool
 from core.document import Document
 
 class PerspectiveWarpTool(BaseTool):
+    PIXEL_OP = "transform"
     name = "PerspectiveWarp"
     icon = "🗺️"
     shortcut = "W"

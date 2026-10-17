@@ -7,6 +7,7 @@ from core.document import Document
 
 
 class WarpTool(BaseTool):
+    PIXEL_OP = "transform"
     name = "Warp"
     icon = "🕸️"
     shortcut = "V"

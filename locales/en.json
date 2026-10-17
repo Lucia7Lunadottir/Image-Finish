@@ -350,12 +350,10 @@
   "err.no_selection_shape": "An active selection is required to define a shape.",
   "err.could_not_open":     "Could not open:\n{path}",
   "err.could_not_save":     "Could not save to:\n{path}",
-  "err.text_layer_no_draw": "This is a text layer. Rasterize it to draw.",
-  "err.smart_object_no_draw": "This is a smart object. Rasterize it to draw.",
 
   "err.layer_no_pixels": "Not available: adjustment layers and groups have no pixels of their own.",
   "dlg.rasterize.title": "Rasterize layer?",
-  "dlg.rasterize.text": "Layer “{name}” is drawn from data (text, shape or fill), and this command works on pixels. Rasterize it? Its text or shape will no longer be editable.",
+  "dlg.rasterize.text": "Layer “{name}” can’t be changed directly: it is text, a shape, a fill or a smart object. Rasterize it? It will no longer be editable as before.",
   "title.untitled":  "ImageFinish \u2014 untitled ({mode})",
   "title.with_file": "ImageFinish \u2014 {name} ({mode})",
   "title.canvas":    "ImageFinish \u2014 {w}\u00d7{h} ({mode})",

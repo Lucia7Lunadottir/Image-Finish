@@ -7,6 +7,7 @@ from tools.base_tool import BaseTool
 
 
 class MagicEraserTool(BaseTool):
+    PIXEL_OP = "paint"
     name = "MagicEraser"
     icon = "🎇"
     shortcut = "E"
@@ -88,6 +89,7 @@ class MagicEraserTool(BaseTool):
 
 
 class BackgroundEraserTool(BaseTool):
+    PIXEL_OP = "paint"
     name = "BackgroundEraser"
     icon = "✂️"
     shortcut = "E"

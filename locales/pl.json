@@ -344,12 +344,10 @@
   "err.no_selection_shape": "Wymagane jest zaznaczenie wektorowe, aby zdefiniować kształt.",
   "err.could_not_open":     "Nie udało się otworzyć:\n{path}",
   "err.could_not_save":     "Nie udało się zapisać:\n{path}",
-  "err.text_layer_no_draw": "To jest warstwa tekstowa. Rasteryzuj ją, aby móc rysować.",
-  "err.smart_object_no_draw": "To jest obiekt inteligentny. Rasteryzuj go, aby móc rysować.",
 
   "err.layer_no_pixels": "Niedostępne: warstwy dopasowania i grupy nie mają własnych pikseli.",
   "dlg.rasterize.title": "Rasteryzować warstwę?",
-  "dlg.rasterize.text": "Warstwa „{name}” jest rysowana z danych (tekst, kształt lub wypełnienie), a to polecenie działa na pikselach. Zrasteryzować ją? Tekstu lub kształtu nie będzie można już edytować.",
+  "dlg.rasterize.text": "Warstwy „{name}” nie można zmienić bezpośrednio: to tekst, kształt, wypełnienie lub obiekt inteligentny. Zrasteryzować ją? Nie będzie można jej już edytować jak wcześniej.",
   "title.untitled":  "ImageFinish — bez tytułu ({mode})",
   "title.with_file": "ImageFinish — {name} ({mode})",
   "title.canvas":    "ImageFinish — {w}×{h} ({mode})",

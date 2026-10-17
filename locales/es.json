@@ -344,12 +344,10 @@
   "err.no_selection_shape": "Se requiere una selección vectorial para definir una forma.",
   "err.could_not_open":     "No se pudo abrir:\n{path}",
   "err.could_not_save":     "No se pudo guardar:\n{path}",
-  "err.text_layer_no_draw": "Esta es una capa de texto. Rasterícela para dibujar.",
-  "err.smart_object_no_draw": "Este es un objeto inteligente. Rasterícelo para dibujar.",
 
   "err.layer_no_pixels": "No disponible: las capas de ajuste y los grupos no tienen píxeles propios.",
   "dlg.rasterize.title": "¿Rasterizar capa?",
-  "dlg.rasterize.text": "La capa «{name}» se dibuja a partir de datos (texto, forma o relleno) y este comando trabaja con píxeles. ¿Rasterizarla? El texto o la forma dejarán de ser editables.",
+  "dlg.rasterize.text": "La capa «{name}» no se puede modificar directamente: es texto, una forma, un relleno o un objeto inteligente. ¿Rasterizarla? Dejará de ser editable como antes.",
   "title.untitled":  "ImageFinish — sin título ({mode})",
   "title.with_file": "ImageFinish — {name} ({mode})",
   "title.canvas":    "ImageFinish — {w}×{h} ({mode})",

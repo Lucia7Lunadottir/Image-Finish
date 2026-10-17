@@ -1070,22 +1070,14 @@ class CanvasWidget(QOpenGLWidget):
                 tool_name = getattr(self.active_tool, "name", "")
                 layer = self.document.get_active_layer() if self.document else None
                 
-                if layer:
-                    ltype = getattr(layer, "layer_type", "raster")
-                    if ltype in ("text", "smart_object"):
-                        forbidden = {"Brush", "Eraser", "BackgroundEraser", "MagicEraser", "CloneStamp", "PatternStamp",
-                                     "Pencil", "ColorReplacement", "MixerBrush", "HistoryBrush",
-                                     "Fill", "Blur", "Sharpen", "Smudge", "Dodge", "Burn", "Sponge",
-                                     "Gradient", "Patch", "SpotHealing", "HealingBrush", "RedEye"}
-                        if ltype == "text":
-                            forbidden.update({"Warp", "PuppetWarp", "PerspectiveWarp"})
-                            
-                        if tool_name in forbidden:
-                            if hasattr(self.window(), "_status"):
-                                from core.locale import tr
-                                msg = tr("err.smart_object_no_draw") if ltype == "smart_object" else tr("err.text_layer_no_draw")
-                                self.window()._status.showMessage(msg, 3000)
-                            return
+                op = getattr(self.active_tool, "PIXEL_OP", None)
+                win = self.window()
+                if layer is not None and op is not None and hasattr(win, "_rasterize_layer"):
+                    from ui.actions.pixel_target import pixel_layer_for_edit
+                    # A rasterize prompt (or refusal) ends this press: the
+                    # stroke starts with the next click, on the new layer.
+                    if pixel_layer_for_edit(win, op) is not layer:
+                        return
 
                 if tool_name in _BRUSH_TOOLS:
                     mirror_x = bool(self.tool_opts.get("brush_mirror_x", False))

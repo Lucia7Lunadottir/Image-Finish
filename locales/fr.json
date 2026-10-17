@@ -344,12 +344,10 @@
   "err.no_selection_shape": "Une sélection vectorielle est requise pour définir une forme.",
   "err.could_not_open":     "Échec de l'ouverture :\n{path}",
   "err.could_not_save":     "Échec de l'enregistrement :\n{path}",
-  "err.text_layer_no_draw": "C'est un calque de texte. Pixelisez-le pour pouvoir dessiner.",
-  "err.smart_object_no_draw": "C'est un objet dynamique. Pixelisez-le pour pouvoir dessiner.",
 
   "err.layer_no_pixels": "Indisponible : les calques de réglage et les groupes n'ont pas de pixels propres.",
   "dlg.rasterize.title": "Pixelliser le calque ?",
-  "dlg.rasterize.text": "Le calque « {name} » est dessiné à partir de données (texte, forme ou remplissage) et cette commande agit sur des pixels. Le pixelliser ? Le texte ou la forme ne sera plus modifiable.",
+  "dlg.rasterize.text": "Le calque « {name} » ne peut pas être modifié directement : c'est du texte, une forme, un remplissage ou un objet dynamique. Le pixelliser ? Il ne sera plus modifiable comme avant.",
   "title.untitled":  "ImageFinish — Sans titre ({mode})",
   "title.with_file": "ImageFinish — {name} ({mode})",
   "title.canvas":    "ImageFinish — {w}×{h} ({mode})",

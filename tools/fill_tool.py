@@ -5,6 +5,7 @@ from tools.base_tool import BaseTool
 
 
 class FillTool(BaseTool):
+    PIXEL_OP = "paint"
     name = "Fill"
     icon = "🪣"
     shortcut = "K"

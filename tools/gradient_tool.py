@@ -25,6 +25,7 @@ def gradient_from_opts(opts: dict, fg, bg) -> Gradient:
 
 
 class GradientTool(BaseTool):
+    PIXEL_OP = "paint"
     name     = "Gradient"
     icon     = "🌈"
     shortcut = "G"
