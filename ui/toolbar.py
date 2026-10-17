@@ -185,6 +185,12 @@ class ToolBar(QWidget):
         ("WandGroup", ["MagicWand", "QuickSelection", "ObjectSelection"]),
     ]
 
+    @classmethod
+    def tool_title(cls, name: str) -> str:
+        """The translated name of a tool (history steps, messages)."""
+        td = cls._TOOL_DEFS.get(name)
+        return tr(td.tr_key) if td else name
+
     def __init__(self, parent=None):
         super().__init__(parent)
         self.setObjectName("toolbar")

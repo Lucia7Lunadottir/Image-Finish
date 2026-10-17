@@ -47,6 +47,7 @@ class AbstractSelectionTool(AbstractAsyncTool, LassoMixin):
 
 class MagicWandTool(AbstractSelectionTool):
     """Magic Wand tool — fully async and fault-tolerant."""
+    SELECTION_CURSOR = True
     name = "MagicWand"
     icon_name = "wand.svg"
     shortcut = "W"
@@ -149,6 +150,7 @@ class MagicWandTool(AbstractSelectionTool):
 
 class QuickSelectionTool(AbstractSelectionTool):
     """Quick Selection tool (Smart brush)."""
+    BRUSH_CURSOR = True
     name = "QuickSelection"
     icon_name = "brush-selection.svg"
     shortcut = "W"
@@ -241,6 +243,7 @@ class QuickSelectionTool(AbstractSelectionTool):
 
 class ObjectSelectionTool(AbstractSelectionTool):
     """Object Selection tool (bounding box)."""
+    SELECTION_CURSOR = True
     name = "ObjectSelection"
     icon_name = "box-selection.svg"
     shortcut = "W"

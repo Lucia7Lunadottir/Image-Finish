@@ -81,10 +81,10 @@ def draw_slices(painter, *, doc, pan, zoom):
     painter.restore()
 
 
-def draw_symmetry_axes(painter, *, doc, pan, zoom, tool_opts, tool_name, brush_tools):
+def draw_symmetry_axes(painter, *, doc, pan, zoom, tool_opts, brush_tool):
     mirror_x = bool(tool_opts.get("brush_mirror_x", False))
     mirror_y = bool(tool_opts.get("brush_mirror_y", False))
-    if tool_name not in brush_tools or not (mirror_x or mirror_y):
+    if not brush_tool or not (mirror_x or mirror_y):
         return
     cx_pct = float(tool_opts.get("brush_mirror_cx", 0.5))
     cy_pct = float(tool_opts.get("brush_mirror_cy", 0.5))

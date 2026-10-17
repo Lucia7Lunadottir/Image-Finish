@@ -346,6 +346,8 @@
   "err.could_not_save":     "Nie udało się zapisać:\n{path}",
 
   "err.layer_no_pixels": "Niedostępne: warstwy dopasowania i grupy nie mają własnych pikseli.",
+
+  "err.tool_failed": "Narzędzie „{tool}”: operacja nie powiodła się",
   "dlg.rasterize.title": "Rasteryzować warstwę?",
   "dlg.rasterize.text": "Warstwy „{name}” nie można zmienić bezpośrednio: to tekst, kształt, wypełnienie lub obiekt inteligentny. Zrasteryzować ją? Nie będzie można jej już edytować jak wcześniej.",
   "filter.no_params": "Ten filtr nie ma regulowanych parametrów.",

@@ -346,6 +346,8 @@
   "err.could_not_save":     "无法保存:\n{path}",
 
   "err.layer_no_pixels": "不可用：调整图层和组没有自己的像素。",
+
+  "err.tool_failed": "工具“{tool}”：操作失败",
   "dlg.rasterize.title": "栅格化图层？",
   "dlg.rasterize.text": "无法直接修改图层“{name}”：它是文字、形状、填充或智能对象。要栅格化吗？之后将无法像以前那样编辑。",
   "filter.no_params": "此滤镜没有可调参数。",

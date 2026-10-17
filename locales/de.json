@@ -346,6 +346,8 @@
   "err.could_not_save":     "Speichern fehlgeschlagen:\n{path}",
 
   "err.layer_no_pixels": "Nicht verfügbar: Einstellungsebenen und Gruppen haben keine eigenen Pixel.",
+
+  "err.tool_failed": "Werkzeug „{tool}“: Vorgang fehlgeschlagen",
   "dlg.rasterize.title": "Ebene rastern?",
   "dlg.rasterize.text": "Die Ebene „{name}“ kann nicht direkt geändert werden: Sie ist Text, eine Form, eine Füllung oder ein Smartobjekt. Jetzt rastern? Danach ist sie nicht mehr wie bisher bearbeitbar.",
   "filter.no_params": "Dieser Filter hat keine einstellbaren Parameter.",

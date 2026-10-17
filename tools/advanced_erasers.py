@@ -88,6 +88,7 @@ class MagicEraserTool(BaseTool):
 
 
 class BackgroundEraserTool(BaseTool):
+    BRUSH_CURSOR = True
     PIXEL_OP = "paint"
     name = "BackgroundEraser"
     icon = "✂️"

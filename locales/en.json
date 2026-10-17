@@ -352,6 +352,8 @@
   "err.could_not_save":     "Could not save to:\n{path}",
 
   "err.layer_no_pixels": "Not available: adjustment layers and groups have no pixels of their own.",
+
+  "err.tool_failed": "Tool “{tool}”: the operation failed",
   "dlg.rasterize.title": "Rasterize layer?",
   "dlg.rasterize.text": "Layer “{name}” can’t be changed directly: it is text, a shape, a fill or a smart object. Rasterize it? It will no longer be editable as before.",
   "filter.no_params": "This filter has no adjustable parameters.",

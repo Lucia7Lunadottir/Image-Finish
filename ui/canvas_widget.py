@@ -1,6 +1,7 @@
 import math
 
 from core.app_logging import get_logger
+from core.locale import tr
 from ui import theme
 
 logger = get_logger("canvas")
@@ -20,12 +21,6 @@ from ui.overlay_renderers import (
     draw_clone_stamp, draw_measurements,
 )
 
-# Brush tools — show circle cursor for these
-_BRUSH_TOOLS = {"Brush", "Eraser", "BackgroundEraser", "Blur", "Sharpen", "Smudge", "CloneStamp", "PatternStamp",
-                "Pencil", "ColorReplacement", "MixerBrush",
-                "SpotHealing", "HealingBrush", "HistoryBrush",
-                "Dodge", "Burn", "Sponge",
-                "QuickSelection"}
 
 # Plain color-painting tools where Alt has no other meaning yet — eligible
 # for Photoshop-style "hold Alt = temporary eyedropper". CloneStamp/Patch/
@@ -34,11 +29,6 @@ _BRUSH_TOOLS = {"Brush", "Eraser", "BackgroundEraser", "Blur", "Sharpen", "Smudg
 # deliberately excluded.
 _ALT_EYEDROPPER_TOOLS = {"Brush", "Pencil", "ColorReplacement", "MixerBrush", "PatternStamp"}
 
-_SELECTION_TOOLS = {
-    "Select", "EllipseSelect",
-    "Lasso", "PolygonalLasso", "MagneticLasso",
-    "MagicWand", "ObjectSelection",
-}
 
 
 _sel_cursor_cache: dict = {}
@@ -769,7 +759,7 @@ class CanvasWidget(QOpenGLWidget):
             painter.drawRect(dr.adjusted(0, 0, -1, -1))
 
         draw_symmetry_axes(painter, doc=_doc, pan=_pan, zoom=_zoom,
-                           tool_opts=_opts, tool_name=_tname, brush_tools=_BRUSH_TOOLS)
+                           tool_opts=_opts, brush_tool=getattr(_tool, "BRUSH_CURSOR", False))
         draw_selection(painter, doc=_doc, pan=_pan, zoom=_zoom,
                        march_offset=self._march_offset)
         draw_subtract_drag(painter, active_tool=_tool, pan=_pan, zoom=_zoom,
@@ -1079,7 +1069,7 @@ class CanvasWidget(QOpenGLWidget):
                     if pixel_layer_for_edit(win, op) is not layer:
                         return
 
-                if tool_name in _BRUSH_TOOLS:
+                if self.active_tool.BRUSH_CURSOR:
                     mirror_x = bool(self.tool_opts.get("brush_mirror_x", False))
                     mirror_y = bool(self.tool_opts.get("brush_mirror_y", False))
                     if mirror_x or mirror_y:
@@ -1106,12 +1096,10 @@ class CanvasWidget(QOpenGLWidget):
 
                 if self.active_tool.needs_history_push():
                     from core.history import HistoryState, clone_work_path
-                    # Only deep-copy the active layer image for pixel-modifying tools;
-                    # other layers are shared (they won't be modified by the stroke).
-                    mod_idx = self.document.active_layer_index if tool_name in _BRUSH_TOOLS else None
+                    from ui.toolbar import ToolBar
                     self._pre_stroke_state = HistoryState(
-                        description=self.active_tool.name,
-                        layers_snapshot=self.document.snapshot_layers(modified_index=mod_idx),
+                        description=ToolBar.tool_title(tool_name),
+                        layers_snapshot=self.document.snapshot_layers(),
                         active_layer_index=self.document.active_layer_index,
                         doc_width=self.document.width,
                         doc_height=self.document.height,
@@ -1133,7 +1121,8 @@ class CanvasWidget(QOpenGLWidget):
                 except Exception as tool_ex:
                     logger.exception("Tool %s failed in on_press", tool_name)
                     if hasattr(self.window(), "_status"):
-                        self.window()._status.showMessage(f"Tool {tool_name}: operation failed", 4000)
+                        from ui.toolbar import ToolBar
+                        self.window()._status.showMessage(tr("err.tool_failed", tool=ToolBar.tool_title(tool_name)), 4000)
                     self._stroke_in_progress = False
                     self._pre_stroke_state = None
 
@@ -1486,7 +1475,7 @@ class CanvasWidget(QOpenGLWidget):
             # brush-circle overlay). Keeping the cursor shape unchanged across
             # the whole Alt hold/release avoids relying on that redraw at all.
             is_alt_picker = self.active_tool is not None and self.active_tool is getattr(self, "_alt_picker", None)
-            if tool_name in _BRUSH_TOOLS or is_alt_picker:
+            if getattr(self.active_tool, "BRUSH_CURSOR", False) or is_alt_picker:
                 mirror_x = bool(self.tool_opts.get("brush_mirror_x", False))
                 mirror_y = bool(self.tool_opts.get("brush_mirror_y", False))
                 is_hovering_sym = False
@@ -1512,7 +1501,7 @@ class CanvasWidget(QOpenGLWidget):
                 else:
                     self._show_brush_cursor = True
                     self.setCursor(Qt.CursorShape.BlankCursor)
-            elif tool_name in _SELECTION_TOOLS:
+            elif getattr(self.active_tool, "SELECTION_CURSOR", False):
                 self._show_brush_cursor = False
                 ctrl = bool(self.tool_opts.get("_ctrl", False))
                 alt  = bool(self.tool_opts.get("_alt",  False))

@@ -346,6 +346,8 @@
   "err.could_not_save":     "Échec de l'enregistrement :\n{path}",
 
   "err.layer_no_pixels": "Indisponible : les calques de réglage et les groupes n'ont pas de pixels propres.",
+
+  "err.tool_failed": "Outil « {tool} » : l'opération a échoué",
   "dlg.rasterize.title": "Pixelliser le calque ?",
   "dlg.rasterize.text": "Le calque « {name} » ne peut pas être modifié directement : c'est du texte, une forme, un remplissage ou un objet dynamique. Le pixelliser ? Il ne sera plus modifiable comme avant.",
   "filter.no_params": "Ce filtre n'a aucun paramètre réglable.",

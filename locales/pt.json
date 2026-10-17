@@ -346,6 +346,8 @@
   "err.could_not_save":     "Não foi possível salvar:\n{path}",
 
   "err.layer_no_pixels": "Indisponível: camadas de ajuste e grupos não têm pixels próprios.",
+
+  "err.tool_failed": "Ferramenta “{tool}”: a operação falhou",
   "dlg.rasterize.title": "Rasterizar camada?",
   "dlg.rasterize.text": "A camada “{name}” não pode ser alterada diretamente: é texto, uma forma, um preenchimento ou um objeto inteligente. Rasterizá-la? Ela deixará de ser editável como antes.",
   "filter.no_params": "Este filtro não tem parâmetros ajustáveis.",

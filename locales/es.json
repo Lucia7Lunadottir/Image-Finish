@@ -346,6 +346,8 @@
   "err.could_not_save":     "No se pudo guardar:\n{path}",
 
   "err.layer_no_pixels": "No disponible: las capas de ajuste y los grupos no tienen píxeles propios.",
+
+  "err.tool_failed": "Herramienta «{tool}»: la operación falló",
   "dlg.rasterize.title": "¿Rasterizar capa?",
   "dlg.rasterize.text": "La capa «{name}» no se puede modificar directamente: es texto, una forma, un relleno o un objeto inteligente. ¿Rasterizarla? Dejará de ser editable como antes.",
   "filter.no_params": "Este filtro no tiene parámetros ajustables.",

@@ -143,3 +143,23 @@ def test_smart_object_takes_filters_but_paint_needs_rasterizing(qapp):
     assert so.pixel_access_for("filter") == "direct"
     assert so.pixel_access_for("transform") == "direct"
     assert so.pixel_access_for("paint") == "rasterize"
+
+
+def test_cursor_traits_are_declared_on_the_tool_classes(main_window):
+    """Were name sets in canvas_widget (_BRUSH_TOOLS, _SELECTION_TOOLS)."""
+    brush = {"Brush", "Eraser", "BackgroundEraser", "Blur", "Sharpen", "Smudge", "CloneStamp",
+             "PatternStamp", "Pencil", "ColorReplacement", "MixerBrush", "SpotHealing",
+             "HealingBrush", "HistoryBrush", "Dodge", "Burn", "Sponge", "QuickSelection"}
+    selection = {"Select", "EllipseSelect", "Lasso", "PolygonalLasso", "MagneticLasso",
+                 "MagicWand", "ObjectSelection"}
+    for name, tool in main_window._tools.items():
+        assert tool.BRUSH_CURSOR == (name in brush), name
+        assert tool.SELECTION_CURSOR == (name in selection), name
+
+
+def test_stroke_history_step_uses_the_translated_tool_name(main_window, mocked_dialogs):
+    from core.locale import tr
+    w = main_window
+    w._add_tab(Document(40, 40), "t")
+    canvas = _press(w, "Brush")
+    assert canvas._pre_stroke_state.description == tr("tool.brush")

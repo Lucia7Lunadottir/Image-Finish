@@ -12,6 +12,7 @@ class SelectTool(BaseTool):
       - Ctrl+Alt+drag             -> intersect
       - Drag INSIDE selection     -> move selection outline
     """
+    SELECTION_CURSOR = True
     name = "Select"
     icon = "⬜"
     shortcut = "M"
@@ -115,6 +116,7 @@ class EllipticalSelectTool(BaseTool):
       - Ctrl+Alt+drag             -> intersect
       - Drag INSIDE selection     -> move selection outline
     """
+    SELECTION_CURSOR = True
     name = "EllipseSelect"
     icon = "⭕"
     shortcut = ""

@@ -20,6 +20,10 @@ class BaseTool(ABC):
     # tools...), "paint" = draws into `image` (or the mask being edited),
     # "transform" = reshapes `image` (warps).
     PIXEL_OP: str | None = None
+    # Shows the brush-circle cursor and honours brush symmetry (mirror).
+    BRUSH_CURSOR: bool = False
+    # Shows the selection cursor with its new/add/subtract/intersect badge.
+    SELECTION_CURSOR: bool = False
 
     def on_press(self, pos: QPoint, doc, fg: QColor, bg: QColor, opts: dict):
         """Called on mouse button press."""
