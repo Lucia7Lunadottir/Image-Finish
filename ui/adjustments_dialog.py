@@ -157,7 +157,7 @@ def apply_invert(src: QImage) -> QImage:
     """Invert RGB channels; alpha is preserved."""
     img = _to_argb32(src)
     try:
-        pass
+        import numpy  # noqa: F401  — availability check for the pure-Qt fallback below
         img = img.copy()
         arr = _in_place_arr(img)
         arr[:, :, :3] = 255 - arr[:, :, :3]
