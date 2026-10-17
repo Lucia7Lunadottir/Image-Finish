@@ -97,6 +97,15 @@ class HistoryManager:
         while len(self._undo_stack) > 1 and self.estimated_bytes() > self.max_bytes:
             self._undo_stack.pop(0)
 
+    def discard(self, state: HistoryState) -> bool:
+        """Remove `state` again if it's still the newest undo step — for
+        an operation that pushed its step up front and then was cancelled
+        (text editing: Esc restores the original)."""
+        if self._undo_stack and self._undo_stack[-1] is state:
+            self._undo_stack.pop()
+            return True
+        return False
+
     # --------------------------------------------------------------- Undo/Redo
     def undo(self) -> HistoryState | None:
         if self._undo_stack:

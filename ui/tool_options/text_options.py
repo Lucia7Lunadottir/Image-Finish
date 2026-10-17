@@ -1,5 +1,5 @@
 from PyQt6.QtWidgets import (QWidget, QHBoxLayout, QLabel,
-                             QSpinBox, QPushButton, QFontComboBox, QColorDialog, QFrame)
+                             QSpinBox, QDoubleSpinBox, QPushButton, QFontComboBox, QFrame)
 from PyQt6.QtCore import Qt, pyqtSignal
 from PyQt6.QtGui import QColor, QFont
 from .base_options import BaseOptions
@@ -22,10 +22,12 @@ class TextOptions(BaseOptions):
         font_combo.currentFontChanged.connect(
             lambda f: self.option_changed.emit("font_family", f.family()))
 
-        size_sp = self._size_sp = QSpinBox()
-        size_sp.setRange(4, 500)
+        size_sp = self._size_sp = QDoubleSpinBox()
+        size_sp.setRange(1, 1296)
+        size_sp.setDecimals(1)
         size_sp.setValue(24)
-        size_sp.setFixedWidth(52)
+        size_sp.setSuffix(" pt")
+        size_sp.setFixedWidth(84)
         size_sp.valueChanged.connect(lambda v: self.option_changed.emit("font_size", v))
 
         bold_f = QFont(); bold_f.setBold(True)
@@ -62,10 +64,27 @@ class TextOptions(BaseOptions):
 
         clr_shadow = self._clr_shadow = self._color_btn(QColor(0, 0, 0, 160), "text_shadow_color")
 
-        apply_btn = QPushButton(tr("opts.apply"))
-        apply_btn.setObjectName("smallBtn")
-        apply_btn.setFixedHeight(26)
-        apply_btn.clicked.connect(self.apply_styles_requested.emit)
+        # Orientation of new text — or, with a text layer selected / being
+        # edited, of that text (Photoshop's "toggle text orientation").
+        self._orient_btn = QPushButton("⇅")
+        self._orient_btn.setObjectName("styleToggleBtn")
+        self._orient_btn.setCheckable(True)
+        self._orient_btn.setFixedSize(30, 26)
+        self._orient_btn.setToolTip(tr("opts.text.vertical_tip"))
+        self._orient_btn.toggled.connect(lambda v: self.option_changed.emit("text_vertical", v))
+
+        # Commit / cancel the edit in progress (shown only while editing).
+        self._commit_btn = QPushButton("✓")
+        self._commit_btn.setObjectName("smallBtn")
+        self._commit_btn.setFixedSize(30, 26)
+        self._commit_btn.setToolTip(tr("opts.text.commit_tip"))
+        self._commit_btn.clicked.connect(self.apply_styles_requested.emit)
+        self._cancel_btn = QPushButton("✗")
+        self._cancel_btn.setObjectName("smallBtn")
+        self._cancel_btn.setFixedSize(30, 26)
+        self._cancel_btn.setToolTip(tr("opts.text.cancel_tip"))
+        self._cancel_btn.clicked.connect(lambda: self.option_changed.emit("text_edit_cancel", True))
+        self.set_editing(False)
 
         stroke_lbl = QLabel(tr("opts.stroke_abbr"))
         theme.apply_style(stroke_lbl, lambda: f"color: {theme.SUBTEXT}; font-size: 12px;")
@@ -88,8 +107,14 @@ class TextOptions(BaseOptions):
         self.layout.addWidget(sdy)
         self.layout.addWidget(clr_shadow)
         self.layout.addWidget(self._sep())
-        self.layout.addWidget(apply_btn)
+        self.layout.addWidget(self._orient_btn)
         self.layout.addStretch()
+        self.layout.addWidget(self._commit_btn)
+        self.layout.addWidget(self._cancel_btn)
+
+    def set_editing(self, editing: bool):
+        self._commit_btn.setVisible(editing)
+        self._cancel_btn.setVisible(editing)
 
     def update_from_opts(self, opts: dict):
         """Matches the update_from_opts(opts) convention every other
@@ -102,8 +127,12 @@ class TextOptions(BaseOptions):
         self._font_combo.blockSignals(False)
 
         self._size_sp.blockSignals(True)
-        self._size_sp.setValue(int(opts.get("font_size", 24)))
+        self._size_sp.setValue(float(opts.get("font_size", 24)))
         self._size_sp.blockSignals(False)
+
+        self._orient_btn.blockSignals(True)
+        self._orient_btn.setChecked(bool(opts.get("text_vertical", False)))
+        self._orient_btn.blockSignals(False)
 
         for btn, key in ((self._btn_b, "font_bold"), (self._btn_i, "font_italic"),
                         (self._btn_u, "font_underline"), (self._btn_s, "font_strikeout")):
@@ -118,6 +147,7 @@ class TextOptions(BaseOptions):
             if isinstance(c, str):
                 c = QColor(c)
             if isinstance(c, QColor) and c.isValid():
+                btn._color = QColor(c)
                 btn.setStyleSheet(
                     f"background:{c.name()}; border:1px solid #555; border-radius:3px;")
 
@@ -154,6 +184,7 @@ class TextOptions(BaseOptions):
         btn.setFixedSize(26, 26)
 
         def _set_color(c: QColor):
+            btn._color = QColor(c)
             btn.setStyleSheet(
                 f"background:{c.name()}; border:1px solid #555; border-radius:3px;")
             self.option_changed.emit(key, QColor(c))
@@ -163,7 +194,7 @@ class TextOptions(BaseOptions):
         return btn
 
     def _pick_color(self, btn, callback):
-        c = QColorDialog.getColor(options=QColorDialog.ColorDialogOption.ShowAlphaChannel,
-                                   parent=btn)
-        if c.isValid():
+        from ui.hsv_picker import ColorPickerDialog
+        c = ColorPickerDialog.get_color(getattr(btn, "_color", QColor(0, 0, 0)), btn, tr("adj.choose_color"))
+        if c is not None and c.isValid():
             callback(c)

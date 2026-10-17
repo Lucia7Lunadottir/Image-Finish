@@ -18,6 +18,8 @@ from ui.actions.image_actions      import ImageActionsMixin
 from ui.actions.adjustment_actions import AdjustmentActionsMixin
 from ui.actions.filter_actions     import FilterActionsMixin
 from ui.actions.panel_actions      import PanelActionsMixin
+from ui.actions.shape_actions      import ShapeActionsMixin
+from ui.actions.text_actions       import TextActionsMixin
 
 from core.app_logging import get_logger
 from core.document import Document
@@ -129,7 +131,9 @@ class MainWindow(QMainWindow,
                  ImageActionsMixin,
                  AdjustmentActionsMixin,
                  FilterActionsMixin,
-                 PanelActionsMixin):
+                 PanelActionsMixin,
+                 ShapeActionsMixin,
+                 TextActionsMixin):
 
     @property
     def _canvas(self) -> CanvasWidget:
@@ -254,6 +258,8 @@ class MainWindow(QMainWindow,
         self._paths_panel.fill_path_requested.connect(self._path_fill)
         self._paths_panel.stroke_path_requested.connect(self._path_stroke)
         self._paths_panel.delete_path_requested.connect(self._path_delete)
+        self._paths_panel.new_path_requested.connect(self._path_new)
+        self._paths_panel.rename_path_requested.connect(self._path_rename)
         self._properties_panel.transform_changed.connect(self._on_transform_changed)
         self._properties_panel.align_requested.connect(self._do_align_layer)
 
@@ -499,6 +505,7 @@ class MainWindow(QMainWindow,
             canvas.cursor_info.connect(self._info_panel.update_info)
         tool = self._tools.get(self._active_tool_name)
         canvas.active_tool = tool
+        self._connect_text_session(canvas)
         idx = self._doc_tabs.addTab(canvas, title)
         self._doc_tabs.setCurrentIndex(idx)
         if hasattr(self, "_center_stack"):
@@ -531,7 +538,16 @@ class MainWindow(QMainWindow,
             QApplication.sendEvent(canvas, ev)
             canvas._update_cursor()
         from PyQt6.QtCore import QTimer
-        QTimer.singleShot(0, _resync_cursor)
+        # A one-shot timer owned by the canvas (PyQt6 has no context-object
+        # singleShot overload): if the canvas is destroyed first — tab
+        # closed before the next tick — the timer dies with it. A bare
+        # singleShot lambda would run against a deleted widget, and an
+        # exception in a queued slot makes PyQt6 abort() the whole process.
+        resync_timer = QTimer(canvas)
+        resync_timer.setSingleShot(True)
+        resync_timer.timeout.connect(_resync_cursor)
+        resync_timer.timeout.connect(resync_timer.deleteLater)
+        resync_timer.start(0)
         # Sync tool options bar with canvas defaults
         page = self._opts_bar._pages.get(self._active_tool_name)
         if page and hasattr(page, "update_from_opts"):
@@ -540,6 +556,7 @@ class MainWindow(QMainWindow,
 
     def _close_tab(self, index: int):
         canvas = self._doc_tabs.widget(index)
+        self._commit_text_edit_if_active(canvas)
         if getattr(canvas, "is_modified", False):
             title = self._doc_tabs.tabText(index)
             reply = QMessageBox.question(
@@ -590,6 +607,11 @@ class MainWindow(QMainWindow,
 
     def _on_tab_changed(self, index: int):
         if index < 0: return
+        current = self._doc_tabs.widget(index)
+        for i in range(self._doc_tabs.count()):
+            other = self._doc_tabs.widget(i)
+            if other is not current:
+                self._commit_text_edit_if_active(other)
         self._refresh_layers()
         self._update_mode_menu()
         self._update_title()
@@ -687,10 +709,7 @@ class MainWindow(QMainWindow,
             # anything else, e.g. selecting a different layer — "the text
             # vanishes but the layer is still there". Ask directly instead
             # of waiting for a focus signal that was never coming.
-            canvas = self._doc_tabs.currentWidget()
-            overlay = getattr(canvas, "_text_overlay", None)
-            if overlay is not None and overlay.is_active():
-                overlay.commit()
+            self._commit_text_edit_if_active(self._doc_tabs.currentWidget())
 
         logger.debug("Activating tool: %s", name)
         self._active_tool_name = name
@@ -719,11 +738,12 @@ class MainWindow(QMainWindow,
 
     def _on_layer_selected_wrap(self, index: int):
         self._commit_move_transform()
-        overlay = getattr(self._canvas, "_text_overlay", None) if hasattr(self, "_canvas") else None
-        if overlay is not None and overlay.is_active():
-            overlay.commit()
+        self._commit_text_edit_if_active()
         if hasattr(self, "_on_layer_selected"):
             self._on_layer_selected(index)
+        if self._document and 0 <= index < len(self._document.layers):
+            self._sync_shape_options_from_layer(self._document.layers[index])
+            self._sync_text_options_from_layer(self._document.layers[index])
 
     @require_document
     def _open_layer_styles(self, index: int):
@@ -918,6 +938,11 @@ class MainWindow(QMainWindow,
 
     @require_document
     def _undo(self):
+        session = self._text_session()
+        if session is not None and session.is_active():
+            # Undo while typing undoes typing (Photoshop does the same).
+            session.undo()
+            return
         tool = self._canvas.active_tool
         if hasattr(tool, "is_transforming") and tool.is_transforming:
             tool.cancel_transform(self._document)
@@ -928,6 +953,11 @@ class MainWindow(QMainWindow,
 
     @require_document
     def _redo(self):
+        session = self._text_session()
+        if session is not None and session.is_active():
+            # Undo while typing undoes typing (Photoshop does the same).
+            session.redo()
+            return
         tool = self._canvas.active_tool
         if hasattr(tool, "is_transforming") and tool.is_transforming:
             tool.cancel_transform(self._document)
@@ -1101,6 +1131,9 @@ class MainWindow(QMainWindow,
             self._doc_tabs.widget(i).bg_color = c
 
     def _on_opt_changed(self, key: str, value):
+        if key == "text_edit_cancel":
+            self._cancel_text_edit()
+            return
         if key == "align_layer":
             self._align_layer(value)
             return
@@ -1174,9 +1207,16 @@ class MainWindow(QMainWindow,
                             "stroke_color": None,
                             "stroke_width": 0.0,
                         }
+                        new_layer.rebake_thumbnail()
                 self._refresh_layers()
                 self._canvas_refresh()
             return
+        # Live-edits the active layer's existing shape, if there is one —
+        # falls through regardless so tool_opts still updates below (the
+        # next brand-new shape drawn should also pick up this value).
+        if self._document:
+            self._apply_shape_option_live(key, value)
+            self._apply_text_option_live(key, value)
         if not hasattr(self, "_doc_tabs"): return
         for i in range(self._doc_tabs.count()):
             self._doc_tabs.widget(i).tool_opts[key] = value
@@ -1433,7 +1473,7 @@ class MainWindow(QMainWindow,
             return
         dir_path = QFileDialog.getExistingDirectory(self, tr("dlg.export_slices"))
         if not dir_path: return
-        comp = self._document.get_composite()
+        comp = self._document.get_composite(respect_live_hidden=False)
         count = 0
         for i, r in enumerate(slices):
             c = r.intersected(comp.rect())
@@ -1464,7 +1504,7 @@ class MainWindow(QMainWindow,
 
     def _get_define_image(self):
         doc = self._document
-        comp = doc.get_composite()
+        comp = doc.get_composite(respect_live_hidden=False)
         if doc.selection and not doc.selection.isEmpty():
             br = doc.selection.boundingRect().toRect().intersected(comp.rect())
             if not br.isEmpty(): return comp.copy(br)
@@ -1591,23 +1631,6 @@ class MainWindow(QMainWindow,
                     self._open_file_path(path)
             else:
                 self._open_file_path(path)
-
-    @require_document
-    def _apply_text_styles(self):
-        from tools.other_tools import _render_text, TextTool
-        layer = self._document.get_active_layer()
-        if not layer or not getattr(layer, "text_data", None):
-            return
-        self._push_history(tr("history.apply_text"))
-        td   = layer.text_data
-        opts = self._canvas.tool_opts
-        layer.image.fill(Qt.GlobalColor.transparent)
-        sel = self._document.selection
-        _render_text(layer.image, td["x"], td["y"], td["text"], opts,
-                     sel if (sel and not sel.isEmpty()) else None)
-        layer.text_data = {**td, **TextTool._snap_opts(opts)}
-        self._canvas_refresh()
-        self._refresh_layers()
 
     # Filter galleries (Blur/Specific/Render/Sharpen/Stylize/Other/Pixelate/
     # Noise/Distort) moved to ui/actions/filter_actions.py (FilterActionsMixin).

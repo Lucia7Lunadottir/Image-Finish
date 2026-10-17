@@ -15,8 +15,10 @@ import pytest
 from PyQt6.QtCore import QPoint, QPointF, QRect, QRectF
 from PyQt6.QtGui import QColor, QPainter, QImage
 
+from PyQt6.QtGui import QPainterPath
+
 from core.document import Document
-from core.layer import ArtboardLayer, FrameLayer, TextLayer, GroupLayer
+from core.layer import ArtboardLayer, FrameLayer, TextLayer, GroupLayer, VectorLayer
 from tools.move_tool import MoveTool
 
 OPTS = {"_zoom": 1.0, "_ctrl": True}  # _ctrl=True disables snapping noise
@@ -265,3 +267,190 @@ def test_raster_layer_corner_scale_is_independent_per_axis(qapp):
 
     params = tool.get_transform_params()
     assert params["w"] != pytest.approx(params["h"], rel=1e-6)
+
+
+def _path_style_layer(doc, rect=(50, 50, 40, 30)):
+    layer = VectorLayer("Shape", doc.width, doc.height)
+    path = QPainterPath()
+    path.addRect(*rect)
+    layer.vector_mask = path
+    layer.path_style = {"fill_color": QColor(255, 0, 0, 255),
+                        "stroke_color": None, "stroke_width": 0}
+    doc.layers = [layer]
+    doc.active_layer_index = 0
+    return layer
+
+
+def test_vector_path_style_move_translates_vector_mask_live(qapp):
+    """Real bug: MoveTool used to transform self.image for every layer
+    kind uniformly — for a path_style VectorLayer, self.image never holds
+    the actual shape (render_into paints vector_mask directly), so
+    dragging one visibly did nothing at all, during the drag or after."""
+    doc = Document(200, 200)
+    layer = _path_style_layer(doc)
+
+    tool = MoveTool()
+    tool.on_press(QPoint(70, 65), doc, QColor(), QColor(), OPTS)
+
+    # Live preview while still dragging must reflect the in-progress drag.
+    tool.on_move(QPoint(90, 85), doc, QColor(), QColor(), OPTS)
+    fp = tool.floating_preview()
+    assert fp[0] == "vector_transform"
+    live_bounds = fp[3].map(fp[1]).boundingRect()
+    assert live_bounds == QRectF(70, 70, 40, 30)
+
+    tool.apply_transform(doc)
+    assert layer.vector_mask.boundingRect() == QRectF(70, 70, 40, 30)
+    assert layer.path_style is not None  # untouched
+    assert layer.image.size() == doc.layers[0].image.size()  # restored to canvas size, not 1x1
+
+
+def test_vector_path_style_corner_scale(qapp):
+    doc = Document(200, 200)
+    layer = _path_style_layer(doc, rect=(0, 0, 100, 100))
+
+    tool = MoveTool()
+    tool.on_press(QPoint(100, 100), doc, QColor(), QColor(), NO_CTRL_OPTS)  # br handle
+    assert tool._mode == "br"
+    tool.on_move(QPoint(150, 150), doc, QColor(), QColor(), NO_CTRL_OPTS)  # scale 1.5x
+    tool.apply_transform(doc)
+
+    b = layer.vector_mask.boundingRect()
+    assert b.width() == pytest.approx(150.0, rel=1e-6)
+    assert b.height() == pytest.approx(150.0, rel=1e-6)
+
+
+def test_vector_path_style_cancel_leaves_geometry_unchanged(qapp):
+    doc = Document(200, 200)
+    layer = _path_style_layer(doc)
+    original_bounds = layer.vector_mask.boundingRect()
+
+    tool = MoveTool()
+    tool.on_press(QPoint(70, 65), doc, QColor(), QColor(), OPTS)
+    tool.on_move(QPoint(90, 85), doc, QColor(), QColor(), OPTS)
+    tool.cancel_transform(doc)
+
+    assert layer.vector_mask.boundingRect() == original_bounds
+
+
+def _shape_data_layer(doc, rect=(20, 20, 30, 30)):
+    layer = VectorLayer("Shape", doc.width, doc.height)
+    sd = {"shape": "rect", "rect": rect, "start": rect[:2], "end": (rect[0]+rect[2], rect[1]+rect[3]),
+         "fill": True, "fg": "#00c800", "bg": "#00c800", "size": 0, "sides": 6, "angle": 0}
+    layer.shape_data = sd
+    from tools.shapes_tool import ShapesTool
+    ShapesTool._bake_shape(layer.image, sd, None)
+    doc.layers = [layer]
+    doc.active_layer_index = 0
+    return layer
+
+
+def test_vector_shape_data_move_updates_rect_and_rebakes(qapp):
+    """Real bug: MoveTool used to fall through to the generic raster path
+    for shape_data VectorLayers too — same as any plain bitmap, it
+    transformed the current *baked pixels*, not the shape's own
+    parametric rect, unlike ShapesTool's own handles (ui/shape_scene_overlay.py)
+    which always re-bake fresh at the target geometry. That's the same
+    live-quality guarantee this hook restores for MoveTool."""
+    doc = Document(200, 200)
+    layer = _shape_data_layer(doc)
+
+    tool = MoveTool()
+    tool.on_press(QPoint(35, 35), doc, QColor(), QColor(), OPTS)
+    fp = tool.floating_preview()
+    assert fp[0] == "shape_transform"  # crisp procedural preview, not the stale baked bitmap
+    tool.on_move(QPoint(45, 45), doc, QColor(), QColor(), OPTS)
+    tool.apply_transform(doc)
+
+    assert layer.shape_data["rect"] == (30, 30, 30, 30)  # +10,+10
+    assert layer.image.pixelColor(45, 45).green() == 200   # freshly baked at the new spot
+    assert layer.image.pixelColor(25, 25).alpha() == 0     # old spot cleared, not smeared
+
+
+def test_vector_shape_data_live_preview_reflects_in_progress_drag(qapp):
+    """Real bug report: the Move Tool's live preview while dragging a
+    ShapesTool shape looked rasterized (blurry stretched bitmap) even
+    though the final committed result was fine — because the preview
+    reused the stale baked image instead of redrawing the shape
+    procedurally like ShapeLayerItem's own drag already does."""
+    doc = Document(200, 200)
+    layer = _shape_data_layer(doc, rect=(20, 20, 30, 30))
+
+    tool = MoveTool()
+    tool.on_press(QPoint(35, 35), doc, QColor(), QColor(), OPTS)
+    tool.on_move(QPoint(55, 55), doc, QColor(), QColor(), OPTS)  # +20, +20, mid-drag
+
+    fp = tool.floating_preview()
+    assert fp[0] == "shape_transform"
+    sd, transform = fp[1], fp[2]
+    from core.layer import transform_shape_rect
+    new_rect, new_angle = transform_shape_rect(QRectF(20, 20, 30, 30), 0, transform)
+    assert new_rect == QRectF(40, 40, 30, 30)
+
+
+def test_vector_shape_data_corner_scale_rebakes_crisp_not_stretched(qapp):
+    doc = Document(200, 200)
+    layer = _shape_data_layer(doc, rect=(0, 0, 40, 40))
+
+    tool = MoveTool()
+    tool.on_press(QPoint(40, 40), doc, QColor(), QColor(), NO_CTRL_OPTS)  # br handle
+    assert tool._mode == "br"
+    tool.on_move(QPoint(80, 80), doc, QColor(), QColor(), NO_CTRL_OPTS)  # 2x scale
+    tool.apply_transform(doc)
+
+    assert layer.shape_data["rect"] == (0, 0, 80, 80)
+    assert layer.image.pixelColor(70, 70).green() == 200  # filled all the way to the new edge
+
+
+def test_vector_shape_data_hidden_from_composite_while_move_tool_drags_it(qapp):
+    """Real regression this catches: VectorLayer._get_source_image renders
+    shape_data live now (2026-09-30), ignoring .image entirely — so the
+    old trick of swapping .image for a 1x1 blank to hide the original
+    while floating_preview() shows the live drag on top (see on_press)
+    stopped hiding anything for these layers. Without _live_edit_hidden,
+    the composite would show the shape at its OLD position (live-rendered
+    from the as-yet-unchanged shape_data) underneath MoveTool's own
+    "shape_transform" preview at the NEW position — the exact kind of
+    doubled/ghosted render she reported for ShapeLayerItem's handles,
+    just via the Move tool instead."""
+    doc = Document(200, 200)
+    layer = _shape_data_layer(doc, rect=(20, 20, 30, 30))
+
+    tool = MoveTool()
+    assert not layer._live_edit_hidden
+    tool.on_press(QPoint(35, 35), doc, QColor(), QColor(), OPTS)
+    assert layer._live_edit_hidden
+
+    doc.invalidate_composite()
+    comp = doc.get_composite()
+    assert comp.pixelColor(35, 35).alpha() == 0  # old position: contributes nothing while hidden
+
+    tool.on_move(QPoint(45, 45), doc, QColor(), QColor(), OPTS)
+    tool.apply_transform(doc)
+    assert not layer._live_edit_hidden
+
+
+def test_vector_shape_data_cancel_also_clears_the_hidden_flag(qapp):
+    doc = Document(200, 200)
+    layer = _shape_data_layer(doc)
+
+    tool = MoveTool()
+    tool.on_press(QPoint(35, 35), doc, QColor(), QColor(), OPTS)
+    assert layer._live_edit_hidden
+    tool.on_move(QPoint(45, 45), doc, QColor(), QColor(), OPTS)
+    tool.cancel_transform(doc)
+
+    assert not layer._live_edit_hidden
+
+
+def test_vector_shape_data_cancel_leaves_shape_data_unchanged(qapp):
+    doc = Document(200, 200)
+    layer = _shape_data_layer(doc)
+    original = dict(layer.shape_data)
+
+    tool = MoveTool()
+    tool.on_press(QPoint(35, 35), doc, QColor(), QColor(), OPTS)
+    tool.on_move(QPoint(45, 45), doc, QColor(), QColor(), OPTS)
+    tool.cancel_transform(doc)
+
+    assert layer.shape_data == original

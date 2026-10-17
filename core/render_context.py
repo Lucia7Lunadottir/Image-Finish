@@ -12,7 +12,7 @@ class CompositeContext:
     attributes is that object.
     """
 
-    __slots__ = ("document", "result", "painter", "clip_alpha", "children_map")
+    __slots__ = ("document", "result", "painter", "clip_alpha", "children_map", "view_transform")
 
     def __init__(self, document, result, painter, children_map):
         self.document = document
@@ -20,3 +20,8 @@ class CompositeContext:
         self.painter = painter
         self.clip_alpha = None
         self.children_map = children_map
+        # Set by Document.render_view: document -> `result` pixel mapping
+        # when `result` is a zoomed viewport rather than a document-sized
+        # image. Layers that touch `result`'s pixels directly (adjustment
+        # layers) need it to line their document-space masks up.
+        self.view_transform = None

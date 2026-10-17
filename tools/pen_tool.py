@@ -17,6 +17,26 @@ def _split_bezier(p0, p1, p2, p3, t):
     s0 = _lerp(r0, r1, t)
     return q0, r0, s0, r1, q2
 
+
+def build_bezier_path(wp: dict) -> QPainterPath:
+    """Single source of truth for turning a {"nodes": [...], "closed": bool}
+    dict (the work_path / saved_paths node format) into a QPainterPath —
+    used by BasePenTool's own overlay drawing and by the Paths panel's
+    Make Selection/Fill/Stroke actions (ui/actions/panel_actions.py), which
+    used to each carry their own copy of this exact loop."""
+    path = QPainterPath()
+    nodes = wp.get('nodes', [])
+    if not nodes: return path
+    path.moveTo(nodes[0]['p'])
+    for i in range(1, len(nodes)):
+        n0, n1 = nodes[i-1], nodes[i]
+        path.cubicTo(n0['c2'], n1['c1'], n1['p'])
+    if wp.get('closed') and len(nodes) > 1:
+        n0, n1 = nodes[-1], nodes[0]
+        path.cubicTo(n0['c2'], n1['c1'], n1['p'])
+    return path
+
+
 class BasePenTool(BaseTool):
     def __init__(self):
         super().__init__()
@@ -31,17 +51,7 @@ class BasePenTool(BaseTool):
         self.current_pos = QPointF(pos)
 
     def _build_path(self, wp) -> QPainterPath:
-        path = QPainterPath()
-        nodes = wp.get('nodes', [])
-        if not nodes: return path
-        path.moveTo(nodes[0]['p'])
-        for i in range(1, len(nodes)):
-            n0, n1 = nodes[i-1], nodes[i]
-            path.cubicTo(n0['c2'], n1['c1'], n1['p'])
-        if wp.get('closed') and len(nodes) > 1:
-            n0, n1 = nodes[-1], nodes[0]
-            path.cubicTo(n0['c2'], n1['c1'], n1['p'])
-        return path
+        return build_bezier_path(wp)
 
     def draw_overlays(self, painter, pw, doc):
         wp = self._get_wp(doc)

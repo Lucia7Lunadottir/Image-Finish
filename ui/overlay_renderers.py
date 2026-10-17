@@ -7,7 +7,7 @@ import math
 
 from PyQt6.QtCore import Qt, QPoint, QPointF, QRect, QRectF
 from PyQt6.QtGui import (QPainter, QColor, QPen, QBrush, QPainterPath,
-                         QPolygon, QPolygonF, QTransform)
+                         QPolygonF, QTransform)
 
 from core.app_logging import get_logger
 
@@ -239,6 +239,32 @@ def draw_transform_preview(painter, *, active_tool, pan, zoom):
             painter.setTransform(QTransform().translate(tl.x(), tl.y()) * transform, combine=True)
             painter.drawImage(0, 0, img)
             painter.restore()
+        elif len(fp) == 4 and fp[0] == "vector_transform":
+            _, mask, path_style, transform = fp
+            painter.save()
+            painter.translate(pan)
+            painter.scale(zoom, zoom)
+            painter.setRenderHint(QPainter.RenderHint.Antialiasing)
+            from core.layer import paint_path_style
+            paint_path_style(painter, transform.map(mask), path_style)
+            painter.restore()
+        elif len(fp) == 3 and fp[0] == "shape_transform":
+            _, sd, transform = fp
+            painter.save()
+            painter.translate(pan)
+            painter.scale(zoom, zoom)
+            painter.setRenderHint(QPainter.RenderHint.Antialiasing)
+            from core.layer import transform_shape_rect
+            from core.shape_model import ShapeSpec
+            spec = ShapeSpec.from_dict(sd)
+            if spec.kind.is_open:
+                start, end = transform.map(spec.params.start), transform.map(spec.params.end)
+                spec = spec.with_geometry(rect=QRectF(start, end).normalized(), start=start, end=end)
+            else:
+                new_rect, new_angle = transform_shape_rect(spec.params.rect, spec.angle, transform)
+                spec = spec.with_geometry(rect=new_rect, angle=new_angle)
+            spec.paint(painter)
+            painter.restore()
         elif len(fp) == 4 and fp[0] == "warp":
             _, src_img, patches, fast = fp
             painter.save()
@@ -443,77 +469,31 @@ def draw_perspective_crop(painter, *, active_tool, tool_opts, pan, zoom, doc, Pe
 
 
 def draw_shapes_preview(painter, *, active_tool, tool_opts, fg_color, pan, zoom, ShapesTool):
+    """The new-shape creation drag, rendered through the same ShapeSpec as
+    the finished layer (fill, stroke style, alignment, radii — everything
+    the options bar sets), so what you drag is exactly what you get."""
     if not isinstance(active_tool, ShapesTool):
         return
     try:
-        ps = active_tool.preview_shape()
-        if not ps:
+        sd = active_tool.preview_shape_data(tool_opts, fg_color)
+        if not sd:
             return
+        from core.shape_model import ShapeSpec
         painter.save()
         painter.translate(pan)
         painter.scale(zoom, zoom)
         painter.setRenderHint(QPainter.RenderHint.Antialiasing)
-        
-        stroke = max(1, int(tool_opts.get("brush_size", 3)))
-        shape_color = tool_opts.get("shape_color", fg_color)
-        
-        # Real solid contour (without setCosmetic as requested)
-        pen = QPen(shape_color, stroke)
-        pen.setStyle(Qt.PenStyle.SolidLine)
-        painter.setPen(pen)
-        
-        is_fill_enabled = (
-            tool_opts.get("shape_fill", False) or 
-            tool_opts.get("use_fill", False) or 
-            tool_opts.get("fill", False)
-        )
-        
-        if is_fill_enabled:
-            painter.setBrush(QBrush(shape_color))
-        else:
+        spec = ShapeSpec.from_dict(sd)
+        spec.paint(painter)
+        if tool_opts.get("shape_path_op", "new") != "new":
+            # A path operation doesn't add pixels of its own — show the
+            # outline it will combine with the selected shape.
+            from PyQt6.QtGui import QPen as _QPen
+            pen = _QPen(QColor(122, 162, 247), 0)
+            pen.setCosmetic(True)
+            painter.setPen(pen)
             painter.setBrush(Qt.BrushStyle.NoBrush)
-
-        shape = ps["shape"]
-        rect = ps["rect"]
-        angle = ps.get("angle", 0)
-        if angle and shape != "line":
-            cx, cy = rect.center().x(), rect.center().y()
-            painter.translate(cx, cy)
-            painter.rotate(angle)
-            painter.translate(-cx, -cy)
-        if shape.startswith("custom:"):
-            custom_path = ShapesTool._load_custom_shape(shape[7:])
-            if custom_path and not custom_path.isEmpty():
-                br = custom_path.boundingRect()
-                if not br.isEmpty():
-                    sx = rect.width() / br.width()
-                    sy = rect.height() / br.height()
-                    painter.save()
-                    painter.setTransform(
-                        QTransform().translate(rect.left(), rect.top())
-                        .scale(sx, sy).translate(-br.left(), -br.top()), combine=True)
-                    painter.drawPath(custom_path)
-                    painter.restore()
-        elif shape == "ellipse":
-            painter.drawEllipse(rect)
-        elif shape == "triangle":
-            painter.drawPolygon(QPolygon([
-                QPoint(rect.center().x(), rect.top()),
-                QPoint(rect.left(), rect.bottom()),
-                QPoint(rect.right(), rect.bottom()),
-            ]))
-        elif shape == "polygon":
-            painter.drawPolygon(ShapesTool._polygon_points(rect, ps["sides"]))
-        elif shape == "line":
-            painter.drawLine(ps["start"], ps["end"])
-        elif shape == "star":
-            painter.drawPolygon(ShapesTool._star_points(rect))
-        elif shape == "arrow":
-            painter.drawPath(ShapesTool._arrow_path(rect))
-        elif shape == "cross":
-            painter.drawPath(ShapesTool._cross_path(rect))
-        else:
-            painter.drawRect(rect)
+            painter.drawPath(spec.outline())
         painter.restore()
     except Exception:
         logger.debug("Overlay draw failed", exc_info=True)

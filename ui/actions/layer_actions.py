@@ -42,85 +42,6 @@ class LayerActionsMixin:
         self._refresh_layers()
         self._canvas_refresh()
 
-    def _fit_text_layer(self, layer, text: str, opts: dict, doc_x: int, doc_y: int,
-                        clip, vertical: bool) -> None:
-        """Sizes `layer.image` tightly around the text's own bounding box
-        and positions it via `layer.offset`, instead of always allocating
-        a full document-sized image at absolute coordinates — the old
-        approach silently, permanently clipped any glyph past the canvas
-        edge (nothing past the fixed image bounds was ever rendered at
-        all). The compositor already draws every layer at `layer.offset`
-        (core/document.py, exercised by crop/move already), so a
-        smaller-than-canvas layer is not a new concept here.
-
-        `doc_x`/`doc_y` (and `text_data["x"]/["y"]`, which must keep this
-        exact meaning — re-edit anchor recovery, hit-testing and
-        move_tool.py all read them as document-space) stay document-space;
-        only the actual pixel draw position and the selection clip shift
-        by `-layer.offset` to land correctly inside the now-smaller image.
-        """
-        from core.text_layout import TextLayout
-        stroke_w = int(opts.get("text_stroke_w", 0))
-        shadow_pad = 0
-        if opts.get("text_shadow", False):
-            shadow_pad = max(abs(int(opts.get("text_shadow_dx", 3))),
-                             abs(int(opts.get("text_shadow_dy", 3))))
-        padding = 4 + stroke_w + shadow_pad
-
-        layout = TextLayout(text, opts, vertical=vertical)
-        bounds = layout.bounding_rect(doc_x, doc_y, padding=padding)
-
-        layer.image = QImage(max(1, bounds.width()), max(1, bounds.height()),
-                             QImage.Format.Format_ARGB32_Premultiplied)
-        layer.image.fill(Qt.GlobalColor.transparent)
-        layer.offset = bounds.topLeft()
-
-        local_clip = clip.translated(-bounds.left(), -bounds.top()) if clip else None
-        layout.draw(layer.image, doc_x - bounds.left(), doc_y - bounds.top(), local_clip)
-
-    @require_document
-    def _commit_text_edit(self, layer, text: str, font_opts: dict, doc_anchor, vertical: bool = False):
-        """Bakes the CanvasWidget's on-canvas text editor result into a text
-        layer's pixels and records one undo step. `layer` is None when the
-        editor was creating a brand-new text layer."""
-        from tools.text_tool import TextTool
-
-        doc = self._document
-        text = text.strip()
-        if layer is None and not text:
-            return
-
-        idx = doc.layers.index(layer) if layer is not None and layer in doc.layers else None
-        self._push_history(tr("history.edit_text") if layer is not None else tr("history.add_text"), idx)
-
-        clip = doc.selection if (doc.selection and not doc.selection.isEmpty()) else None
-
-        if layer is not None:
-            if not text:
-                doc.remove_layer(idx)
-            else:
-                td = layer.text_data
-                self._fit_text_layer(layer, text, font_opts, td["x"], td["y"], clip, vertical)
-                merged = {**td, "text": text, **TextTool._snap_opts(font_opts)}
-                if vertical:
-                    merged["vertical"] = True
-                layer.text_data = merged
-        else:
-            from core.layer import TextLayer
-            n = sum(1 for l in doc.layers if getattr(l, "text_data", None)) + 1
-            new_layer = TextLayer(f"Text {n}", doc.width, doc.height)
-            self._fit_text_layer(new_layer, text, font_opts, doc_anchor.x(), doc_anchor.y(),
-                                 clip, vertical)
-            new_layer.text_data = {"text": text, "x": doc_anchor.x(), "y": doc_anchor.y(),
-                                   **TextTool._snap_opts(font_opts)}
-            if vertical:
-                new_layer.text_data["vertical"] = True
-            doc.layers.append(new_layer)
-            doc.active_layer_index = len(doc.layers) - 1
-
-        self._canvas_refresh()
-        self._refresh_layers()
-
     @require_document
     def _duplicate_layer(self):
         self._push_history(tr("history.duplicate_layer"))
@@ -173,6 +94,30 @@ class LayerActionsMixin:
         self._canvas_refresh()
 
     @require_document
+    def _combine_shapes(self, op: str):
+        """Layer > Combine Shapes (Photoshop): merges the active vector
+        layer's geometry into the vector layer directly below it with a
+        path operation — unite, subtract front, intersect, exclude. The
+        lower layer keeps its fill/stroke and becomes a path layer."""
+        from core.layer import VectorLayer
+        doc = self._document
+        top = doc.get_active_layer()
+        siblings = [l for l in doc.layers if getattr(l, "parent_id", None) == getattr(top, "parent_id", None)]
+        pos = siblings.index(top) if top in siblings else -1
+        bottom = siblings[pos - 1] if pos > 0 else None
+        if not (isinstance(top, VectorLayer) and top.has_vector_geometry()
+                and isinstance(bottom, VectorLayer) and bottom.has_vector_geometry()):
+            from PyQt6.QtWidgets import QMessageBox
+            QMessageBox.information(self, tr("menu.combine_shapes"), tr("msg.combine_shapes_need_two"))
+            return
+        self._push_history(tr("history.combine_shapes"))
+        bottom.combine_with(top.vector_outline(), op)
+        doc.remove_layer(doc.layers.index(top))
+        doc.active_layer_index = doc.layers.index(bottom)
+        self._refresh_layers()
+        self._canvas_refresh()
+
+    @require_document
     def _flatten(self):
         self._push_history(tr("history.flatten"))
         self._document.flatten()
@@ -191,7 +136,7 @@ class LayerActionsMixin:
         if is_adj:
             _saved_adj = layer.adjustment_data
             layer.adjustment_data = {"type": t}
-            target_img = self._document.get_composite()
+            target_img = self._document.get_composite(respect_live_hidden=False)
             layer.adjustment_data = _saved_adj
         else:
             target_img = layer.image
@@ -422,6 +367,10 @@ class LayerActionsMixin:
         self._push_history(tr("history.rasterize_layer"))
         ltype = layer.layer_type
         rendered = None
+        if ltype == "vector" and layer.has_vector_geometry():
+            # .image is only the thumbnail bake for vector layers — make
+            # sure it's current (Pen layers created before it was kept).
+            layer.rebake_thumbnail()
         if ltype == "fill":
             from core.document import _render_fill_layer
             rendered = _render_fill_layer(layer, self._document.width,

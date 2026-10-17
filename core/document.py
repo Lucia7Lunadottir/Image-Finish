@@ -168,6 +168,11 @@ class Document:
         self.guides_h: list[float] = []
         self.slices: list[QRect] = []
         self.work_path: dict = {"nodes": [], "closed": False}
+        # Named, permanent paths (Paths panel) — same {"nodes","closed"}
+        # node shape as work_path, plus "name". work_path itself stays the
+        # single ephemeral, unsaved path Pen Tool draws into; "New Path"
+        # promotes its current contents into an entry here and clears it.
+        self.saved_paths: list[dict] = []
         self.show_slices: bool = True
         self.show_guides: bool = True
         self.show_grid: bool = False
@@ -297,7 +302,31 @@ class Document:
                 return False
         return True
 
-    def get_composite(self, dirty_rect: QRect | None = None) -> QImage:
+    def get_composite(self, dirty_rect: QRect | None = None, respect_live_hidden: bool = True) -> QImage:
+        """`respect_live_hidden=False` is the "ground truth" render used by
+        anything that must never silently drop pixels — export/save,
+        flatten, merge-down's adjustment-preview, the eyedropper, Image >
+        Calculations. `_live_edit_hidden` is a canvas-DISPLAY-only concept:
+        set while a shape layer is being dragged (ui/shape_scene_overlay.py's
+        ShapeLayerItem, or MoveTool) and the drag's own preview is the only
+        visible copy of it. Callers reading the document for real must see
+        the actual shape, not a hole where the preview was.
+
+        Bypasses `_composite_cache_doc` entirely rather than trying to
+        make one cache serve two different results for the same document
+        state — but only when something is actually hidden right now."""
+        if not respect_live_hidden:
+            hidden = [l for l in self.layers if getattr(l, "_live_edit_hidden", False)]
+            if not hidden:
+                return self.get_composite(dirty_rect)
+            for l in hidden:
+                l._live_edit_hidden = False
+            try:
+                return self._render_composite(QRect(0, 0, self.width, self.height))
+            finally:
+                for l in hidden:
+                    l._live_edit_hidden = True
+
         cached = getattr(self, "_composite_cache_doc", None)
 
         if (dirty_rect is not None and cached is not None
@@ -384,36 +413,78 @@ class Document:
             painter.end()
             
         if getattr(self, "quick_mask_layer", None) is not None:
-            qm = self.quick_mask_layer.image
-            import numpy as np
-            ptr = qm.bits(); ptr.setsize(qm.sizeInBytes())
-            bpl = qm.bytesPerLine()
-            arr = np.ndarray((qm.height(), bpl // 4, 4), dtype=np.uint8, buffer=ptr)[:, :self.width, :]
-            
-            # Black (or alpha=0) becomes a red overlay; white becomes transparent
-            gray = 0.299*arr[..., 2] + 0.587*arr[..., 1] + 0.114*arr[..., 0]
-            mask_val = (255 - gray) * (arr[..., 3] / 255.0)
-            
-            red_overlay = np.zeros((qm.height(), self.width, 4), dtype=np.uint8)
-            alpha = (mask_val * 0.5).astype(np.uint8)
-            red_overlay[..., 2] = alpha # R (Premultiplied)
-            red_overlay[..., 3] = alpha # A
-            
-            red_img = QImage(self.width, qm.height(), QImage.Format.Format_ARGB32_Premultiplied)
-            r_ptr = red_img.bits()
-            r_ptr.setsize(red_img.sizeInBytes())
-            r_arr = np.frombuffer(r_ptr, dtype=np.uint8).reshape((qm.height(), self.width, 4))
-            r_arr[:] = red_overlay
-            del r_arr
-            del r_ptr
             p2 = QPainter(result)
-            p2.drawImage(0, 0, red_img)
+            p2.translate(-rect.topLeft())
+            p2.drawImage(0, 0, self._quick_mask_overlay())
             p2.end()
-            
-            del arr
-            del ptr
 
         return result
+
+    def _quick_mask_overlay(self) -> QImage:
+        """Quick Mask's translucent red overlay at document resolution:
+        black (or alpha=0) in the mask becomes red, white transparent."""
+        import numpy as np
+        qm = self.quick_mask_layer.image
+        ptr = qm.bits(); ptr.setsize(qm.sizeInBytes())
+        bpl = qm.bytesPerLine()
+        arr = np.ndarray((qm.height(), bpl // 4, 4), dtype=np.uint8, buffer=ptr)[:, :self.width, :]
+        gray = 0.299*arr[..., 2] + 0.587*arr[..., 1] + 0.114*arr[..., 0]
+        mask_val = (255 - gray) * (arr[..., 3] / 255.0)
+        alpha = (mask_val * 0.5).astype(np.uint8)
+        red_img = QImage(self.width, qm.height(), QImage.Format.Format_ARGB32_Premultiplied)
+        red_img.fill(0)
+        r_ptr = red_img.bits(); r_ptr.setsize(red_img.sizeInBytes())
+        r_arr = np.ndarray((qm.height(), red_img.bytesPerLine() // 4, 4), dtype=np.uint8, buffer=r_ptr)
+        r_arr[:, :self.width, 2] = alpha  # R (premultiplied)
+        r_arr[:, :self.width, 3] = alpha  # A
+        del r_arr, r_ptr, arr, ptr
+        return red_img
+
+    def render_view(self, view_transform: QTransform, size) -> QImage:
+        """Renders the composite straight into a viewport-sized image whose
+        pixels are screen pixels: `view_transform` maps document
+        coordinates to that image (zoom + pan). Pixel layers come out
+        magnified exactly like the zoomed canvas shows them (nearest
+        neighbour), but vector layers (VectorLayer.render_into's direct
+        path) are painted *at this resolution* — that's what keeps shapes
+        and Pen paths sharp at 1600% instead of showing the document-
+        resolution raster blown up. Layer order, masks, clipping, blend
+        modes and adjustment layers all go through the same render_into
+        chain as get_composite, so nothing can end up drawn on top of a
+        layer that should cover it.
+
+        Respects `_live_edit_hidden` like the canvas composite does."""
+        result = QImage(size, QImage.Format.Format_ARGB32_Premultiplied)
+        result.fill(Qt.GlobalColor.transparent)
+        painter = QPainter(result)
+        painter.setRenderHint(QPainter.RenderHint.SmoothPixmapTransform,
+                              view_transform.m11() < 1.0)
+        painter.setTransform(view_transform)
+
+        children_map = {}
+        for layer in self.layers:
+            children_map.setdefault(getattr(layer, "parent_id", None), []).append(layer)
+        ctx = CompositeContext(document=self, result=result, painter=painter, children_map=children_map)
+        ctx.view_transform = QTransform(view_transform)
+        self._render_layer_list(children_map.get(None, []), None, ctx)
+        painter = ctx.painter
+        if painter.isActive():
+            painter.end()
+
+        if getattr(self, "quick_mask_layer", None) is not None:
+            p2 = QPainter(result)
+            p2.setTransform(view_transform)
+            p2.drawImage(0, 0, self._quick_mask_overlay())
+            p2.end()
+        return result
+
+    def has_vector_content(self) -> bool:
+        """Whether any visible layer would look sharper in render_view than
+        in the document-resolution composite."""
+        for layer in self.layers:
+            if layer.visible and hasattr(layer, "has_vector_geometry") and layer.has_vector_geometry():
+                return True
+        return False
 
     def _render_layer_list(self, layers: list[Layer], layer_artboard_rect, ctx: "CompositeContext") -> None:
         """Render one sibling list (top-level layers, or one group's/
@@ -527,6 +598,12 @@ class Document:
             sd["start"] = (sx + shift.x(), sy + shift.y())
             ex, ey = sd.get("end", (0, 0))
             sd["end"] = (ex + shift.x(), ey + shift.y())
+        # Vector masks (and a Pen layer's path, which lives in vector_mask)
+        # are document-space too; without this they stayed at their
+        # pre-crop position while everything else moved.
+        vm = getattr(layer, "vector_mask", None)
+        if vm is not None and not vm.isEmpty():
+            layer.vector_mask = vm.translated(shift.x(), shift.y())
 
     def apply_perspective_crop(self, quad: QPolygonF):
         if quad.isEmpty() or quad.count() < 4:
@@ -696,7 +773,7 @@ class Document:
 
     # ------------------------------------------------------------------ Flatten
     def flatten(self):
-        composite = self.get_composite()
+        composite = self.get_composite(respect_live_hidden=False)
         self.layers.clear()
         bg = RasterLayer("Background", self.width, self.height)
         bg.image = composite

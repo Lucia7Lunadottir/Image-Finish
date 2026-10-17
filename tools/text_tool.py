@@ -1,57 +1,59 @@
-from PyQt6.QtCore import Qt, QPoint, QPointF
-from PyQt6.QtGui import (QColor, QPainter, QImage, QPainterPath,
-                         QFont, QFontMetrics, QBrush, QPen as _QPen, QPixmap)
+from PyQt6.QtCore import Qt, QPoint, QPointF, QRectF
+from PyQt6.QtGui import (QColor, QPainter, QImage, QPainterPath, QPen as _QPen, QPixmap,
+                         QFont, QFontMetricsF)
 from PyQt6.QtWidgets import (QDialog, QVBoxLayout, QPlainTextEdit,
                              QDialogButtonBox, QLabel)
 from tools.base_tool import BaseTool
 from core.locale import tr
-from core.text_layout import TextLayout, _build_font
+from core.text_model import TextData
+from core.text_engine import (layout_device, layout_text, paint_text, qfont, text_transform,
+                              text_outline_in_document, PT_TO_PX)
 
 
-# ── Font/layout helpers ──────────────────────────────────────────────────────
-# All the actual per-line metrics/alignment/leading/tracking math lives in
-# core.text_layout.TextLayout — one engine shared by rendering, bounding-box
-# hit-testing and type-mask path generation, horizontal and vertical alike.
-# These are thin, signature-compatible wrappers kept here since the rest of
-# the app (ui/text_edit_overlay.py, ui/main_window.py, tools/move_tool.py,
-# tools/other_tools.py) imports them from `tools.text_tool`.
+# ── Compatibility helpers ────────────────────────────────────────────────────
+# Older call sites (type-mask tools, the text dialog preview, other_tools
+# re-exports) work with a flat options dict + anchor. They go through the
+# same engine as text layers (core/text_engine.py).
 
-def _text_bounding_rect(td: dict, padding: int = 4):
-    """QRect bounding box of text from text_data (layer coordinates);
-    `td["y"]` is the top of the block, not the first line's baseline."""
-    text = td.get("text", "")
-    if not text:
-        return None
-    x, y = int(td.get("x", 0)), int(td.get("y", 0))
-    return TextLayout(text, td).bounding_rect(x, y, padding)
+def _data_from_opts(text: str, opts: dict, x: float, y: float, vertical: bool = False) -> TextData:
+    data = TextData.from_options(opts, x, y, vertical=vertical)
+    data.angle = float(opts.get("text_angle", 0.0) or 0.0)
+    data.insert(0, text)
+    return data
 
 
-def _text_bounding_rect_vertical(td: dict, padding: int = 4):
-    """Same as `_text_bounding_rect` but for the vertical column layout
-    (one text line per column, one character per row)."""
-    text = td.get("text", "")
-    if not text:
-        return None
-    x, y = int(td.get("x", 0)), int(td.get("y", 0))
-    return TextLayout(text, td, vertical=True).bounding_rect(x, y, padding)
+def _build_font(opts: dict) -> QFont:
+    return qfont(TextData.from_options(opts, 0, 0).runs[0][1])
 
 
 def _render_text(image, x: int, y: int, text: str, opts: dict, clip_path=None, angle: float = 0.0):
-    if angle and not opts.get("text_angle"):
-        opts = {**opts, "text_angle": angle}
-    TextLayout(text, opts).draw(image, x, y, clip_path)
+    data = _data_from_opts(text, {**opts, "text_angle": angle or opts.get("text_angle", 0.0)}, x, y)
+    p = QPainter(image)
+    p.setRenderHint(QPainter.RenderHint.Antialiasing)
+    if clip_path is not None and not clip_path.isEmpty():
+        p.setClipPath(clip_path)
+    p.setTransform(text_transform(data))
+    paint_text(p, data)
+    p.end()
 
 
 def _render_text_vertical(image, x: int, y: int, text: str, opts: dict, clip_path=None):
-    TextLayout(text, opts, vertical=True).draw(image, x, y, clip_path)
+    data = _data_from_opts(text, opts, x, y, vertical=True)
+    p = QPainter(image)
+    p.setRenderHint(QPainter.RenderHint.Antialiasing)
+    if clip_path is not None and not clip_path.isEmpty():
+        p.setClipPath(clip_path)
+    p.setTransform(text_transform(data))
+    paint_text(p, data)
+    p.end()
 
 
 def _text_path_h(pos, text: str, opts: dict) -> QPainterPath:
-    return TextLayout(text, opts).to_qpainter_path(pos.x(), pos.y())
+    return text_outline_in_document(_data_from_opts(text, opts, pos.x(), pos.y()))
 
 
 def _text_path_v(pos, text: str, opts: dict) -> QPainterPath:
-    return TextLayout(text, opts, vertical=True).to_qpainter_path(pos.x(), pos.y())
+    return text_outline_in_document(_data_from_opts(text, opts, pos.x(), pos.y(), vertical=True))
 
 
 # ── Text dialog ────────────────────────────────────────────────────────────────
@@ -166,168 +168,189 @@ class _TextDialog(QDialog):
 
 # ── Text tools ─────────────────────────────────────────────────────────────────
 
-class TextTool(BaseTool):
+class _BaseTypeTool(BaseTool):
+    """Type tools, Photoshop-style:
+
+    - click on existing text: edit it (caret where you clicked; drag
+      selects, double-click a word, triple-click a line);
+    - click on empty canvas: new point text, baseline at the click;
+    - drag on empty canvas: new paragraph text in that box (wraps);
+    - while editing, click outside the text commits it.
+
+    Editing itself is ui/text_edit_session.py; this class only routes the
+    mouse. `_VERTICAL` picks the orientation of *new* text — existing text
+    keeps its own orientation whichever type tool edits it."""
+
+    _VERTICAL = False
+    needs_immediate_commit = False
+
+    def __init__(self):
+        self._parent_widget = None
+        self._mode = None          # None | "session" | "create"
+        self._drag_start = None
+        self._drag_end = None
+
+    def _session(self):
+        canvas = getattr(self._parent_widget, "_canvas", None)
+        return getattr(canvas, "_text_session", None) if canvas is not None else None
+
+    @staticmethod
+    def _text_layer_at(doc, pt: QPointF):
+        for i in range(len(doc.layers) - 1, -1, -1):
+            l = doc.layers[i]
+            if not l.visible or l.locked or getattr(l, "layer_type", "") != "text":
+                continue
+            if hasattr(l, "contains_doc_point") and l.has_live_content() and l.contains_doc_point(pt):
+                return i, l
+        return None, None
+
+    def on_press(self, pos, doc, fg, bg, opts):
+        session = self._session()
+        if session is None:
+            return
+        pt = QPointF(pos)
+        shift = bool(opts.get("_shift", False))
+        self._mode = None
+        if session.is_active():
+            if session.handle_at(pt) or session.contains_doc_point(pt):
+                session.mouse_press(pt, shift)
+                self._mode = "session"
+                return
+            session.commit()
+            # Clicking another text layer goes straight into editing it;
+            # any other click outside just commits (Photoshop).
+            idx, layer = self._text_layer_at(doc, pt)
+            if layer is not None:
+                self._edit_layer(session, doc, idx, layer, pt)
+            return
+        idx, layer = self._text_layer_at(doc, pt)
+        if layer is not None:
+            self._edit_layer(session, doc, idx, layer, pt)
+            return
+        self._mode = "create"
+        self._drag_start = self._drag_end = pt
+
+    def _edit_layer(self, session, doc, idx, layer, pt):
+        doc.active_layer_index = idx
+        session.start(doc, layer)
+        session.mouse_press(pt)
+        self._mode = "session"
+
+    def on_move(self, pos, doc, fg, bg, opts):
+        if self._mode == "session":
+            session = self._session()
+            if session is not None and session.is_active():
+                session.mouse_move(QPointF(pos))
+        elif self._mode == "create":
+            self._drag_end = QPointF(pos)
+
+    def on_release(self, pos, doc, fg, bg, opts):
+        session = self._session()
+        mode, self._mode = self._mode, None
+        if session is None:
+            return
+        if mode == "session":
+            if session.is_active():
+                session.mouse_release(QPointF(pos))
+            return
+        if mode != "create":
+            return
+        end = QPointF(pos)
+        rect = QRectF(self._drag_start, end).normalized()
+        self._drag_start = self._drag_end = None
+        zoom = float(opts.get("_zoom", 1.0) or 1.0)
+        if rect.width() * zoom > 8 and rect.height() * zoom > 8:
+            data = TextData.from_options(opts, rect.x(), rect.y(), vertical=self._VERTICAL,
+                                         box=(rect.width(), rect.height()))
+        else:
+            data = TextData.from_options(opts, 0, 0, vertical=self._VERTICAL)
+            data.x, data.y = self._point_origin(data, end)
+        session.start(doc, None, data)
+
+    @staticmethod
+    def _point_origin(data: TextData, click: QPointF):
+        """Point text: the click is the first baseline (horizontal) or the
+        top center of the first column (vertical)."""
+        style = data.runs[0][1]
+        if data.vertical:
+            return click.x() - style.size * PT_TO_PX * data.paragraph.leading / 2, click.y()
+        ascent = QFontMetricsF(qfont(style), layout_device()).ascent()
+        return click.x(), click.y() - ascent
+
+    def preview_text_box(self):
+        if self._mode == "create" and self._drag_start is not None and self._drag_end is not None:
+            return QRectF(self._drag_start, self._drag_end).normalized()
+        return None
+
+    def draw_overlays(self, painter, pw, doc):
+        r = self.preview_text_box()
+        if r is None or r.width() < 1 or r.height() < 1:
+            return
+        pen = _QPen(QColor(122, 162, 247), pw, Qt.PenStyle.DashLine)
+        painter.setPen(pen)
+        painter.setBrush(Qt.BrushStyle.NoBrush)
+        painter.drawRect(r)
+
+    def needs_history_push(self) -> bool:
+        # The editing session pushes its own single undo step.
+        return False
+
+    def cursor(self):
+        return Qt.CursorShape.IBeamCursor
+
+
+class TextTool(_BaseTypeTool):
     name = "Text"
     icon = "T"
     shortcut = "T"
-    # The overlay commits asynchronously on its own schedule, not on this
-    # mouse press — see needs_history_push().
-    needs_immediate_commit = False
-
-    def __init__(self):
-        self._parent_widget = None
-
-    def on_press(self, pos, doc, fg, bg, opts):
-        layer = doc.get_active_layer()
-        re_edit = False
-
-        # Hit-test: find text layer under cursor by actual pixels
-        from core.document import Document as _Document
-        pos_pt = pos if isinstance(pos, QPoint) else pos.toPoint()
-        for i in range(len(doc.layers) - 1, -1, -1):
-            l = doc.layers[i]
-            if not l.visible or l.locked: continue
-            if getattr(l, "layer_type", "raster") != "text": continue
-            if l.image.isNull(): continue
-            br = _Document._nontransparent_bounds(l.image)
-            if not br.isEmpty():
-                check = br.adjusted(-4, -4, 4, 4).translated(l.offset)
-                if check.contains(pos_pt):
-                    doc.active_layer_index = i
-                    layer = l
-                    re_edit = True
-                    break
-
-        canvas = getattr(self._parent_widget, "_canvas", None)
-        if canvas is None:
-            return
-
-        if re_edit:
-            td = layer.text_data
-            anchor = QPoint(int(td.get("x", 0)), int(td.get("y", 0)))
-            canvas.begin_text_edit(doc, layer, td.get("text", ""), anchor, vertical=False)
-        else:
-            canvas.begin_text_edit(doc, None, "", pos_pt, vertical=False)
-
-    @staticmethod
-    def _snap_opts(opts: dict) -> dict:
-        return {k: opts[k] for k in (
-            "font_family", "font_size", "font_bold", "font_italic",
-            "font_underline", "font_strikeout",
-            "text_color", "text_stroke_w", "text_stroke_color",
-            "text_shadow", "text_shadow_color", "text_shadow_dx", "text_shadow_dy",
-            "text_angle", "text_align", "font_tracking", "text_leading",
-        ) if k in opts}
-
-    def needs_history_push(self) -> bool:
-        # The on-canvas editor owns its own undo push on commit (see
-        # MainWindow._commit_text_edit), since a typing session isn't
-        # bounded by a single mouse press/release like a brush stroke.
-        return False
-
-    def cursor(self):
-        return Qt.CursorShape.IBeamCursor
+    _VERTICAL = False
 
 
-class VerticalTypeTool(BaseTool):
+class VerticalTypeTool(_BaseTypeTool):
     name = "TextV"
     icon = "Tv"
     shortcut = ""
-    needs_immediate_commit = False
+    _VERTICAL = True
+
+
+class _BaseTypeMaskTool(BaseTool):
+    """Shared behaviour for HorizontalTypeMaskTool/VerticalTypeMaskTool:
+    prompt for text via _TextDialog, then set doc.selection to the resulting
+    type-outline path. _VERTICAL picks _text_path_h vs. _text_path_v."""
+
+    _VERTICAL = False
+    needs_immediate_commit = True
 
     def __init__(self):
         self._parent_widget = None
 
     def on_press(self, pos, doc, fg, bg, opts):
-        layer = doc.get_active_layer()
-        re_edit = False
-
-        # Hit-test: find vertical text layer under cursor by actual pixels
-        from core.document import Document as _Document
-        pos_pt = pos if isinstance(pos, QPoint) else pos.toPoint()
-        for i in range(len(doc.layers) - 1, -1, -1):
-            l = doc.layers[i]
-            if not l.visible or l.locked: continue
-            if getattr(l, "layer_type", "raster") != "text": continue
-            td = getattr(l, "text_data", None)
-            if not td or not td.get("vertical", False): continue
-            if l.image.isNull(): continue
-            br = _Document._nontransparent_bounds(l.image)
-            if not br.isEmpty():
-                check = br.adjusted(-4, -4, 4, 4).translated(l.offset)
-                if check.contains(pos_pt):
-                    doc.active_layer_index = i
-                    layer = l
-                    re_edit = True
-                    break
-
-        canvas = getattr(self._parent_widget, "_canvas", None)
-        if canvas is None:
+        dlg = _TextDialog("", opts, None, self._parent_widget)
+        if dlg.exec() != QDialog.DialogCode.Accepted:
             return
-
-        if re_edit:
-            td = layer.text_data
-            anchor = QPoint(int(td.get("x", 0)), int(td.get("y", 0)))
-            canvas.begin_text_edit(doc, layer, td.get("text", ""), anchor, vertical=True)
-        else:
-            canvas.begin_text_edit(doc, None, "", pos_pt, vertical=True)
+        text = dlg.get_text().strip()
+        if not text:
+            return
+        opts.update(dlg.get_font_opts())
+        path_fn = _text_path_v if self._VERTICAL else _text_path_h
+        doc.selection = path_fn(pos, text, opts)
 
     def needs_history_push(self):
-        # See TextTool.needs_history_push — the on-canvas editor commits
-        # its own undo state.
         return False
 
     def cursor(self):
         return Qt.CursorShape.IBeamCursor
 
 
-class HorizontalTypeMaskTool(BaseTool):
+class HorizontalTypeMaskTool(_BaseTypeMaskTool):
     name = "TextHMask"
     icon = "Tm"
     shortcut = ""
-    needs_immediate_commit = True
-
-    def __init__(self):
-        self._parent_widget = None
-
-    def on_press(self, pos, doc, fg, bg, opts):
-        dlg = _TextDialog("", opts, None, self._parent_widget)
-        if dlg.exec() != QDialog.DialogCode.Accepted:
-            return
-        text = dlg.get_text().strip()
-        if not text:
-            return
-        opts.update(dlg.get_font_opts())
-        doc.selection = _text_path_h(pos, text, opts)
-
-    def needs_history_push(self):
-        return False
-
-    def cursor(self):
-        return Qt.CursorShape.IBeamCursor
+    _VERTICAL = False
 
 
-class VerticalTypeMaskTool(BaseTool):
+class VerticalTypeMaskTool(_BaseTypeMaskTool):
     name = "TextVMask"
     icon = "Vm"
     shortcut = ""
-    needs_immediate_commit = True
-
-    def __init__(self):
-        self._parent_widget = None
-
-    def on_press(self, pos, doc, fg, bg, opts):
-        dlg = _TextDialog("", opts, None, self._parent_widget)
-        if dlg.exec() != QDialog.DialogCode.Accepted:
-            return
-        text = dlg.get_text().strip()
-        if not text:
-            return
-        opts.update(dlg.get_font_opts())
-        doc.selection = _text_path_v(pos, text, opts)
-
-    def needs_history_push(self):
-        return False
-
-    def cursor(self):
-        return Qt.CursorShape.IBeamCursor
+    _VERTICAL = True

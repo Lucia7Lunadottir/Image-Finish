@@ -19,7 +19,8 @@ def build_menu_bar(win) -> None:
     file_m = win._menu(mb, "menu.file")
     win._act(file_m, "menu.new",        win._new_doc,    QKeySequence.StandardKey.New)
     win._act(file_m, "menu.open",       win._open_file,  QKeySequence.StandardKey.Open)
-    
+    win._act(file_m, "menu.open_as_layer", win._open_file_as_layer)
+
     win._recent_menu = win._menu(file_m, "menu.open_recent")
     win._update_recent_menu()
     
@@ -171,6 +172,9 @@ def build_menu_bar(win) -> None:
     layer_m.addSeparator()
     win._act(layer_m, "menu.smart_object",   win._new_smart_object)
     win._act(layer_m, "menu.rasterize_layer", win._rasterize_layer)
+    combine_m = win._menu(layer_m, "menu.combine_shapes")
+    for op in ("unite", "subtract", "intersect", "exclude"):
+        win._act(combine_m, f"opts.shape.path_op.{op}", lambda _=False, o=op: win._combine_shapes(o))
     layer_m.addSeparator()
     win._act(layer_m, "menu.move_up",   win._layer_up,   QKeySequence("Ctrl+]"))
     win._act(layer_m, "menu.move_down", win._layer_down, QKeySequence("Ctrl+["))

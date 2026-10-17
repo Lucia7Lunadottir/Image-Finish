@@ -20,7 +20,44 @@ class FileActionsMixin:
             self, tr("dlg.open_image"), "", tr("dlg.open_filter"))
         if path:
             self._open_file_path(path)
-            
+
+    @require_document
+    def _open_file_as_layer(self):
+        """Adds a raster image as a new layer on top of the CURRENT
+        document, instead of _open_file_path's "always a brand-new
+        document/tab" behavior — same idea as Photoshop's "Place Embedded",
+        implemented the same way _paste() already adds clipboard content as
+        a layer (centered on the canvas, no independent offset/transform)."""
+        path, _ = QFileDialog.getOpenFileName(
+            self, tr("dlg.open_image_as_layer"), "", tr("dlg.open_filter_images"))
+        if not path:
+            return
+
+        from PyQt6.QtCore import QPoint
+        from PyQt6.QtGui import QImage, QPainter
+        img = QImage(path)
+        if img.isNull():
+            QMessageBox.critical(self, tr("err.title.error"), tr("err.could_not_open", path=path))
+            return
+        img = img.convertToFormat(QImage.Format.Format_ARGB32_Premultiplied)
+
+        doc = self._document
+        self._push_history(tr("history.open_as_layer"))
+
+        from core.layer import RasterLayer
+        name = path.split("/")[-1]
+        new_layer = RasterLayer(name, doc.width, doc.height)
+        cx = (doc.width  - img.width())  // 2
+        cy = (doc.height - img.height()) // 2
+        p = QPainter(new_layer.image)
+        p.drawImage(QPoint(cx, cy), img)
+        p.end()
+
+        doc.layers.append(new_layer)
+        doc.active_layer_index = len(doc.layers) - 1
+        self._refresh_layers()
+        self._canvas_refresh()
+
     def _open_file_path(self, path: str):
         if path.lower().endswith(".imfn"):
             from core.serialization import load_document, SerializationError
@@ -111,6 +148,8 @@ class FileActionsMixin:
 
     @require_document
     def _export_png(self):
+        if hasattr(self, "_commit_text_edit_if_active"):
+            self._commit_text_edit_if_active()
         path, _ = QFileDialog.getSaveFileName(
             self, tr("dlg.export_png"), "export.png", "PNG (*.png)")
         if path:
@@ -118,12 +157,14 @@ class FileActionsMixin:
 
     @require_document
     def _do_save(self, path: str, flatten: bool = False):
+        if hasattr(self, "_commit_text_edit_if_active"):
+            self._commit_text_edit_if_active()
         from core.serialization import save_document, save_image_atomic, SerializationError
         try:
             if path.lower().endswith(".imfn"):
                 save_document(self._document, path)
             else:
-                save_image_atomic(self._document.get_composite(), path)
+                save_image_atomic(self._document.get_composite(respect_live_hidden=False), path)
         except (SerializationError, OSError) as e:
             QMessageBox.critical(self, tr("err.title.save_error"),
                                  tr("err.could_not_save", path=path) + f"\n{e}")

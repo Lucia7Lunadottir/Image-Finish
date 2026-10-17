@@ -83,8 +83,9 @@ class CharacterPanel(QWidget):
         theme.apply_style(self._size_lbl, LABEL_STYLE)
         size_lo.addWidget(self._size_lbl)
 
-        self._size_spin = QSpinBox()
-        self._size_spin.setRange(1, 999)
+        self._size_spin = QDoubleSpinBox()
+        self._size_spin.setRange(1, 1296)
+        self._size_spin.setDecimals(1)
         self._size_spin.setValue(24)
         self._size_spin.setSuffix(" pt")
         theme.apply_style(self._size_spin, SPIN_STYLE)
@@ -124,7 +125,7 @@ class CharacterPanel(QWidget):
         self._current_color = QColor(0, 0, 0)
         self._color_btn = QPushButton()
         self._color_btn.setFixedSize(36, 28)
-        self._color_btn.setToolTip("Text color")
+        self._color_btn.setToolTip(tr("char.color_tip"))
         self._color_btn.clicked.connect(self._pick_color)
         self._update_color_btn()
         style_lo.addWidget(self._color_btn)
@@ -187,7 +188,45 @@ class CharacterPanel(QWidget):
         leading_lo.addStretch()
         layout.addWidget(leading_row)
 
+        layout.addWidget(_make_sep())
+
+        # ---------- Baseline shift + caps ----------
+        extra_row = QWidget()
+        extra_lo = QHBoxLayout(extra_row)
+        extra_lo.setContentsMargins(0, 0, 0, 0)
+        extra_lo.setSpacing(6)
+        self._baseline_lbl = QLabel(tr("char.baseline"))
+        theme.apply_style(self._baseline_lbl, LABEL_STYLE)
+        extra_lo.addWidget(self._baseline_lbl)
+        self._baseline_spin = QDoubleSpinBox()
+        self._baseline_spin.setRange(-500, 500)
+        self._baseline_spin.setDecimals(1)
+        self._baseline_spin.setSuffix(" pt")
+        theme.apply_style(self._baseline_spin, SPIN_STYLE)
+        self._baseline_spin.setFixedWidth(80)
+        self._baseline_spin.valueChanged.connect(lambda v: self.option_changed.emit("font_baseline_shift", v))
+        extra_lo.addWidget(self._baseline_spin)
+        extra_lo.addStretch()
+        layout.addWidget(extra_row)
+
+        caps_row = QWidget()
+        caps_lo = QHBoxLayout(caps_row)
+        caps_lo.setContentsMargins(0, 0, 0, 0)
+        caps_lo.setSpacing(6)
+        self._caps_lbl = QLabel(tr("char.caps"))
+        theme.apply_style(self._caps_lbl, LABEL_STYLE)
+        caps_lo.addWidget(self._caps_lbl)
+        from PyQt6.QtWidgets import QComboBox
+        self._caps_combo = QComboBox()
+        for key in ("normal", "all", "small"):
+            self._caps_combo.addItem(tr(f"char.caps.{key}"), key)
+        self._caps_combo.currentIndexChanged.connect(
+            lambda _i: self.option_changed.emit("font_caps", self._caps_combo.currentData()))
+        caps_lo.addWidget(self._caps_combo, 1)
+        layout.addWidget(caps_row)
+
         layout.addStretch(1)
+        self.retranslate()
 
     # ---------------------------------------------------------------- Tracking sync
 
@@ -206,14 +245,10 @@ class CharacterPanel(QWidget):
     # ---------------------------------------------------------------- Color
 
     def _pick_color(self):
-        color = QColorDialog.getColor(
-            self._current_color,
-            self,
-            "Text Color",
-            options=QColorDialog.ColorDialogOption.ShowAlphaChannel,
-        )
-        if color.isValid():
-            self._current_color = color
+        from ui.hsv_picker import ColorPickerDialog
+        color = ColorPickerDialog.get_color(self._current_color, self, tr("char.color_tip"))
+        if color is not None and color.isValid():
+            self._current_color = QColor(color)
             self._update_color_btn()
             self.option_changed.emit("text_color", QColor(color))
 
@@ -246,8 +281,17 @@ class CharacterPanel(QWidget):
         self._font_combo.blockSignals(False)
 
         self._size_spin.blockSignals(True)
-        self._size_spin.setValue(int(opts.get("font_size", 24)))
+        self._size_spin.setValue(float(opts.get("font_size", 24)))
         self._size_spin.blockSignals(False)
+
+        self._baseline_spin.blockSignals(True)
+        self._baseline_spin.setValue(float(opts.get("font_baseline_shift", 0.0)))
+        self._baseline_spin.blockSignals(False)
+
+        self._caps_combo.blockSignals(True)
+        idx = self._caps_combo.findData(opts.get("font_caps", "normal"))
+        self._caps_combo.setCurrentIndex(max(0, idx))
+        self._caps_combo.blockSignals(False)
 
         for btn, key in ((self._btn_bold, "font_bold"),
                         (self._btn_italic, "font_italic"),
@@ -277,18 +321,13 @@ class CharacterPanel(QWidget):
         self._leading_spin.blockSignals(False)
 
     def retranslate(self):
-        self._header_lbl.setText(
-            tr("char.title") if tr("char.title") != "char.title" else "CHARACTER"
-        )
-        self._font_family_lbl.setText(
-            tr("char.font") if tr("char.font") != "char.font" else "Font:"
-        )
-        self._size_lbl.setText(
-            tr("char.size") if tr("char.size") != "char.size" else "Size:"
-        )
-        self._tracking_lbl.setText(
-            tr("char.tracking") if tr("char.tracking") != "char.tracking" else "Tracking:"
-        )
-        self._leading_lbl.setText(
-            tr("char.leading") if tr("char.leading") != "char.leading" else "Leading:"
-        )
+        self._header_lbl.setText(tr("char.title"))
+        self._font_family_lbl.setText(tr("char.family"))
+        self._size_lbl.setText(tr("char.size"))
+        self._tracking_lbl.setText(tr("char.tracking"))
+        self._leading_lbl.setText(tr("char.leading"))
+        self._baseline_lbl.setText(tr("char.baseline"))
+        self._caps_lbl.setText(tr("char.caps"))
+        self._color_btn.setToolTip(tr("char.color_tip"))
+        for i, key in enumerate(("normal", "all", "small")):
+            self._caps_combo.setItemText(i, tr(f"char.caps.{key}"))

@@ -193,6 +193,7 @@ class ImfnZipSerializer(DocumentSerializer):
             "bit_depth": getattr(doc, "bit_depth", 8),
             "active_layer_index": getattr(doc, "active_layer_index", 0),
             "layers": layers_meta,
+            "saved_paths": encode_qt(getattr(doc, "saved_paths", [])),
         }
         manifest_json = json.dumps(manifest, ensure_ascii=False, indent=1)
 
@@ -263,6 +264,7 @@ class ImfnZipSerializer(DocumentSerializer):
                 doc.layers = layers
             idx = manifest.get("active_layer_index", 0)
             doc.active_layer_index = max(0, min(int(idx), len(doc.layers) - 1))
+            doc.saved_paths = decode_qt(manifest.get("saved_paths", []))
             return doc
 
 

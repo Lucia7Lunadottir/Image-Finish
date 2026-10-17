@@ -18,7 +18,7 @@ def _get_full_doc_image(doc, layer_idx):
     img = QImage(doc.width, doc.height, QImage.Format.Format_ARGB32_Premultiplied)
     img.fill(0)
     if layer_idx == -1:
-        comp = doc.get_composite()
+        comp = doc.get_composite(respect_live_hidden=False)
         p = QPainter(img)
         p.drawImage(0, 0, comp)
         p.end()

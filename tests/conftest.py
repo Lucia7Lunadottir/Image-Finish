@@ -54,13 +54,22 @@ def main_window(qapp):
     w._doc_tabs.clear()
     w.deleteLater()
     _drain_thread_pool()
+    # deleteLater() only runs from an event loop, which tests never enter:
+    # without flushing DeferredDelete every MainWindow ever built stayed
+    # alive, and by the smoke tests app.setStyleSheet() (theme switch) was
+    # re-polishing hundreds of dead windows — minutes per call, which made
+    # the full suite look hung.
+    from PyQt6.QtCore import QCoreApplication, QEvent
+    QCoreApplication.sendPostedEvents(None, QEvent.Type.DeferredDelete.value)
 
 
 def _drain_thread_pool():
     """Background QRunnables (thumbnails, histogram) still running at
     interpreter teardown crash the test process on exit."""
     from PyQt6.QtCore import QThreadPool
-    QThreadPool.globalInstance().waitForDone(10000)
+    pool = QThreadPool.globalInstance()
+    if pool is not None:   # None once Qt has already torn the pool down
+        pool.waitForDone(10000)
 
 
 @pytest.fixture(scope="session", autouse=True)

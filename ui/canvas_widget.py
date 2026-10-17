@@ -7,7 +7,7 @@ from ui import theme
 logger = get_logger("canvas")
 
 from PyQt6.QtOpenGLWidgets import QOpenGLWidget
-from PyQt6.QtCore import Qt, QPoint, QPointF, QRect, QRectF, QTimer, pyqtSignal
+from PyQt6.QtCore import Qt, QPoint, QPointF, QRect, QRectF, QSize, QTimer, pyqtSignal
 from PyQt6.QtGui import (QPainter, QColor, QPixmap, QBrush, QPen, QImage, QCursor, QInputDevice,
                          QRadialGradient, QPainterPath, QPolygon, QPolygonF, QBitmap, QRegion, QTransform)
 
@@ -154,6 +154,9 @@ class CanvasWidget(QOpenGLWidget):
             "shape_fill":     False,
             "shape_sides":    6,
             "shape_angle":    0,
+            "shape_stroke":   True,
+            "shape_stroke_width": 2,
+            "shape_path_op":  "new",
             "effect_strength": 0.5,
             "crop_overlay":   "thirds",
         }
@@ -189,6 +192,20 @@ class CanvasWidget(QOpenGLWidget):
         self._effect_bg_cache: QImage | None = None
         self._in_effect_stroke: bool = False
 
+        # Screen-resolution render of the visible part of the document
+        # (Document.render_view), shown instead of the magnified document-
+        # resolution composite when zoomed in on a document with vector
+        # layers — that's what keeps shapes sharp at any zoom. Keyed by
+        # composite cacheKey + view, rebuilt after zoom/pan settles.
+        self._hires_image: QImage | None = None
+        self._hires_origin = QPointF()
+        self._hires_key = None
+        self._hires_render_ms = 0.0
+        self._hires_failed = False
+        self._hires_timer = QTimer(self)
+        self._hires_timer.setSingleShot(True)
+        self._hires_timer.timeout.connect(self._render_hires)
+
         self.show_rulers: bool = False
         self._dragging_guide = None
 
@@ -202,8 +219,8 @@ class CanvasWidget(QOpenGLWidget):
 
         self._checker = self._build_checker()
 
-        from ui.text_edit_overlay import TextEditOverlay
-        self._text_overlay = TextEditOverlay(self)
+        from ui.text_edit_session import TextEditSession
+        self._text_session = TextEditSession(self)
 
         from ui.shape_scene_overlay import ShapeSceneOverlay
         self._shape_overlay = ShapeSceneOverlay(self)
@@ -218,7 +235,7 @@ class CanvasWidget(QOpenGLWidget):
         self._active_tool = tool
         overlay = getattr(self, "_shape_overlay", None)
         if overlay is not None:
-            overlay.set_active(getattr(tool, "name", None) == "Shapes")
+            overlay.set_interactive(getattr(tool, "name", None) == "Shapes")
 
     @staticmethod
     def _build_checker(tile: int = 16) -> QPixmap:
@@ -238,6 +255,9 @@ class CanvasWidget(QOpenGLWidget):
         self._pre_stroke_state = None
         self._check_marching_ants()
         self._fit_to_window()
+        self._hires_image = None
+        self._hires_key = None
+        self._shape_overlay.refresh_items()
         self.update()
 
     def invalidate_cache(self):
@@ -362,76 +382,9 @@ class CanvasWidget(QOpenGLWidget):
             y = dx * math.sin(a) + dy * math.cos(a) + cy
         return QPointF(x, y)
 
-    def begin_text_edit(self, doc, layer, initial_text: str, doc_anchor: QPoint, vertical: bool = False):
-        """Opens the in-place text editor for TextTool/VerticalTypeTool.
-        `layer` is the text layer being re-edited, or None to create a new
-        one at `doc_anchor` on commit. Font/size/color come live from the
-        Text tool's options-bar controls (`self.tool_opts`), the same
-        source `TextOptions` writes to — not a snapshot, so changing them
-        mid-edit updates the on-canvas editor immediately.
-
-        When re-editing, `layer` is hidden for the duration (matching the
-        C# sibling's approach) — `TextEditOverlay` is the only thing
-        showing this text on screen while it's open, never a second,
-        possibly-stale rendering underneath it."""
-        if self._text_overlay.is_active():
-            self._text_overlay.commit()
-
-        if layer is not None:
-            layer.visible = False
-            self.invalidate_cache()
-
-        def _restore_layer():
-            if layer is not None:
-                layer.visible = True
-
-        def on_commit(text):
-            _restore_layer()
-            win = self.window()
-            if hasattr(win, "_commit_text_edit"):
-                win._commit_text_edit(layer, text, dict(self.tool_opts), doc_anchor, vertical)
-            self.invalidate_cache()
-
-        def on_cancel():
-            _restore_layer()
-            self.invalidate_cache()
-
-        def _owned_by(widget, ancestor) -> bool:
-            # NOT the same question as QWidget.isAncestorOf(): that one
-            # stops at window boundaries, so it says False for a QColorDialog
-            # even when constructed with `parent=panel` — verified directly
-            # (dlg.parent() is panel, but panel.isAncestorOf(dlg) is False).
-            # A color-picker dialog opened from the Character panel IS
-            # legitimately "owned by" it for our purposes, so walk the plain
-            # QObject .parent() chain instead, which does cross that
-            # boundary for exactly this ownership relationship.
-            node = widget
-            while node is not None:
-                if node is ancestor:
-                    return True
-                node = node.parent()
-            return False
-
-        def keep_alive_check(widget):
-            # Clicking a font/size/color/alignment control while editing
-            # must restyle the in-progress edit live (see begin_text_edit's
-            # docstring) instead of stealing focus and silently baking it
-            # with the old settings — only these panels get a pass, tool
-            # switches / canvas clicks / anything else still commits.
-            win = self.window()
-            for panel_name in ("_character_panel", "_paragraph_panel"):
-                panel = getattr(win, panel_name, None)
-                if panel is not None and _owned_by(widget, panel):
-                    return True
-            opts_bar = getattr(win, "_opts_bar", None)
-            if opts_bar is not None:
-                text_page = opts_bar._pages.get("Text")
-                if text_page is not None and _owned_by(widget, text_page):
-                    return True
-            return False
-
-        self._text_overlay.start(doc_anchor, lambda: self.tool_opts, initial_text, on_commit, on_cancel,
-                                 vertical=vertical, keep_alive_check=keep_alive_check)
+    def text_session(self):
+        """The on-canvas text editor (ui/text_edit_session.py)."""
+        return self._text_session
 
     def _doc_rect_in_widget(self) -> QRect:
         if not self.document:
@@ -522,9 +475,7 @@ class CanvasWidget(QOpenGLWidget):
         that setup is what beginNativePainting()/endNativePainting() below
         rely on — a hand-rolled paintEvent() override was tried and produced
         a blank frame instead (see ui/gl_compositor.py docstring)."""
-        if self._text_overlay.isVisible():
-            self._text_overlay.reposition()
-        if self._shape_overlay._active:
+        if self.document is not None:
             self._shape_overlay.sync_transform()
         try:
             painter = QPainter(self)
@@ -616,6 +567,82 @@ class CanvasWidget(QOpenGLWidget):
         painter.drawImage(0, 0, display_img)
         painter.restore()
 
+    # ── sharp vector display ────────────────────────────────────────────
+    def _hires_view_key(self):
+        return (round(self.zoom, 6), round(self._pan.x(), 3), round(self._pan.y(), 3),
+                self.width(), self.height(), self.devicePixelRatioF())
+
+    def _hires_wanted(self, channel: str) -> bool:
+        if self._hires_failed or self.document is None or self._composite_cache is None:
+            return False
+        if channel != "RGB" or self._in_effect_stroke:
+            return False
+        if self.zoom * self.devicePixelRatioF() <= 1.0001:
+            return False   # the document-resolution composite is already as sharp as the screen
+        return self.document.has_vector_content()
+
+    def _draw_hires(self, painter: QPainter, channel: str) -> bool:
+        """Draws the screen-resolution render if it matches what's on
+        screen now; otherwise schedules one and returns False (the caller
+        draws the normal composite meanwhile)."""
+        if not self._hires_wanted(channel):
+            self._hires_image = None
+            self._hires_key = None
+            return False
+        key = (self._composite_cache.cacheKey(), self._hires_view_key())
+        if self._hires_image is not None and self._hires_key == key:
+            painter.drawImage(self._hires_origin, self._hires_image)
+            return True
+        same_view = self._hires_key is not None and self._hires_key[1] == key[1]
+        # Mid-gesture (brush stroke, drag) the composite changes every
+        # frame — never render synchronously then; the debounced timer
+        # below fires once the gesture pauses.
+        from PyQt6.QtWidgets import QApplication
+        interacting = QApplication.mouseButtons() != Qt.MouseButton.NoButton
+        if same_view and not interacting and self._hires_render_ms < 60:
+            # Only the content changed (a shape edit committed) and a render
+            # is cheap: do it now, so the shape doesn't flash blurry first.
+            self._render_hires()
+            if self._hires_image is not None and self._hires_key == key:
+                painter.drawImage(self._hires_origin, self._hires_image)
+                return True
+            return False
+        self._hires_timer.start(90 if (interacting or not same_view) else 0)
+        return False
+
+    def _render_hires(self):
+        if self.document is None or self._cache_dirty or self._composite_cache is None:
+            return
+        from PyQt6.QtWidgets import QApplication
+        if QApplication.mouseButtons() != Qt.MouseButton.NoButton:
+            self._hires_timer.start(90)   # still mid-gesture: try again shortly
+            return
+        if not self._hires_wanted(getattr(self, "view_channel", "RGB")):
+            return
+        import time
+        region = self.rect().intersected(self._doc_rect_in_widget().adjusted(-1, -1, 1, 1))
+        if region.isEmpty():
+            return
+        dpr = self.devicePixelRatioF()
+        s = self.zoom * dpr
+        transform = QTransform(s, 0, 0, s, (self._pan.x() - region.x()) * dpr,
+                               (self._pan.y() - region.y()) * dpr)
+        size = QSize(max(1, math.ceil(region.width() * dpr)), max(1, math.ceil(region.height() * dpr)))
+        t0 = time.perf_counter()
+        try:
+            img = self.document.render_view(transform, size)
+        except Exception:
+            logger.exception("Screen-resolution render failed — falling back to the composite")
+            self._hires_failed = True
+            self._hires_image = None
+            return
+        self._hires_render_ms = (time.perf_counter() - t0) * 1000
+        img.setDevicePixelRatio(dpr)
+        self._hires_image = img
+        self._hires_origin = QPointF(region.topLeft())
+        self._hires_key = (self._composite_cache.cacheKey(), self._hires_view_key())
+        self.update()
+
     def _paint_canvas_content(self, painter: QPainter, gpu: bool = True):
         """Internal layer-by-layer rendering of cached images and vectors.
 
@@ -705,7 +732,9 @@ class CanvasWidget(QOpenGLWidget):
 
         display_img = self._display_cache
 
-        if gpu and self._gl is not None and self._gl.ready:
+        if self._draw_hires(painter, current_ch):
+            pass
+        elif gpu and self._gl is not None and self._gl.ready:
             try:
                 painter.beginNativePainting()
                 try:
@@ -772,6 +801,10 @@ class CanvasWidget(QOpenGLWidget):
         draw_measurements(painter, active_tool=_tool, pan=_pan, zoom=_zoom,
                           composite_cache=self._composite_cache,
                           to_widget_fn=self.to_widget)
+        try:
+            self._text_session.paint(painter)
+        except Exception:
+            logger.exception("Text editor overlay paint failed")
 
     def _update_brush_region(self, pos: QPointF):
         mirror_x = bool(self.tool_opts.get("brush_mirror_x", False))
@@ -970,9 +1003,6 @@ class CanvasWidget(QOpenGLWidget):
         """Handles mouse press with error isolation for tool initialization."""
         if not self.document:
             return
-
-        if self._text_overlay.is_active() and not self._text_overlay.geometry().contains(ev.position().toPoint()):
-            self._text_overlay.commit()
 
         try:
             if getattr(self, "show_rulers", False):

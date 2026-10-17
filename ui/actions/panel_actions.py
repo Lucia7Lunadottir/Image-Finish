@@ -1,6 +1,7 @@
 from PyQt6.QtCore import Qt, QPoint
 
 from core.app_logging import get_logger
+from core.locale import tr
 
 logger = get_logger("panel_actions")
 
@@ -139,25 +140,31 @@ class PanelActionsMixin:
             self._activate_tool(tool_name)
             self._opts_bar.update_tool_state(opts)
 
-    # ── Pen tool work path ──────────────────────────────────────────────────
+    # ── Paths panel (pen-tool work path + named saved paths) ────────────────
+
+    def _selected_path_dict(self):
+        """Resolves the Paths panel's current selection to its actual
+        {"nodes": [...], "closed": bool} payload — either the live
+        work_path or one entry of doc.saved_paths."""
+        kind, idx = self._paths_panel._selected_kind()
+        if kind == "work":
+            return getattr(self._document, "work_path", None)
+        if kind == "saved":
+            paths = getattr(self._document, "saved_paths", [])
+            if 0 <= idx < len(paths):
+                return paths[idx]
+        return None
 
     def _path_make_selection(self):
         if not self._document:
             return
-        wp = getattr(self._document, "work_path", None)
+        wp = self._selected_path_dict()
         if not wp or not wp.get("nodes"):
             return
-        from PyQt6.QtGui import QPainterPath
-        from PyQt6.QtCore import QPointF
-        path = QPainterPath()
-        nodes = wp["nodes"]
-        if nodes:
-            path.moveTo(QPointF(nodes[0]["p"]))
-            for i in range(1, len(nodes)):
-                path.cubicTo(QPointF(nodes[i-1]["c2"]), QPointF(nodes[i]["c1"]), QPointF(nodes[i]["p"]))
-            if wp.get("closed") and len(nodes) > 1:
-                path.cubicTo(QPointF(nodes[-1]["c2"]), QPointF(nodes[0]["c1"]), QPointF(nodes[0]["p"]))
-                path.closeSubpath()
+        from tools.pen_tool import build_bezier_path
+        path = build_bezier_path(wp)
+        if wp.get("closed"):
+            path.closeSubpath()
         self._push_history("Before Make Selection")
         self._document.selection = path
         self._canvas_refresh()
@@ -165,57 +172,85 @@ class PanelActionsMixin:
     def _path_fill(self):
         if not self._document:
             return
+        wp = self._selected_path_dict()
+        if not wp or not wp.get("nodes"):
+            return
         self._push_history("Before Fill Path")
         layer = self._document.get_active_layer()
         if layer:
-            from PyQt6.QtGui import QPainter, QColor
+            from PyQt6.QtGui import QPainter
+            from tools.pen_tool import build_bezier_path
             p = QPainter(layer.image)
             p.setCompositionMode(QPainter.CompositionMode.CompositionMode_SourceOver)
             p.setBrush(self._canvas.fg_color)
             p.setPen(Qt.PenStyle.NoPen)
-            wp = getattr(self._document, "work_path", None)
-            if wp and wp.get("nodes"):
-                from PyQt6.QtGui import QPainterPath
-                from PyQt6.QtCore import QPointF
-                path = QPainterPath()
-                nodes = wp["nodes"]
-                path.moveTo(QPointF(nodes[0]["p"]))
-                for i in range(1, len(nodes)):
-                    path.cubicTo(QPointF(nodes[i-1]["c2"]), QPointF(nodes[i]["c1"]), QPointF(nodes[i]["p"]))
-                if wp.get("closed"):
-                    path.closeSubpath()
-                p.drawPath(path)
+            path = build_bezier_path(wp)
+            if wp.get("closed"):
+                path.closeSubpath()
+            p.drawPath(path)
             p.end()
         self._canvas_refresh()
 
     def _path_stroke(self):
         if not self._document:
             return
+        wp = self._selected_path_dict()
+        if not wp or not wp.get("nodes"):
+            return
         self._push_history("Before Stroke Path")
         layer = self._document.get_active_layer()
         if layer:
             from PyQt6.QtGui import QPainter, QPen
+            from tools.pen_tool import build_bezier_path
             p = QPainter(layer.image)
             pen = QPen(self._canvas.fg_color, self._canvas.tool_opts.get("brush_size", 2))
             p.setPen(pen)
-            wp = getattr(self._document, "work_path", None)
-            if wp and wp.get("nodes"):
-                from PyQt6.QtGui import QPainterPath
-                from PyQt6.QtCore import QPointF
-                path = QPainterPath()
-                nodes = wp["nodes"]
-                path.moveTo(QPointF(nodes[0]["p"]))
-                for i in range(1, len(nodes)):
-                    path.cubicTo(QPointF(nodes[i-1]["c2"]), QPointF(nodes[i]["c1"]), QPointF(nodes[i]["p"]))
-                if wp.get("closed"):
-                    path.closeSubpath()
-                p.drawPath(path)
+            path = build_bezier_path(wp)
+            if wp.get("closed"):
+                path.closeSubpath()
+            p.drawPath(path)
             p.end()
         self._canvas_refresh()
 
     def _path_delete(self):
-        if self._document:
-            self._push_history("Before Delete Path")
+        if not self._document:
+            return
+        kind, idx = self._paths_panel._selected_kind()
+        if kind is None:
+            return
+        self._push_history("Before Delete Path")
+        if kind == "work":
             self._document.work_path = {"nodes": [], "closed": False}
-            self._paths_panel.refresh(self._canvas)
-            self._canvas_refresh()
+        elif kind == "saved":
+            paths = getattr(self._document, "saved_paths", [])
+            if 0 <= idx < len(paths):
+                paths.pop(idx)
+        self._paths_panel.refresh(self._canvas)
+        self._canvas_refresh()
+
+    def _path_new(self):
+        """Promotes the current (ephemeral) work path into a permanent,
+        named entry in doc.saved_paths, then clears work_path — matching
+        Photoshop: the work path IS the new saved path, not a duplicate of it."""
+        if not self._document:
+            return
+        wp = getattr(self._document, "work_path", None)
+        if not wp or not wp.get("nodes"):
+            return
+        from core.history import clone_work_path
+        self._push_history("Before New Path")
+        saved = clone_work_path(wp)
+        n = len(getattr(self._document, "saved_paths", [])) + 1
+        saved["name"] = tr("paths.default_name", n=n) if tr("paths.default_name", n=n) != "paths.default_name" else f"Path {n}"
+        self._document.saved_paths.append(saved)
+        self._document.work_path = {"nodes": [], "closed": False}
+        self._paths_panel.refresh(self._canvas)
+        self._canvas_refresh()
+
+    def _path_rename(self, index: int, new_name: str):
+        if not self._document:
+            return
+        paths = getattr(self._document, "saved_paths", [])
+        if 0 <= index < len(paths):
+            paths[index]["name"] = new_name
+        self._paths_panel.refresh(self._canvas)

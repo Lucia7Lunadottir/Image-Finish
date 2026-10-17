@@ -3,12 +3,21 @@
 handler did `QPainter(new_layer.image).fillPath(...)`) — a real bezier
 `vector_mask` existed already (used as a compositing clip), but the
 visible pixels were a one-shot bake, degrading under any future transform
-like any other raster layer. `Layer.render_into` now has no override for
-this case at all; `VectorLayer.render_into` fills/strokes `vector_mask`
+like any other raster layer. `path_style` fills/strokes `vector_mask`
 directly every render instead, so it stays exact.
+
+v2 (2026-09-30): ShapesTool primitives (`shape_data` — rect/ellipse/star/
+line/...) got the same treatment, via `VectorLayer._get_source_image`
+rather than a `render_into` override — that hook already existed for
+`FillLayer`'s "no real `.image`, render on demand" case, so masks/
+clipping/layer styles/blend-mode/opacity all keep working for shape_data
+layers exactly as before, unaffected by the switch. `.image` is still kept
+baked after every edit (`ShapesTool._bake_shape`), but purely so the
+Layers-panel thumbnail — which reads `layer.image` directly, not through
+the composite pipeline — has something to show.
 """
 from PyQt6.QtCore import QRectF
-from PyQt6.QtGui import QColor, QPainterPath
+from PyQt6.QtGui import QColor, QPainterPath, QImage, QPainter
 
 from core.document import Document
 from core.layer import VectorLayer
@@ -74,18 +83,79 @@ def test_vector_layer_move_tool_bounds_uses_path_not_full_canvas(qapp):
     assert 15 < bounds.left() < 25
 
 
-def test_vector_layer_without_path_style_falls_back_to_pixel_layer(qapp):
-    """ShapesTool's primitive shapes (rect/ellipse/star/...) still bake
-    into `image` via `_bake_shape` — that path must keep working exactly
-    as before, render_into just draws `image` like a raster layer."""
+def test_vector_layer_shape_data_renders_live_ignoring_stale_image(qapp):
+    """ShapesTool's primitive shapes (rect/ellipse/star/...) render live
+    from shape_data now, the same way path_style does — VectorLayer.
+    _get_source_image draws fresh every composite instead of reading
+    `.image`. `.image` is still kept baked by ShapesTool._bake_shape after
+    edits (see ShapeLayerItem._commit_to_layer), but purely for the
+    Layers-panel thumbnail, which reads it directly; the composite must
+    NOT be affected by whatever's sitting in `.image` — proven here by
+    manually painting something else into `.image` and asserting the
+    composite shows the shape_data-described rect instead."""
     doc = Document(100, 80)
     layer = doc.add_layer(name="Rect", layer_cls=VectorLayer)
-    layer.shape_data = {"shape": "rect", "rect": (10, 10, 20, 20)}
-    from PyQt6.QtGui import QPainter
+    layer.shape_data = {"shape": "rect", "rect": (10, 10, 20, 20),
+                        "fill": True, "fg": "#0ac80a", "size": 0}
     p = QPainter(layer.image)
-    p.fillRect(10, 10, 20, 20, QColor(10, 200, 10, 255))
+    p.fillRect(10, 10, 20, 20, QColor(200, 10, 10, 255))  # stale/wrong color in .image
     p.end()
 
     doc.invalidate_composite()
     comp = doc.get_composite()
-    assert comp.pixelColor(15, 15).getRgb() == (10, 200, 10, 255)
+    assert comp.pixelColor(15, 15).getRgb()[:3] == (10, 200, 10)  # the real shape_data color, not .image's
+
+
+def test_vector_layer_shape_data_reflects_mutation_without_rebaking(qapp):
+    """Directly prove it's live, mirroring the path_style test above:
+    mutate shape_data in place (no _bake_shape call anywhere) and the
+    composite must reflect the new geometry."""
+    doc = Document(100, 100)
+    layer = doc.add_layer(name="Rect", layer_cls=VectorLayer)
+    layer.shape_data = {"shape": "rect", "rect": (10, 10, 10, 10),
+                        "fill": True, "fg": "#0000c8", "size": 0}
+    doc.invalidate_composite()
+    comp1 = doc.get_composite()
+    assert comp1.pixelColor(60, 60).getRgb() == (255, 255, 255, 255)  # not covered by the small rect
+
+    layer.shape_data = dict(layer.shape_data, rect=(10, 10, 70, 70))
+    doc.invalidate_composite()
+    comp2 = doc.get_composite()
+    assert comp2.pixelColor(60, 60).getRgb()[:3] == (0, 0, 200)  # now covered
+
+
+def test_vector_layer_shape_data_still_respects_a_layer_mask(qapp):
+    """The switch to VectorLayer._get_source_image (rather than a
+    render_into override) means shape_data now goes through the exact same
+    generic mask/clip/opacity/blend-mode pipeline every other layer kind
+    does — proven directly: a shape spanning the whole canvas, masked to
+    only its left half, must not show up on the right half."""
+    doc = Document(100, 100)
+    layer = doc.add_layer(name="Rect", layer_cls=VectorLayer)
+    layer.shape_data = {"shape": "rect", "rect": (0, 0, 100, 100),
+                        "fill": True, "fg": "#0ac80a", "size": 0}
+
+    mask = QImage(100, 100, QImage.Format.Format_ARGB32_Premultiplied)
+    mask.fill(QColor(255, 255, 255, 255))
+    mp = QPainter(mask)
+    mp.fillRect(50, 0, 50, 100, QColor(0, 0, 0, 255))  # right half fully masked out
+    mp.end()
+    layer.mask = mask
+
+    doc.invalidate_composite()
+    comp = doc.get_composite()
+    assert comp.pixelColor(20, 50).getRgb()[:3] == (10, 200, 10)   # left half: shape shows
+    assert comp.pixelColor(80, 50).getRgb() == (255, 255, 255, 255)  # right half: masked away
+
+
+def test_vector_layer_shape_data_image_stays_baked_for_the_thumbnail(qapp):
+    """Layers-panel thumbnails read layer.image directly (not through the
+    composite pipeline) — ShapesTool._bake_shape must still keep it
+    populated even though the canvas itself ignores it now."""
+    from tools.shapes_tool import ShapesTool
+    doc = Document(100, 80)
+    layer = doc.add_layer(name="Rect", layer_cls=VectorLayer)
+    sd = {"shape": "rect", "rect": (10, 10, 20, 20), "fill": True, "fg": "#0ac80a", "size": 0}
+    ShapesTool._bake_shape(layer.image, sd, None)
+    layer.shape_data = sd
+    assert layer.image.pixelColor(15, 15).getRgb()[:3] == (10, 200, 10)

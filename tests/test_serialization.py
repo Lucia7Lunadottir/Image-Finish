@@ -6,7 +6,7 @@ import pickle
 
 import pytest
 from PyQt6.QtGui import QColor, QImage
-from PyQt6.QtCore import QRectF
+from PyQt6.QtCore import QRectF, QPointF
 
 from core.document import Document
 from core.layer import RasterLayer, GroupLayer, FillLayer, VectorLayer
@@ -40,6 +40,14 @@ def _rich_document():
     vector.vector_mask = vpath
     vector.path_style = {"fill_color": QColor(9, 8, 7), "stroke_color": None, "stroke_width": 0.0}
     doc.layers.append(vector)
+    doc.saved_paths = [{
+        "name": "Path 1",
+        "closed": True,
+        "nodes": [
+            {"p": QPointF(1, 2), "c1": QPointF(1, 2), "c2": QPointF(3, 4)},
+            {"p": QPointF(5, 6), "c1": QPointF(5, 6), "c2": QPointF(5, 6)},
+        ],
+    }]
     return doc
 
 
@@ -64,6 +72,11 @@ def test_v2_roundtrip(qapp, tmp_path):
     assert vec.path_style["fill_color"].getRgb()[:3] == (9, 8, 7)
     assert vec.vector_mask is not None and not vec.vector_mask.isEmpty()
     assert vec.vector_mask.contains(QRectF(15, 15, 5, 5))
+    assert len(doc2.saved_paths) == 1
+    sp = doc2.saved_paths[0]
+    assert sp["name"] == "Path 1" and sp["closed"] is True
+    assert isinstance(sp["nodes"][0]["p"], QPointF)
+    assert sp["nodes"][1]["p"].x() == 5 and sp["nodes"][1]["p"].y() == 6
 
 
 def test_legacy_pickle_loads_and_converts(qapp, tmp_path):

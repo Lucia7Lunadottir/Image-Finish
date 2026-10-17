@@ -11,7 +11,7 @@ class EyedropperTool(BaseTool):
     color_picked_callback = None
 
     def on_press(self, pos, doc, fg, bg, opts):
-        composite = doc.get_composite()
+        composite = doc.get_composite(respect_live_hidden=False)
         x, y = pos.x(), pos.y()
         if 0 <= x < composite.width() and 0 <= y < composite.height():
             picked = composite.pixelColor(x, y)

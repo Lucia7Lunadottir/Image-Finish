@@ -119,6 +119,14 @@ class MoveTool(BaseTool):
         if not self.is_transforming:
             self.is_transforming = True
             self._target_layer = layer
+            # VectorLayer._get_source_image renders shape_data/path_style
+            # live now, straight from the layer, regardless of what's in
+            # .image — so the old "swap .image for a 1x1 blank to hide the
+            # original while floating_preview() shows the live drag on top"
+            # trick (below) no longer hides anything for these layers. Tell
+            # the layer directly to contribute nothing to the composite for
+            # the duration of the drag instead; _reset_state() clears it.
+            layer._live_edit_hidden = True
             self._layer_backup = layer.image.copy()
             self._offset_backup = QPoint(layer.offset)
             self._total_transform = QTransform()
@@ -441,7 +449,26 @@ class MoveTool(BaseTool):
         self._base_transform = QTransform()
 
     def floating_preview(self):
-        if self.is_transforming and self._original_img is not None:
+        if not self.is_transforming:
+            return None
+        layer = self._target_layer
+        if (layer is not None and getattr(layer, "path_style", None)
+                and layer.vector_mask is not None and not layer.vector_mask.isEmpty()):
+            # path_style geometry lives in vector_mask, not self.image (see
+            # VectorLayer.render_into) — self._original_img is a blank
+            # canvas for these layers, so the generic raster preview below
+            # would show nothing at all while dragging. Preview the path
+            # itself, pre-transformed, the same way move_tool_apply_extra
+            # commits it.
+            return ("vector_transform", layer.vector_mask, layer.path_style, self._total_transform)
+        if layer is not None and getattr(layer, "shape_data", None) and "rect" in layer.shape_data:
+            # Same idea as path_style above, for ShapesTool primitives: the
+            # baked bitmap (self._original_img) is what ShapeLayerItem's own
+            # drag never shows either — it redraws procedurally every frame
+            # (see ShapeLayerItem.paint()) so it always stays crisp, not
+            # blurry-stretched. Preview the same way here.
+            return ("shape_transform", layer.shape_data, self._total_transform)
+        if self._original_img is not None:
             return ("transform", self._original_img, self._original_offset, self._total_transform)
         return None
 
@@ -582,20 +609,16 @@ class MoveTool(BaseTool):
         
     def get_transform_params(self):
         if not self.is_transforming: return None
+        from core.layer import decompose_transform
         t = self._total_transform
-        m11, m12, m21, m22 = t.m11(), t.m12(), t.m21(), t.m22()
-        
-        scale_x = math.hypot(m11, m12)
-        angle = math.atan2(m12, m11)
-        det = m11 * m22 - m12 * m21
-        scale_y = det / scale_x if scale_x != 0 else math.hypot(m21, m22)
-        
+        scale_x, scale_y, angle_deg = decompose_transform(t)
+
         orig_poly = QPolygonF([self._bounds.topLeft(), self._bounds.topRight(), self._bounds.bottomRight(), self._bounds.bottomLeft()])
         poly = t.map(orig_poly)
         cx = sum(p.x() for p in poly) / 4.0
         cy = sum(p.y() for p in poly) / 4.0
-        
-        return {'x': cx, 'y': cy, 'w': scale_x * 100.0, 'h': scale_y * 100.0, 'angle': math.degrees(angle)}
+
+        return {'x': cx, 'y': cy, 'w': scale_x * 100.0, 'h': scale_y * 100.0, 'angle': angle_deg}
         
     def set_transform_params(self, doc, params: dict):
         if not self.is_transforming: return
@@ -620,6 +643,8 @@ class MoveTool(BaseTool):
             kid_data["layer"].offset = kid_data["backup_offset"] + QPoint(int(dx), int(dy))
 
     def _reset_state(self):
+        if self._target_layer is not None:
+            self._target_layer._live_edit_hidden = False
         self.is_transforming = False
         self._target_layer = None
         self._layer_backup = None
