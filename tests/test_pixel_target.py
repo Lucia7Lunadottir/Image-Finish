@@ -163,3 +163,46 @@ def test_stroke_history_step_uses_the_translated_tool_name(main_window, mocked_d
     w._add_tab(Document(40, 40), "t")
     canvas = _press(w, "Brush")
     assert canvas._pre_stroke_state.description == tr("tool.brush")
+
+
+def test_alt_and_cursor_quirks_are_declared_on_the_tool_classes(main_window):
+    """Were tool-name checks in canvas_widget (_ALT_EYEDROPPER_TOOLS,
+    'BackgroundEraser', 'CloneStamp')."""
+    alt_eyedropper = {"Brush", "Pencil", "ColorReplacement", "MixerBrush", "PatternStamp"}
+    for name, tool in main_window._tools.items():
+        assert tool.ALT_EYEDROPPER == (name in alt_eyedropper), name
+        assert tool.ALT_PICKS_SOURCE == (name == "CloneStamp"), name
+        assert tool.PLAIN_BRUSH_CURSOR == (name == "BackgroundEraser"), name
+
+
+@pytest.mark.parametrize("tool_name,opts", [
+    ("Brush", {"brush_size": 30, "brush_hardness": 0.5}),
+    ("Brush", {"brush_size": 30, "brush_mask": "square", "brush_angle": 30}),
+    ("Brush", {"brush_size": 30, "brush_mask": "scatter"}),
+    ("Brush", {"brush_size": 30, "brush_mirror_x": True, "brush_mirror_y": True}),
+    ("CloneStamp", {"brush_size": 30, "_alt": True}),
+    ("BackgroundEraser", {"brush_size": 30, "brush_mask": "square"}),
+])
+def test_brush_cursor_overlay_paints(qapp, tool_name, opts):
+    import logging
+    from PyQt6.QtCore import QPointF
+    from PyQt6.QtGui import QImage, QPainter
+    from ui.canvas_cursors import BrushCursorOverlay
+    from ui.main_window import _build_tool_registry
+    tool = _build_tool_registry(None)[tool_name]
+    img = QImage(200, 200, QImage.Format.Format_ARGB32_Premultiplied)
+    img.fill(0)
+    p = QPainter(img)
+    failures = []
+    handler = logging.Handler()
+    handler.emit = lambda r: failures.append(r)
+    logging.getLogger("canvas").addHandler(handler)
+    try:
+        BrushCursorOverlay().paint(p, tool=tool, opts=opts, zoom=1.0, mouse=QPointF(60, 60),
+                                   to_doc=lambda q: QPoint(int(q.x()), int(q.y())),
+                                   to_widget=lambda q: QPointF(q), doc_size=(200, 200))
+    finally:
+        logging.getLogger("canvas").removeHandler(handler)
+        p.end()
+    assert not failures
+    assert any(img.pixelColor(x, y).alpha() for x in range(200) for y in range(200))

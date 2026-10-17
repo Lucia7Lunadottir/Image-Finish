@@ -5,6 +5,7 @@ from PyQt6.QtGui import (QPainter, QColor, QPen, QRadialGradient, QBrush,
                          QImage, QPixmap, QTransform)
 from PyQt6.QtCore import QPoint, QPointF, Qt, QRect
 from tools.base_tool import BaseTool
+from core.brush_symmetry import BrushSymmetry
 
 
 def _make_brush_stamp(size: int, hardness: float, mask: str) -> QImage:
@@ -87,6 +88,7 @@ def _make_brush_stamp(size: int, hardness: float, mask: str) -> QImage:
 
 
 class BrushTool(BaseTool):
+    ALT_EYEDROPPER = True
     BRUSH_CURSOR = True
     PIXEL_OP = "paint"
     name     = "Brush"
@@ -313,13 +315,8 @@ class BrushTool(BaseTool):
         size_dyn = bool(opts.get("brush_size_dynamic", False))
         op_dyn   = bool(opts.get("brush_opacity_dynamic", False))
         pattern_scale = float(opts.get("brush_pattern_scale", 100)) / 100.0
-        mirror_x = bool(opts.get("brush_mirror_x", False))
-        mirror_y = bool(opts.get("brush_mirror_y", False))
-        cx_pct = float(opts.get("brush_mirror_cx", 0.5))
-        cy_pct = float(opts.get("brush_mirror_cy", 0.5))
         doc_w, doc_h = doc.width, doc.height
-        sym_x = doc_w * cx_pct
-        sym_y = doc_h * cy_pct
+        sym = BrushSymmetry.from_opts(opts, doc_w, doc_h)
         
         is_pattern_stamp = getattr(self, "name", "") == "PatternStamp"
         pattern_pixmap = None
@@ -371,9 +368,7 @@ class BrushTool(BaseTool):
             cx = p1.x() + dx * t
             cy = p1.y() + dy * t
             
-            centers = [(cx, cy)]
-            if mirror_x: centers.extend([(2 * sym_x - c[0], c[1]) for c in centers])
-            if mirror_y: centers.extend([(c[0], 2 * sym_y - c[1]) for c in centers])
+            centers = sym.mirror_all([(cx, cy)])
             
             # dict.fromkeys removes duplicates (e.g. drawing directly on axis), preserving order
             for target_cx, target_cy in list(dict.fromkeys(centers)):
@@ -437,17 +432,10 @@ class BrushTool(BaseTool):
         if self._stroke_clip is not None:
             painter.setClipPath(self._stroke_clip.translated(-layer.offset.x(), -layer.offset.y()))
             
-        mirror_x = bool(opts.get("brush_mirror_x", False))
-        mirror_y = bool(opts.get("brush_mirror_y", False))
-        cx_pct = float(opts.get("brush_mirror_cx", 0.5))
-        cy_pct = float(opts.get("brush_mirror_cy", 0.5))
         doc_w, doc_h = doc.width, doc.height
-        sym_x = doc_w * cx_pct
-        sym_y = doc_h * cy_pct
+        sym = BrushSymmetry.from_opts(opts, doc_w, doc_h)
         
-        pairs = [((p1.x(), p1.y()), (p2.x(), p2.y()))]
-        if mirror_x: pairs.extend([((2 * sym_x - a[0], a[1]), (2 * sym_x - b[0], b[1])) for a, b in pairs])
-        if mirror_y: pairs.extend([((a[0], 2 * sym_y - a[1]), (b[0], 2 * sym_y - b[1])) for a, b in pairs])
+        pairs = sym.mirror_segments([((p1.x(), p1.y()), (p2.x(), p2.y()))])
         
         pen = QPen(c, size, Qt.PenStyle.SolidLine, Qt.PenCapStyle.RoundCap, Qt.PenJoinStyle.RoundJoin)
         painter.setPen(pen)
@@ -466,6 +454,7 @@ class PatternStampTool(BrushTool):
 
 
 class EraserTool(BrushTool):
+    ALT_EYEDROPPER = False
     name     = "Eraser"
     icon     = "🧽"
     shortcut = "E"
@@ -495,6 +484,8 @@ class EraserTool(BrushTool):
 
 
 class CloneStampTool(BrushTool):
+    ALT_EYEDROPPER = False
+    ALT_PICKS_SOURCE = True
     name     = "CloneStamp"
     icon     = "⎘"
     shortcut = "S"
@@ -553,13 +544,8 @@ class CloneStampTool(BrushTool):
         angle_random = bool(opts.get("brush_angle_random", False))
         size_base = max(1, int(opts.get("brush_size", 10)))
         size_dyn = bool(opts.get("brush_size_dynamic", False))
-        mirror_x = bool(opts.get("brush_mirror_x", False))
-        mirror_y = bool(opts.get("brush_mirror_y", False))
-        cx_pct = float(opts.get("brush_mirror_cx", 0.5))
-        cy_pct = float(opts.get("brush_mirror_cy", 0.5))
         doc_w, doc_h = doc.width, doc.height
-        sym_x = doc_w * cx_pct
-        sym_y = doc_h * cy_pct
+        sym = BrushSymmetry.from_opts(opts, doc_w, doc_h)
 
         step  = max(1, size_base // 3)
         dx, dy = p2.x() - p1.x(), p2.y() - p1.y()
@@ -583,9 +569,7 @@ class CloneStampTool(BrushTool):
             
             cx, cy = p1.x() + dx * t, p1.y() + dy * t
             
-            centers_doc = [(cx, cy)]
-            if mirror_x: centers_doc.extend([(2 * sym_x - c[0], c[1]) for c in centers_doc])
-            if mirror_y: centers_doc.extend([(c[0], 2 * sym_y - c[1]) for c in centers_doc])
+            centers_doc = sym.mirror_all([(cx, cy)])
             
             for target_doc_cx, target_doc_cy in list(dict.fromkeys(centers_doc)):
                 self._track_dirty(target_doc_cx, target_doc_cy, cur_size)
@@ -695,6 +679,7 @@ class MixerBrushTool(BrushTool):
 
 
 class HistoryBrushTool(BrushTool):
+    ALT_EYEDROPPER = False
     name     = "HistoryBrush"
     icon     = "🕰️"
     shortcut = "Y"
@@ -739,13 +724,8 @@ class HistoryBrushTool(BrushTool):
         angle_random = bool(opts.get("brush_angle_random", False))
         size_base = max(1, int(opts.get("brush_size", 10)))
         size_dyn = bool(opts.get("brush_size_dynamic", False))
-        mirror_x = bool(opts.get("brush_mirror_x", False))
-        mirror_y = bool(opts.get("brush_mirror_y", False))
-        cx_pct = float(opts.get("brush_mirror_cx", 0.5))
-        cy_pct = float(opts.get("brush_mirror_cy", 0.5))
         doc_w, doc_h = doc.width, doc.height
-        sym_x = doc_w * cx_pct
-        sym_y = doc_h * cy_pct
+        sym = BrushSymmetry.from_opts(opts, doc_w, doc_h)
 
         step  = max(1, size_base // 3)
         dx, dy = p2.x() - p1.x(), p2.y() - p1.y()
@@ -769,9 +749,7 @@ class HistoryBrushTool(BrushTool):
             
             cx, cy = p1.x() + dx * t, p1.y() + dy * t
             
-            centers_doc = [(cx, cy)]
-            if mirror_x: centers_doc.extend([(2 * sym_x - c[0], c[1]) for c in centers_doc])
-            if mirror_y: centers_doc.extend([(c[0], 2 * sym_y - c[1]) for c in centers_doc])
+            centers_doc = sym.mirror_all([(cx, cy)])
             
             for target_doc_cx, target_doc_cy in list(dict.fromkeys(centers_doc)):
                 self._track_dirty(target_doc_cx, target_doc_cy, cur_size)

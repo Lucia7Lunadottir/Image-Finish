@@ -82,12 +82,11 @@ def draw_slices(painter, *, doc, pan, zoom):
 
 
 def draw_symmetry_axes(painter, *, doc, pan, zoom, tool_opts, brush_tool):
-    mirror_x = bool(tool_opts.get("brush_mirror_x", False))
-    mirror_y = bool(tool_opts.get("brush_mirror_y", False))
-    if not brush_tool or not (mirror_x or mirror_y):
+    from core.brush_symmetry import BrushSymmetry
+    sym = BrushSymmetry.from_opts(tool_opts, doc.width, doc.height)
+    if not brush_tool or not sym.active:
         return
-    cx_pct = float(tool_opts.get("brush_mirror_cx", 0.5))
-    cy_pct = float(tool_opts.get("brush_mirror_cy", 0.5))
+    mirror_x, mirror_y = sym.mirror_x, sym.mirror_y
     painter.save()
     painter.translate(pan)
     painter.scale(zoom, zoom)
@@ -98,8 +97,7 @@ def draw_symmetry_axes(painter, *, doc, pan, zoom, tool_opts, brush_tool):
     pen2.setCosmetic(True)
     pen2.setStyle(Qt.PenStyle.DashLine)
     w, h = doc.width, doc.height
-    sym_x = w * cx_pct
-    sym_y = h * cy_pct
+    sym_x, sym_y = sym.cx, sym.cy
     if mirror_x:
         painter.setPen(pen1); painter.drawLine(QPointF(sym_x, 0), QPointF(sym_x, h))
         painter.setPen(pen2); painter.drawLine(QPointF(sym_x, 0), QPointF(sym_x, h))

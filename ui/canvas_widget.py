@@ -9,10 +9,12 @@ logger = get_logger("canvas")
 from PyQt6.QtOpenGLWidgets import QOpenGLWidget
 from PyQt6.QtCore import Qt, QPoint, QPointF, QRect, QSize, QTimer, pyqtSignal
 from PyQt6.QtGui import (QPainter, QColor, QPixmap, QBrush, QPen, QImage, QCursor, QInputDevice,
-                         QRadialGradient, QPainterPath, QBitmap, QRegion, QTransform)
+    QPainterPath, QTransform)
 
 from tools.other_tools import (SelectTool, CropTool, ShapesTool,
                                HandTool, ZoomTool, RotateViewTool, GradientTool, PerspectiveCropTool)
+from core.brush_symmetry import BrushSymmetry
+from ui.canvas_cursors import BrushCursorOverlay, selection_cursor, selection_mode
 from ui.overlay_renderers import (
     draw_grid, draw_guides, draw_slices, draw_symmetry_axes, draw_selection,
     draw_subtract_drag, draw_lasso_preview, draw_transform_preview,
@@ -21,68 +23,6 @@ from ui.overlay_renderers import (
     draw_clone_stamp, draw_measurements,
 )
 
-
-# Plain color-painting tools where Alt has no other meaning yet — eligible
-# for Photoshop-style "hold Alt = temporary eyedropper". CloneStamp/Patch/
-# HealingBrush already use Alt to set their source point, and Select/Lasso/
-# Move/PuppetWarp already use Alt for their own modifiers, so those are
-# deliberately excluded.
-_ALT_EYEDROPPER_TOOLS = {"Brush", "Pencil", "ColorReplacement", "MixerBrush", "PatternStamp"}
-
-
-
-_sel_cursor_cache: dict = {}
-
-def _make_sel_cursor(mode: str) -> QCursor:
-    """Create a crosshair cursor with selection mode indicator: '' / '+' / '-' / 'x'."""
-    if mode in _sel_cursor_cache:
-        return _sel_cursor_cache[mode]
-
-    SIZE = 24
-    HOT  = SIZE // 2
-    px = QPixmap(SIZE, SIZE)
-    px.fill(Qt.GlobalColor.transparent)
-    p = QPainter(px)
-    p.setRenderHint(QPainter.RenderHint.Antialiasing, False)
-
-    mid = HOT
-    gap = 4
-
-    def _line(pen, x1, y1, x2, y2):
-        p.setPen(pen)
-        p.drawLine(x1, y1, x2, y2)
-
-    white = QPen(Qt.GlobalColor.white, 2)
-    black = QPen(Qt.GlobalColor.black, 1)
-
-    for arm in [(mid, 0, mid, mid - gap),
-                (mid, mid + gap, mid, SIZE - 1),
-                (0, mid, mid - gap, mid),
-                (mid + gap, mid, SIZE - 1, mid)]:
-        _line(black, *arm)
-        _line(white, *arm)
-
-    bx, by = 15, 15
-    bw = 7
-
-    if mode == "add":
-        cx, cy = bx + bw // 2, by + bw // 2
-        for coords in [(cx, by, cx, by + bw), (bx, cy, bx + bw, cy)]:
-            _line(black, *coords)
-            _line(white, *coords)
-    elif mode == "sub":
-        cy = by + bw // 2
-        _line(black, bx, cy, bx + bw, cy)
-        _line(white, bx, cy, bx + bw, cy)
-    elif mode == "intersect":
-        for coords in [(bx, by, bx + bw, by + bw), (bx + bw, by, bx, by + bw)]:
-            _line(black, *coords)
-            _line(white, *coords)
-
-    p.end()
-    cur = QCursor(px, HOT, HOT)
-    _sel_cursor_cache[mode] = cur
-    return cur
 
 
 class CanvasWidget(QOpenGLWidget):
@@ -165,6 +105,7 @@ class CanvasWidget(QOpenGLWidget):
 
         self._mouse_pos: QPointF = QPointF(-100, -100)
         self._show_brush_cursor: bool = True
+        self._brush_cursor = BrushCursorOverlay()
         self._is_mouse_in: bool = False
 
         self._composite_cache: QImage | None = None
@@ -539,7 +480,10 @@ class CanvasWidget(QOpenGLWidget):
                     logger.exception("Tool overlay rendering error in %s", getattr(self.active_tool, "name", "?"))
 
             if self._show_brush_cursor and not self._panning and not self._space:
-                self._draw_brush_cursor(painter)
+                self._brush_cursor.paint(
+                    painter, tool=self.active_tool, opts=self.tool_opts, zoom=self.zoom,
+                    mouse=self._mouse_pos, to_doc=self.to_doc, to_widget=self.to_widget,
+                    doc_size=(self.document.width, self.document.height))
 
             if self.show_rulers:
                 self._draw_rulers(painter)
@@ -811,167 +755,6 @@ class CanvasWidget(QOpenGLWidget):
         self.update(QRect(x1, y1, x2 - x1, y2 - y1))
 
 
-    def _draw_brush_cursor(self, painter: QPainter):
-        try:
-            size   = int(self.tool_opts.get("brush_size", 10))
-            mask   = self.tool_opts.get("brush_mask", "round")
-            hard   = float(self.tool_opts.get("brush_hardness", 1.0))
-            angle  = float(self.tool_opts.get("brush_angle", 0.0))
-
-            if getattr(self.active_tool, "name", "") == "BackgroundEraser":
-                mask = "round"
-                hard = 1.0
-                angle = 0.0
-                
-            mirror_x = bool(self.tool_opts.get("brush_mirror_x", False))
-            mirror_y = bool(self.tool_opts.get("brush_mirror_y", False))
-            cx_pct = float(self.tool_opts.get("brush_mirror_cx", 0.5))
-            cy_pct = float(self.tool_opts.get("brush_mirror_cy", 0.5))
-            doc_pos = self.to_doc(self._mouse_pos)
-            w, h = self.document.width, self.document.height
-            sym_x = w * cx_pct
-            sym_y = h * cy_pct
-            
-            # Keep track of whether the cursor center is mirrored: (x, y, is_mirror)
-            centers = [(int(self._mouse_pos.x()), int(self._mouse_pos.y()), False)]
-            mirrors = []
-            if mirror_x: mirrors.append(QPoint(int(2 * sym_x - doc_pos.x()), doc_pos.y()))
-            if mirror_y: mirrors.append(QPoint(doc_pos.x(), int(2 * sym_y - doc_pos.y())))
-            if mirror_x and mirror_y: mirrors.append(QPoint(int(2 * sym_x - doc_pos.x()), int(2 * sym_y - doc_pos.y())))
-            
-            for m in mirrors:
-                wp = self.to_widget(m)
-                centers.append((int(wp.x()), int(wp.y()), True))
-
-            alt_pressed = bool(self.tool_opts.get("_alt", False))
-            if getattr(self.active_tool, "name", "") == "CloneStamp" and alt_pressed:
-                for ctx, cty, is_mirror in centers:
-                    painter.save()
-                    painter.setRenderHint(QPainter.RenderHint.Antialiasing)
-                    if is_mirror:
-                        painter.setPen(QPen(QColor(100, 0, 0, 80), 3))
-                        painter.drawEllipse(QPointF(ctx, cty), 8, 8)
-                        painter.setPen(QPen(QColor(255, 150, 150, 120), 1.5))
-                    else:
-                        painter.setPen(QPen(QColor(0, 0, 0, 180), 3))
-                        painter.drawEllipse(QPointF(ctx, cty), 8, 8)
-                        painter.setPen(QPen(QColor(255, 255, 255, 220), 1.5))
-                    painter.drawEllipse(QPointF(ctx, cty), 8, 8)
-                    painter.drawLine(ctx-12, cty, ctx+12, cty)
-                    painter.drawLine(ctx, cty-12, ctx, cty+12)
-                    painter.restore()
-                return
-
-            actual_mask = mask
-            if isinstance(actual_mask, QPixmap):
-                actual_mask = actual_mask.toImage()
-            elif isinstance(actual_mask, str):
-                if actual_mask == "scatter":
-                    from tools.brush_tool import _make_brush_stamp
-                    actual_mask = _make_brush_stamp(size, hard, "scatter")
-                elif actual_mask not in ("round", "square"):
-                    tmp = QImage(actual_mask)
-                    if not tmp.isNull():
-                        actual_mask = tmp
-
-            w_size = max(2, int(size * self.zoom))
-            r = w_size / 2.0
-
-            painter.save()
-            painter.setRenderHint(QPainter.RenderHint.Antialiasing)
-
-            # Default pens for the real cursor
-            outer_pen_real = QPen(QColor(0, 0, 0, 160), 1.5)
-            inner_pen_real = QPen(QColor(255, 255, 255, 200), 1)
-
-            # Reddish and more transparent pens for mirrored cursors
-            outer_pen_mirror = QPen(QColor(120, 0, 0, 70), 1.5)
-            inner_pen_mirror = QPen(QColor(255, 120, 120, 110), 1)
-
-            if isinstance(actual_mask, QImage) and not actual_mask.isNull():
-                cache_key = (id(mask) if not isinstance(mask, str) else mask, w_size)
-                if getattr(self, "_custom_cursor_cache_key", None) == cache_key:
-                    path = self._custom_cursor_cache_path
-                else:
-                    scaled_img = actual_mask.scaled(w_size, w_size, Qt.AspectRatioMode.KeepAspectRatio, Qt.TransformationMode.SmoothTransformation)
-                    if not scaled_img.hasAlphaChannel():
-                        mask_img = scaled_img.createHeuristicMask()
-                    else:
-                        mask_img = scaled_img.createAlphaMask()
-                        
-                    bitmap = QBitmap.fromImage(mask_img)
-                    region = QRegion(bitmap)
-                    path = QPainterPath()
-                    path.addRegion(region)
-                    path = path.simplified()
-                    self._custom_cursor_cache_key = cache_key
-                    self._custom_cursor_cache_path = path
-
-                br = path.boundingRect()
-                for ctx, cty, is_mirror in centers:
-                    c_path = QPainterPath(path)
-                    c_path.translate(ctx - br.center().x(), cty - br.center().y())
-                    painter.save()
-                    if angle != 0.0:
-                        painter.translate(ctx, cty)
-                        painter.rotate(angle)
-                        painter.translate(-ctx, -cty)
-                    painter.setBrush(Qt.BrushStyle.NoBrush)
-                    
-                    # Apply reddish transparent colors if mirrored
-                    painter.setPen(outer_pen_mirror if is_mirror else outer_pen_real)
-                    painter.drawPath(c_path)
-                    painter.setPen(inner_pen_mirror if is_mirror else inner_pen_real)
-                    painter.drawPath(c_path)
-                    painter.restore()
-            else:
-                for ctx, cty, is_mirror in centers:
-                    painter.save()
-                    if angle != 0.0:
-                        painter.translate(ctx, cty)
-                        painter.rotate(angle)
-                        painter.translate(-ctx, -cty)
-                    
-                    if hard < 0.8 and actual_mask != "square":
-                        grad = QRadialGradient(ctx, cty, r)
-                        if is_mirror:
-                            # Reddish transparent gradient for mirror preview
-                            grad.setColorAt(0,    QColor(255, 100, 100, 80))
-                            grad.setColorAt(hard, QColor(255, 50, 50, 40))
-                            grad.setColorAt(1,    QColor(255, 0, 0, 0))
-                        else:
-                            grad.setColorAt(0,   QColor(255, 255, 255, 100))
-                            grad.setColorAt(hard, QColor(255, 255, 255, 80))
-                            grad.setColorAt(1,   QColor(255, 255, 255, 0))
-                        painter.setBrush(grad)
-                        painter.setPen(Qt.PenStyle.NoPen)
-                        painter.drawEllipse(QPoint(ctx, cty), int(r), int(r))
-
-                    painter.setBrush(Qt.BrushStyle.NoBrush)
-                    current_outer = outer_pen_mirror if is_mirror else outer_pen_real
-                    current_inner = inner_pen_mirror if is_mirror else inner_pen_real
-
-                    if actual_mask == "square":
-                        rect = QRect(int(ctx - r), int(cty - r), w_size, w_size)
-                        painter.setPen(current_outer); painter.drawRect(rect.adjusted(1, 1, -1, -1))
-                        painter.setPen(current_inner); painter.drawRect(rect)
-                    else:
-                        painter.setPen(current_outer); painter.drawEllipse(QPoint(ctx, cty), int(r) + 1, int(r) + 1)
-                        painter.setPen(current_inner); painter.drawEllipse(QPoint(ctx, cty), int(r), int(r))
-                    painter.restore()
-
-            if w_size > 16:
-                for ctx, cty, is_mirror in centers:
-                    # Adjust center crosshair transparency/color for mirror cursors
-                    cross_color = QColor(255, 150, 150, 100) if is_mirror else QColor(255, 255, 255, 180)
-                    painter.setPen(QPen(cross_color, 1))
-                    painter.drawLine(ctx - 3, cty, ctx + 3, cty)
-                    painter.drawLine(ctx, cty - 3, ctx, cty + 3)
-
-            painter.restore()
-        except Exception:
-            logger.debug("Brush cursor overlay failed", exc_info=True)
-
     def _emit_tool_state(self):
         if hasattr(self.active_tool, "get_transform_params"):
             self.tool_state_changed.emit(self.active_tool.get_transform_params())
@@ -1079,23 +862,21 @@ class CanvasWidget(QOpenGLWidget):
     def _press_symmetry_center(self, ev) -> bool:
         """Brush symmetry: Ctrl+click moves the mirror centre, a click on it
         starts dragging it. True if the press was that."""
-        mirror_x = bool(self.tool_opts.get("brush_mirror_x", False))
-        mirror_y = bool(self.tool_opts.get("brush_mirror_y", False))
-        if not (mirror_x or mirror_y):
+        doc = self.document
+        sym = BrushSymmetry.from_opts(self.tool_opts, doc.width, doc.height)
+        if not sym.active:
             return False
         doc_pos = self.to_doc(ev.position())
         if ev.modifiers() & Qt.KeyboardModifier.ControlModifier:
             self._dragging_sym_center = True
-            new_cx = max(0.0, min(1.0, doc_pos.x() / max(1, self.document.width)))
-            new_cy = max(0.0, min(1.0, doc_pos.y() / max(1, self.document.height)))
+            new_cx = max(0.0, min(1.0, doc_pos.x() / max(1, doc.width)))
+            new_cy = max(0.0, min(1.0, doc_pos.y() / max(1, doc.height)))
             self.tool_opts["brush_mirror_cx"] = new_cx
             self.tool_opts["brush_mirror_cy"] = new_cy
             self.tool_state_changed.emit({"brush_mirror_cx": new_cx, "brush_mirror_cy": new_cy})
             self.update()
             return True
-        sym_x = self.document.width * float(self.tool_opts.get("brush_mirror_cx", 0.5))
-        sym_y = self.document.height * float(self.tool_opts.get("brush_mirror_cy", 0.5))
-        if math.hypot(doc_pos.x() - sym_x, doc_pos.y() - sym_y) <= 15 / max(0.01, self.zoom):
+        if sym.near_center(doc_pos.x(), doc_pos.y(), self.zoom):
             self._dragging_sym_center = True
             return True
         return False
@@ -1394,7 +1175,7 @@ class CanvasWidget(QOpenGLWidget):
     def _start_alt_eyedropper(self):
         if (self._alt_prev_tool is not None or self._stroke_in_progress
                 or self.active_tool is None
-                or getattr(self.active_tool, "name", None) not in _ALT_EYEDROPPER_TOOLS):
+                or not getattr(self.active_tool, "ALT_EYEDROPPER", False)):
             return
         from tools.eyedropper_tool import EyedropperTool
         mw = self.window()
@@ -1503,26 +1284,14 @@ class CanvasWidget(QOpenGLWidget):
             # the whole Alt hold/release avoids relying on that redraw at all.
             is_alt_picker = self.active_tool is not None and self.active_tool is getattr(self, "_alt_picker", None)
             if getattr(self.active_tool, "BRUSH_CURSOR", False) or is_alt_picker:
-                mirror_x = bool(self.tool_opts.get("brush_mirror_x", False))
-                mirror_y = bool(self.tool_opts.get("brush_mirror_y", False))
-                is_hovering_sym = False
-                ctrl_pressed = bool(self.tool_opts.get("_ctrl", False))
-                
-                if (mirror_x or mirror_y) and self.document:
-                    if ctrl_pressed:
-                        self._show_brush_cursor = False
-                        self.setCursor(Qt.CursorShape.CrossCursor)
-                        return
-
-                    cx_pct = float(self.tool_opts.get("brush_mirror_cx", 0.5))
-                    cy_pct = float(self.tool_opts.get("brush_mirror_cy", 0.5))
-                    sym_x = self.document.width * cx_pct
-                    sym_y = self.document.height * cy_pct
-                    doc_pos = self.to_doc(self._mouse_pos)
-                    hit_radius = 15 / max(0.01, self.zoom)
-                    if math.hypot(doc_pos.x() - sym_x, doc_pos.y() - sym_y) <= hit_radius:
-                        is_hovering_sym = True
-                if is_hovering_sym:
+                sym = (BrushSymmetry.from_opts(self.tool_opts, self.document.width, self.document.height)
+                       if self.document else None)
+                if sym is not None and sym.active and self.tool_opts.get("_ctrl", False):
+                    self._show_brush_cursor = False                 # Ctrl+click moves the centre
+                    self.setCursor(Qt.CursorShape.CrossCursor)
+                    return
+                doc_pos = self.to_doc(self._mouse_pos)
+                if sym is not None and sym.active and sym.near_center(doc_pos.x(), doc_pos.y(), self.zoom):
                     self._show_brush_cursor = False
                     self.setCursor(Qt.CursorShape.SizeAllCursor)
                 else:
@@ -1530,13 +1299,7 @@ class CanvasWidget(QOpenGLWidget):
                     self.setCursor(Qt.CursorShape.BlankCursor)
             elif getattr(self.active_tool, "SELECTION_CURSOR", False):
                 self._show_brush_cursor = False
-                ctrl = bool(self.tool_opts.get("_ctrl", False))
-                alt  = bool(self.tool_opts.get("_alt",  False))
-                if ctrl and alt: mode = "intersect"
-                elif ctrl: mode = "add"
-                elif alt: mode = "sub"
-                else: mode = "new"
-                self.setCursor(_make_sel_cursor(mode))
+                self.setCursor(selection_cursor(selection_mode(self.tool_opts)))
             else:
                 self._show_brush_cursor = False
                 if self.active_tool:

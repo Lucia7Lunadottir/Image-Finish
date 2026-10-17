@@ -24,6 +24,14 @@ class BaseTool(ABC):
     BRUSH_CURSOR: bool = False
     # Shows the selection cursor with its new/add/subtract/intersect badge.
     SELECTION_CURSOR: bool = False
+    # Hold Alt = temporary eyedropper (Photoshop): plain colour-painting
+    # tools where Alt means nothing else (not Clone Stamp / Healing, whose
+    # Alt sets the source, nor the selection/move tools' own Alt).
+    ALT_EYEDROPPER: bool = False
+    # Alt+click picks a source point; the brush cursor shows a crosshair.
+    ALT_PICKS_SOURCE: bool = False
+    # Brush outline always a plain hard circle, whatever the tip settings.
+    PLAIN_BRUSH_CURSOR: bool = False
 
     def on_press(self, pos: QPoint, doc, fg: QColor, bg: QColor, opts: dict):
         """Called on mouse button press."""
