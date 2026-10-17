@@ -2,6 +2,9 @@ from PyQt6.QtWidgets import QMessageBox
 from PyQt6.QtGui import QPainter, QColor
 from core.locale import tr
 from ui.document_controller import require_document
+from PyQt6.QtCore import QPoint
+from PyQt6.QtCore import QRectF
+from PyQt6.QtWidgets import QFileDialog
 
 
 # Adjustment-layer type -> its live-preview dialog ("module:Class", imported
@@ -37,6 +40,8 @@ class LayerActionsMixin:
         if not self._document:
             return
         self._layers_panel.refresh(self._document)
+        if hasattr(self, "_channels_panel"):
+            self._channels_panel.refresh(self._document)
         self._update_status()
 
     @require_document
@@ -364,3 +369,172 @@ class LayerActionsMixin:
             layer.image = pixels
         self._refresh_layers()
         self._canvas_refresh()
+
+    def _on_layer_selected_wrap(self, index: int):
+        self._commit_move_transform()
+        self._commit_text_edit_if_active()
+        if hasattr(self, "_on_layer_selected"):
+            self._on_layer_selected(index)
+        if self._document and 0 <= index < len(self._document.layers):
+            self._sync_shape_options_from_layer(self._document.layers[index])
+            self._sync_text_options_from_layer(self._document.layers[index])
+
+    @require_document
+    def _open_layer_styles(self, index: int):
+        layer = self._doc_controller.layer_at(index)
+        if layer is None or layer.is_container:
+            return
+        from ui.layer_style_dialog import LayerStyleDialog
+        # Snapshot *before* the dialog: it previews on the layer itself, so
+        # a snapshot taken after OK held the new styles and Undo restored
+        # exactly what was already there.
+        pre_state = self._make_history_state(tr("history.layer_styles"),
+                                             modified_index=self._document.layers.index(layer))
+        dlg = LayerStyleDialog(layer, self._canvas_refresh, self)
+        if dlg.exec():
+            self._history.push(pre_state)
+            self._refresh_layers()
+        else:
+            dlg.reject()
+
+    @require_document
+    def _rename_layer(self, index: int, new_name: str):
+        if 0 <= index < len(self._document.layers):
+            layer = self._document.layers[index]
+            if layer.name != new_name:
+                layer.name = new_name
+
+    @require_document
+    def _on_layer_expanded_toggled(self, index: int, expanded: bool):
+        if 0 <= index < len(self._document.layers):
+            self._document.layers[index].expanded = expanded
+            self._refresh_layers()
+
+    @require_document
+    def _move_layer_exact(self, from_index: int, to_index: int):
+        if 0 <= from_index < len(self._document.layers) and 0 <= to_index < len(self._document.layers):
+            layer = self._document.layers[from_index]
+            self._document.move_layer(from_index, to_index)
+            
+            if to_index < len(self._document.layers) - 1:
+                layer_above_in_ui = self._document.layers[to_index + 1]
+                if layer_above_in_ui.is_container:
+                    layer.parent_id = getattr(layer_above_in_ui, "layer_id", None)
+                else:
+                    layer.parent_id = getattr(layer_above_in_ui, "parent_id", None)
+            else:
+                layer.parent_id = None
+                
+            self._push_history(tr("history.layer_moved"))
+            self._refresh_layers()
+            self._canvas_refresh()
+
+    @require_document
+    def _on_layer_blend_mode(self, mode: str):
+        layer = self._document.get_active_layer()
+        if layer and getattr(layer, "blend_mode", "SourceOver") != mode:
+            layer.blend_mode = mode
+            self._push_history(tr("history.layer_blend"))
+            self._canvas_refresh()
+
+    @require_document
+    def _on_layer_lock_changed(self, lock_type: str, locked: bool):
+        layer = self._document.get_active_layer()
+        if layer:
+            if lock_type == "alpha": layer.lock_alpha = locked
+            elif lock_type == "pixels": layer.lock_pixels = locked
+            elif lock_type == "position": layer.lock_position = locked
+            elif lock_type == "artboard": layer.lock_artboard = locked
+            elif lock_type == "all": layer.locked = locked
+            self._push_history(tr("history.lock_changed"))
+            self._refresh_layers()
+
+    @require_document
+    def _group_layer(self):
+        idx = self._document.active_layer_index
+        from core.layer import GroupLayer
+        group = self._document.add_layer(tr("layer.name.group"), idx + 1, layer_cls=GroupLayer)
+        layer = self._document.layers[idx]
+        layer.parent_id = group.layer_id
+        self._push_history(tr("history.new_group"))
+        self._refresh_layers()
+
+    @require_document
+    def _link_layer(self):
+        idx = self._document.active_layer_index
+        if idx > 0:
+            l1 = self._document.layers[idx]
+            l2 = self._document.layers[idx - 1]
+            import uuid
+            new_link = l2.link_id if l2.link_id else str(uuid.uuid4())
+            if l1.link_id == new_link: l1.link_id = None
+            else: l1.link_id = new_link
+            self._push_history(tr("history.link_layers"))
+            self._refresh_layers()
+
+    @require_document
+    def _on_layer_target_changed(self, index: int, target: str):
+        if 0 <= index < len(self._document.layers):
+            self._document.active_layer_index = index
+            layer = self._document.layers[index]
+            layer.editing_mask = (target == "mask")
+            self._refresh_layers()
+
+    def _align_layer(self, alignment: str):
+        doc = self._document
+        layer = doc.get_active_layer()
+        from core.layer import ArtboardLayer
+        if not layer or layer.locked or isinstance(layer, ArtboardLayer):
+            return
+
+        linked = [layer]
+        if layer.is_container:          # a group aligns as one block
+            linked.extend(doc.descendants(layer))
+            
+        link_id = getattr(layer, "link_id", None)
+        if link_id:
+            for l in doc.layers:
+                if getattr(l, "link_id", None) == link_id and l not in linked:
+                    linked.append(l)
+                    
+        src_rect = QRectF()
+        for l in linked:
+            r = l.content_rect()
+            if not r.isEmpty():
+                src_rect = src_rect.united(r)
+                
+        if src_rect.isEmpty(): return
+        
+        target_rect = None
+        if doc.selection and not doc.selection.isEmpty(): target_rect = doc.selection.boundingRect()
+        else:
+            artboard = doc.enclosing_artboard(layer)
+            target_rect = QRectF(artboard.artboard_rect) if artboard else QRectF(0, 0, doc.width, doc.height)
+                
+        dx, dy = 0, 0
+        if alignment == "left": dx = target_rect.left() - src_rect.left()
+        elif alignment == "center_h": dx = target_rect.center().x() - src_rect.center().x()
+        elif alignment == "right": dx = target_rect.right() - src_rect.right()
+        elif alignment == "top": dy = target_rect.top() - src_rect.top()
+        elif alignment == "center_v": dy = target_rect.center().y() - src_rect.center().y()
+        elif alignment == "bottom": dy = target_rect.bottom() - src_rect.bottom()
+        
+        if dx == 0 and dy == 0: return
+        self._push_history(tr("history.layer_moved"))
+        for l in linked: l.offset = l.offset + QPoint(int(dx), int(dy))
+        self._canvas_refresh()
+
+    @require_document
+    def _export_layer_png(self):
+        from core.serialization import save_image_atomic, SerializationError
+        layer = self._document.get_active_layer()
+        if not layer or layer.image.isNull(): return
+        path, _ = QFileDialog.getSaveFileName(self, tr("menu.export_layer_png"), f"{layer.name}.png", "PNG (*.png)")
+        if path:
+            try:
+                save_image_atomic(layer.image, path)
+            except (SerializationError, OSError) as e:
+                QMessageBox.critical(self, tr("err.title.save_error"),
+                                     tr("err.could_not_save", path=path) + f"\n{e}")
+                return
+            self._status.showMessage(tr("status.saved", path=path))

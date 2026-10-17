@@ -213,3 +213,31 @@ class ImageActionsMixin:
             self._canvas_refresh()
             self._canvas.reset_zoom()
             self._refresh_layers()
+
+    @require_document
+    def _apply_image(self):
+        layer = self._document.get_active_layer()
+        if not layer or layer.image.isNull(): return
+        
+        pre_state = self._make_history_state(tr("history.apply_image"), modified_index=self._document.active_layer_index)
+        
+        from ui.calculations_dialog import ApplyImageDialog
+        dlg = ApplyImageDialog(self._document, self._canvas_refresh, self)
+        if dlg.exec():
+            self._history.push(pre_state)
+        else:
+            dlg.cancel()
+
+    def _calculations(self):
+        if not self._document or not self._document.layers: return
+        from ui.calculations_dialog import CalculationsDialog
+        dlg = CalculationsDialog(self._document, self._canvas_refresh, self)
+        if dlg.exec():
+            self._push_history(tr("history.calculations"))
+            dlg.apply_result(self)
+
+    def _on_apply_crop_requested(self):
+        if self._active_tool_name == "Crop":
+            self._apply_crop()
+        elif self._active_tool_name == "Perspective Crop":
+            self._apply_perspective_crop()

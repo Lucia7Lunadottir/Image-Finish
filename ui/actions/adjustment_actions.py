@@ -37,6 +37,10 @@ class AdjustmentActionsMixin:
         self._show_adj_dialog(HueSaturationDialog, "history.before_hs")
 
     def _invert(self):
+        active = self._document and self._document.get_active_layer()
+        if active is not None and getattr(active, "editing_mask", False) and active.mask is not None:
+            self._invert_mask()          # Ctrl+I while editing a mask inverts the mask
+            return
         layer = pixel_layer_for_edit(self)
         if layer is None:
             return

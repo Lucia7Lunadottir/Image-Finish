@@ -3,96 +3,74 @@ from PyQt6.QtCore import Qt, QRectF, QPoint
 from PyQt6.QtGui import QColor, QPainter, QPainterPath
 from core.locale import tr
 from ui.document_controller import require_document
+from core.history import HistoryState
 
 
 class EditActionsMixin:
     @require_document
     def _undo(self):
-        # If a transform frame is active, Ctrl+Z acts as Escape (cancel transform)
-        tool = self._canvas.active_tool
-        if hasattr(tool, "is_transforming") and getattr(tool, "is_transforming", False):
-            tool.cancel_transform(self._document)
-            self._canvas_refresh()
+        if self._undo_redo_handled_elsewhere("undo"):
             return
-
-        from core.history import HistoryState, clone_work_path
         state = self._history.undo()
         if not state:
             return
-        self._history.save_for_redo(HistoryState(
-            description="redo",
-            layers_snapshot=self._document.snapshot_layers(),
-            active_layer_index=self._document.active_layer_index,
-            doc_width=self._document.width,
-            doc_height=self._document.height,
-            selection_snapshot=QPainterPath(self._document.selection) if self._document.selection else None,
-            work_path_snapshot=clone_work_path(getattr(self._document, "work_path", None)),
-            alpha_channels_snapshot=list(getattr(self._document, "alpha_channels", [])),
-            color_mode_snapshot=getattr(self._document, "color_mode", "RGB"),
-            bit_depth_snapshot=getattr(self._document, "bit_depth", 8)
-        ))
-        self._document.restore_layers(state.layers_snapshot)
-        self._document.active_layer_index = state.active_layer_index
-        self._document.selection = QPainterPath(state.selection_snapshot) if state.selection_snapshot else None
-        if getattr(state, "work_path_snapshot", None) is not None:
-            self._document.work_path = clone_work_path(state.work_path_snapshot)
-        dims_changed = False
-        if state.doc_width and state.doc_height:
-            dims_changed = (self._document.width != state.doc_width or
-                            self._document.height != state.doc_height)
-            self._document.width  = state.doc_width
-            self._document.height = state.doc_height
-        if getattr(state, "alpha_channels_snapshot", None) is not None:
-            self._document.alpha_channels = list(state.alpha_channels_snapshot)
-            if dims_changed:
-                self._canvas.reset_zoom()
-        if getattr(state, "color_mode_snapshot", None) is not None:
-            self._document.color_mode = state.color_mode_snapshot
-        if getattr(state, "bit_depth_snapshot", None) is not None:
-            self._document.bit_depth = state.bit_depth_snapshot
-        if hasattr(self, "_update_mode_menu"): self._update_mode_menu()
-        self._refresh_layers()
-        self._canvas_refresh()
+        # The current document, under the same step name, becomes the redo
+        # step (was named "redo", so the History panel showed "undo"/"redo"
+        # instead of the step after an undo + redo).
+        self._history.save_for_redo(self._make_history_state(state.description))
+        self._restore_history_state(state)
         self._status.showMessage(tr("status.undo", desc=state.description))
 
     @require_document
     def _redo(self):
-        from core.history import HistoryState, clone_work_path
+        if self._undo_redo_handled_elsewhere("redo"):
+            return
         state = self._history.redo()
         if not state:
             return
-        self._history.push(HistoryState(
-            description="undo",
-            layers_snapshot=self._document.snapshot_layers(),
-            active_layer_index=self._document.active_layer_index,
-            doc_width=self._document.width,
-            doc_height=self._document.height,
-            selection_snapshot=QPainterPath(self._document.selection) if self._document.selection else None,
-            work_path_snapshot=clone_work_path(getattr(self._document, "work_path", None)),
-            alpha_channels_snapshot=list(getattr(self._document, "alpha_channels", [])),
-            color_mode_snapshot=getattr(self._document, "color_mode", "RGB"),
-            bit_depth_snapshot=getattr(self._document, "bit_depth", 8)
-        ))
-        self._document.restore_layers(state.layers_snapshot)
-        self._document.active_layer_index = state.active_layer_index
-        self._document.selection = QPainterPath(state.selection_snapshot) if state.selection_snapshot else None
+        self._history.push(self._make_history_state(state.description))
+        self._restore_history_state(state)
+
+    def _undo_redo_handled_elsewhere(self, which: str) -> bool:
+        """Ctrl+Z / Ctrl+Shift+Z belong to the text being typed (as in
+        Photoshop), and while a transform is open they cancel it."""
+        session = self._text_session() if hasattr(self, "_text_session") else None
+        if session is not None and session.is_active():
+            getattr(session, which)()
+            return True
+        tool = self._canvas.active_tool
+        if getattr(tool, "is_transforming", False):
+            tool.cancel_transform(self._document)
+            self._canvas_refresh()
+            if hasattr(self, "_opts_bar"):
+                self._opts_bar.update_tool_state(None)
+            return True
+        return False
+
+    def _restore_history_state(self, state):
+        """Put the document back to a history snapshot."""
+        from core.history import clone_work_path
+        doc = self._document
+        doc.restore_layers(state.layers_snapshot)
+        doc.active_layer_index = state.active_layer_index
+        doc.selection = QPainterPath(state.selection_snapshot) if state.selection_snapshot else None
         if getattr(state, "work_path_snapshot", None) is not None:
-            self._document.work_path = clone_work_path(state.work_path_snapshot)
+            doc.work_path = clone_work_path(state.work_path_snapshot)
         dims_changed = False
         if state.doc_width and state.doc_height:
-            dims_changed = (self._document.width != state.doc_width or
-                            self._document.height != state.doc_height)
-            self._document.width  = state.doc_width
-            self._document.height = state.doc_height
+            dims_changed = (doc.width != state.doc_width or doc.height != state.doc_height)
+            doc.width = state.doc_width
+            doc.height = state.doc_height
         if getattr(state, "alpha_channels_snapshot", None) is not None:
-            self._document.alpha_channels = list(state.alpha_channels_snapshot)
+            doc.alpha_channels = list(state.alpha_channels_snapshot)
             if dims_changed:
                 self._canvas.reset_zoom()
         if getattr(state, "color_mode_snapshot", None) is not None:
-            self._document.color_mode = state.color_mode_snapshot
+            doc.color_mode = state.color_mode_snapshot
         if getattr(state, "bit_depth_snapshot", None) is not None:
-            self._document.bit_depth = state.bit_depth_snapshot
-        if hasattr(self, "_update_mode_menu"): self._update_mode_menu()
+            doc.bit_depth = state.bit_depth_snapshot
+        if hasattr(self, "_update_mode_menu"):
+            self._update_mode_menu()
         self._refresh_layers()
         self._canvas_refresh()
 
@@ -513,3 +491,104 @@ class EditActionsMixin:
             p.fillRect(layer.image.rect(), color)
         p.end()
         self._canvas_refresh()
+
+    def _make_history_state(self, description: str, modified_index: int | None = None) -> HistoryState:
+        """Snapshot the current document. Pass `modified_index` when the
+        operation touches a single layer: unmodified layers then share
+        their QImage with the live document, which keeps undo memory flat."""
+        from core.history import clone_work_path
+        return HistoryState(
+            description=description,
+            layers_snapshot=self._document.snapshot_layers(modified_index=modified_index),
+            active_layer_index=self._document.active_layer_index,
+            doc_width=self._document.width,
+            doc_height=self._document.height,
+            selection_snapshot=QPainterPath(self._document.selection) if self._document.selection else None,
+            work_path_snapshot=clone_work_path(getattr(self._document, "work_path", None)),
+            alpha_channels_snapshot=list(getattr(self._document, "alpha_channels", [])),
+            color_mode_snapshot=getattr(self._document, "color_mode", "RGB"),
+            bit_depth_snapshot=getattr(self._document, "bit_depth", 8)
+        )
+
+    def _push_history(self, description: str, modified_index: int | None = None):
+        if not self._document or not self._history:
+            return
+        self._history.push(self._make_history_state(description, modified_index))
+
+    def _get_define_image(self):
+        doc = self._document
+        comp = doc.get_composite(respect_live_hidden=False)
+        if doc.selection and not doc.selection.isEmpty():
+            br = doc.selection.boundingRect().toRect().intersected(comp.rect())
+            if not br.isEmpty(): return comp.copy(br)
+        return comp.copy()
+
+    @require_document
+    def _define_brush(self):
+        from PyQt6.QtWidgets import QInputDialog
+        import os
+        import numpy as np
+        from PyQt6.QtGui import QImage, QPainter
+        img = self._get_define_image()
+        name, ok = QInputDialog.getText(self, tr("dlg.define_brush_title"), tr("dlg.define_name"))
+        if not ok or not name.strip(): return
+        name = name.strip()
+        w, h = img.width(), img.height()
+        side = max(w, h)
+        sq_img = QImage(side, side, QImage.Format.Format_ARGB32_Premultiplied)
+        sq_img.fill(0)
+        p = QPainter(sq_img)
+        p.drawImage((side - w) // 2, (side - h) // 2, img)
+        p.end()
+        sq_img = sq_img.convertToFormat(QImage.Format.Format_ARGB32_Premultiplied)
+        from core.pixel_buffer import qimage_argb_view
+        arr = qimage_argb_view(sq_img, writable=False)[:, :side, :]
+        luma = (arr[..., 2]*0.299 + arr[..., 1]*0.587 + arr[..., 0]*0.114)
+        orig_alpha = arr[..., 3] / 255.0
+        brush_img = QImage(side, side, QImage.Format.Format_ARGB32_Premultiplied)
+        brush_img.fill(0)
+        b_arr = qimage_argb_view(brush_img, writable=True)[:, :side, :]
+        b_arr[..., 3] = ((255 - luma) * orig_alpha).astype(np.uint8)
+        base_dir = os.path.dirname(os.path.dirname(os.path.abspath(__file__)))
+        target_dir = os.path.join(base_dir, "brushes")
+        os.makedirs(target_dir, exist_ok=True)
+        path = os.path.join(target_dir, f"{name}.png")
+        brush_img.save(path)
+        brush_page = self._opts_bar._pages.get("Brush")
+        if hasattr(brush_page, "add_custom_brush"): brush_page.add_custom_brush(path, name)
+
+    @require_document
+    def _define_pattern(self):
+        from PyQt6.QtWidgets import QInputDialog
+        import os
+        img = self._get_define_image()
+        name, ok = QInputDialog.getText(self, tr("dlg.define_pattern_title"), tr("dlg.define_name"))
+        if not ok or not name.strip(): return
+        name = name.strip()
+        base_dir = os.path.dirname(os.path.dirname(os.path.abspath(__file__)))
+        target_dir = os.path.join(base_dir, "patterns")
+        os.makedirs(target_dir, exist_ok=True)
+        path = os.path.join(target_dir, f"{name}.png")
+        img.save(path)
+        pat_page = self._opts_bar._pages.get("PatternStamp")
+        if hasattr(pat_page, "add_custom_pattern"): pat_page.add_custom_pattern(path, name)
+
+    @require_document
+    def _define_shape(self):
+        from PyQt6.QtWidgets import QInputDialog, QMessageBox
+        import os, json
+        doc = self._document
+        if not doc.selection or doc.selection.isEmpty():
+            QMessageBox.warning(self, tr("err.title.error"), tr("err.no_selection_shape"))
+            return
+        name, ok = QInputDialog.getText(self, tr("dlg.define_shape_title"), tr("dlg.define_name"))
+        if not ok or not name.strip(): return
+        name = name.strip()
+        base_dir = os.path.dirname(os.path.dirname(os.path.abspath(__file__)))
+        target_dir = os.path.join(base_dir, "shapes")
+        os.makedirs(target_dir, exist_ok=True)
+        path = os.path.join(target_dir, f"{name}.json")
+        data = [{"type": int(e.type.value) if hasattr(e.type, 'value') else int(e.type), "x": e.x, "y": e.y} for i in range(doc.selection.elementCount()) for e in [doc.selection.elementAt(i)]]
+        with open(path, "w") as f: json.dump(data, f)
+        shapes_page = self._opts_bar._pages.get("Shapes")
+        if hasattr(shapes_page, "add_custom_shape"): shapes_page.add_custom_shape(path, name)

@@ -238,3 +238,26 @@ class FileActionsMixin:
             self._remove_recent_file(path)
             return
         self._open_file_path(path)
+
+    @require_document
+    def _export_slices(self):
+        from core.serialization import save_image_atomic, SerializationError
+        slices = getattr(self._document, "slices", [])
+        if not slices:
+            QMessageBox.information(self, "ImageFinish", tr("err.no_slices"))
+            return
+        dir_path = QFileDialog.getExistingDirectory(self, tr("dlg.export_slices"))
+        if not dir_path: return
+        comp = self._document.get_composite(respect_live_hidden=False)
+        count = 0
+        for i, r in enumerate(slices):
+            c = r.intersected(comp.rect())
+            if not c.isEmpty():
+                try:
+                    save_image_atomic(comp.copy(c), f"{dir_path}/slice_{i+1}.png")
+                    count += 1
+                except (SerializationError, OSError) as e:
+                    QMessageBox.critical(self, tr("err.title.save_error"),
+                                         tr("err.could_not_save", path=f"slice_{i+1}.png") + f"\n{e}")
+                    return
+        self._status.showMessage(tr("status.slices_exported", count=count))
