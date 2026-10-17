@@ -7,15 +7,16 @@ from ui import theme
 logger = get_logger("canvas")
 
 from PyQt6.QtOpenGLWidgets import QOpenGLWidget
-from PyQt6.QtCore import Qt, QPoint, QPointF, QRect, QSize, QTimer, pyqtSignal
+from PyQt6.QtCore import Qt, QPoint, QPointF, QRect, QTimer, pyqtSignal
 from PyQt6.QtGui import (QPainter, QColor, QPixmap, QBrush, QPen, QImage, QCursor, QInputDevice,
-    QPainterPath, QTransform)
+    QPainterPath)
 
 from tools.other_tools import (SelectTool, CropTool, ShapesTool,
                                HandTool, ZoomTool, RotateViewTool, GradientTool, PerspectiveCropTool)
 from core.brush_symmetry import BrushSymmetry
 from ui.canvas_cursors import BrushCursorOverlay, selection_cursor, selection_mode
 from ui.canvas_guides import GuideDrag
+from ui.canvas_hires import HiresView
 from ui.overlay_renderers import (
     draw_grid, draw_guides, draw_rulers, draw_artboard_frames, draw_slices, draw_symmetry_axes, draw_selection,
     draw_subtract_drag, draw_lasso_preview, draw_transform_preview,
@@ -128,14 +129,7 @@ class CanvasWidget(QOpenGLWidget):
         # resolution composite when zoomed in on a document with vector
         # layers — that's what keeps shapes sharp at any zoom. Keyed by
         # composite cacheKey + view, rebuilt after zoom/pan settles.
-        self._hires_image: QImage | None = None
-        self._hires_origin = QPointF()
-        self._hires_key = None
-        self._hires_render_ms = 0.0
-        self._hires_failed = False
-        self._hires_timer = QTimer(self)
-        self._hires_timer.setSingleShot(True)
-        self._hires_timer.timeout.connect(self._render_hires)
+        self._hires = HiresView(self)
 
         self.show_rulers: bool = False
         self._guides = GuideDrag(self)
@@ -186,8 +180,7 @@ class CanvasWidget(QOpenGLWidget):
         self._pre_stroke_state = None
         self._check_marching_ants()
         self._fit_to_window()
-        self._hires_image = None
-        self._hires_key = None
+        self._hires.reset()
         self._shape_overlay.refresh_items()
         self.update()
 
@@ -446,82 +439,6 @@ class CanvasWidget(QOpenGLWidget):
         painter.drawImage(0, 0, display_img)
         painter.restore()
 
-    # ── sharp vector display ────────────────────────────────────────────
-    def _hires_view_key(self):
-        return (round(self.zoom, 6), round(self._pan.x(), 3), round(self._pan.y(), 3),
-                self.width(), self.height(), self.devicePixelRatioF())
-
-    def _hires_wanted(self, channel: str) -> bool:
-        if self._hires_failed or self.document is None or self._composite_cache is None:
-            return False
-        if channel != "RGB" or self._in_effect_stroke:
-            return False
-        if self.zoom * self.devicePixelRatioF() <= 1.0001:
-            return False   # the document-resolution composite is already as sharp as the screen
-        return self.document.has_vector_content()
-
-    def _draw_hires(self, painter: QPainter, channel: str) -> bool:
-        """Draws the screen-resolution render if it matches what's on
-        screen now; otherwise schedules one and returns False (the caller
-        draws the normal composite meanwhile)."""
-        if not self._hires_wanted(channel):
-            self._hires_image = None
-            self._hires_key = None
-            return False
-        key = (self._composite_cache.cacheKey(), self._hires_view_key())
-        if self._hires_image is not None and self._hires_key == key:
-            painter.drawImage(self._hires_origin, self._hires_image)
-            return True
-        same_view = self._hires_key is not None and self._hires_key[1] == key[1]
-        # Mid-gesture (brush stroke, drag) the composite changes every
-        # frame — never render synchronously then; the debounced timer
-        # below fires once the gesture pauses.
-        from PyQt6.QtWidgets import QApplication
-        interacting = QApplication.mouseButtons() != Qt.MouseButton.NoButton
-        if same_view and not interacting and self._hires_render_ms < 60:
-            # Only the content changed (a shape edit committed) and a render
-            # is cheap: do it now, so the shape doesn't flash blurry first.
-            self._render_hires()
-            if self._hires_image is not None and self._hires_key == key:
-                painter.drawImage(self._hires_origin, self._hires_image)
-                return True
-            return False
-        self._hires_timer.start(90 if (interacting or not same_view) else 0)
-        return False
-
-    def _render_hires(self):
-        if self.document is None or self._cache_dirty or self._composite_cache is None:
-            return
-        from PyQt6.QtWidgets import QApplication
-        if QApplication.mouseButtons() != Qt.MouseButton.NoButton:
-            self._hires_timer.start(90)   # still mid-gesture: try again shortly
-            return
-        if not self._hires_wanted(getattr(self, "view_channel", "RGB")):
-            return
-        import time
-        region = self.rect().intersected(self._doc_rect_in_widget().adjusted(-1, -1, 1, 1))
-        if region.isEmpty():
-            return
-        dpr = self.devicePixelRatioF()
-        s = self.zoom * dpr
-        transform = QTransform(s, 0, 0, s, (self._pan.x() - region.x()) * dpr,
-                               (self._pan.y() - region.y()) * dpr)
-        size = QSize(max(1, math.ceil(region.width() * dpr)), max(1, math.ceil(region.height() * dpr)))
-        t0 = time.perf_counter()
-        try:
-            img = self.document.render_view(transform, size)
-        except Exception:
-            logger.exception("Screen-resolution render failed — falling back to the composite")
-            self._hires_failed = True
-            self._hires_image = None
-            return
-        self._hires_render_ms = (time.perf_counter() - t0) * 1000
-        img.setDevicePixelRatio(dpr)
-        self._hires_image = img
-        self._hires_origin = QPointF(region.topLeft())
-        self._hires_key = (self._composite_cache.cacheKey(), self._hires_view_key())
-        self.update()
-
     def _paint_canvas_content(self, painter: QPainter, gpu: bool = True):
         """Internal layer-by-layer rendering of cached images and vectors.
 
@@ -562,7 +479,7 @@ class CanvasWidget(QOpenGLWidget):
 
         display_img = self._display_cache
 
-        if self._draw_hires(painter, current_ch):
+        if self._hires.draw(painter, current_ch):
             pass
         elif gpu and self._gl is not None and self._gl.ready:
             try:

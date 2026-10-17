@@ -167,13 +167,13 @@ def test_canvas_uses_screen_resolution_render_when_zoomed_in(main_window):
     canvas.zoom = 4.0
     canvas._recompute_composite()
     canvas._cache_dirty = False
-    assert canvas._hires_wanted("RGB")
-    canvas._render_hires()
-    assert canvas._hires_image is not None
-    assert canvas._hires_key[0] == canvas._composite_cache.cacheKey()
+    assert canvas._hires.wanted("RGB")
+    canvas._hires.render()
+    assert canvas._hires.image is not None
+    assert canvas._hires.key[0] == canvas._composite_cache.cacheKey()
 
     canvas.zoom = 0.5
-    assert not canvas._hires_wanted("RGB")   # zoomed out: the composite is already sharp enough
+    assert not canvas._hires.wanted("RGB")   # zoomed out: the composite is already sharp enough
 
 
 def test_canvas_does_not_bother_without_vector_layers(main_window):
@@ -182,7 +182,7 @@ def test_canvas_does_not_bother_without_vector_layers(main_window):
     canvas = w._canvas
     canvas.zoom = 8.0
     canvas._recompute_composite()
-    assert not canvas._hires_wanted("RGB")
+    assert not canvas._hires.wanted("RGB")
 
 
 def test_masked_shape_stays_sharp_and_masked_in_render_view():
