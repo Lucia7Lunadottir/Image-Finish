@@ -751,7 +751,7 @@ class MainWindow(QMainWindow,
         from ui.layer_style_dialog import LayerStyleDialog
         dlg = LayerStyleDialog(layer, self._canvas_refresh, self)
         if dlg.exec():
-            self._push_history("Layer Styles")
+            self._push_history(tr("history.layer_styles"))
             self._refresh_layers()
         else:
             dlg.reject()
@@ -1110,76 +1110,94 @@ class MainWindow(QMainWindow,
         for i in range(self._doc_tabs.count()):
             self._doc_tabs.widget(i).bg_color = c
 
+    # Options-bar keys that are commands (buttons), not tool options: one
+    # method each instead of a chain of `if key == ...` in _on_opt_changed.
+    _OPTION_COMMANDS = {
+        "text_edit_cancel":    "_opt_cmd_text_edit_cancel",
+        "align_layer":         "_align_layer",
+        "reset_view_rotation": "_opt_cmd_reset_view_rotation",
+        "transform_params":    "_opt_cmd_transform_params",
+        "sampler_clear":       "_opt_cmd_sampler_clear",
+        "ruler_clear":         "_opt_cmd_ruler_clear",
+        "clear_slices":        "_opt_cmd_clear_slices",
+        "move_apply":          "_opt_cmd_move_apply",
+        "move_cancel":         "_opt_cmd_move_cancel",
+        "pen_action":          "_opt_cmd_pen_action",
+    }
+
+    def _opt_cmd_text_edit_cancel(self, _value):
+        self._cancel_text_edit()
+
+    def _opt_cmd_reset_view_rotation(self, _value):
+        self._canvas.reset_rotation()
+
+    def _opt_cmd_transform_params(self, params):
+        tool = self._canvas.active_tool
+        if hasattr(tool, "set_transform_params"):
+            tool.set_transform_params(self._document, params)
+            self._canvas_refresh()
+
+    def _opt_cmd_sampler_clear(self, _value):
+        tool = self._tools.get("ColorSampler")
+        if tool:
+            tool.markers.clear()
+        self._canvas_refresh()
+
+    def _opt_cmd_ruler_clear(self, _value):
+        tool = self._tools.get("Ruler")
+        if tool:
+            tool.clear()
+        self._canvas_refresh()
+
+    def _opt_cmd_clear_slices(self, _value):
+        if hasattr(self._document, "slices"):
+            self._document.slices.clear()
+            self._canvas_refresh()
+
+    def _opt_cmd_move_apply(self, _value):
+        self._commit_move_transform()
+
+    def _opt_cmd_move_cancel(self, _value):
+        tool = self._canvas.active_tool
+        if getattr(tool, "is_transforming", False):
+            tool.cancel_transform(self._document)
+            self._canvas_refresh()
+            self._opts_bar.update_tool_state(None)
+
+    def _opt_cmd_pen_action(self, action_name):
+        tool = self._canvas.active_tool
+        if not hasattr(tool, "perform_action"):
+            return
+        result = tool.perform_action(self._document, action_name, self._canvas.fg_color)
+        if result:
+            action, path = result
+            if action == "selection":
+                self._push_history(tr("history.make_selection"))
+                self._document.selection = path
+            elif action == "shape":
+                self._push_history(tr("history.new_vector_shape"))
+                self._new_shape_layer_from_path(path)
+        self._refresh_layers()
+        self._canvas_refresh()
+
+    def _new_shape_layer_from_path(self, path):
+        from core.layer import VectorLayer
+        doc = self._document
+        layer = doc.add_layer(doc.next_layer_name(VectorLayer, "layer.name.path"),
+                              doc.active_layer_index + 1, layer_cls=VectorLayer)
+        layer.vector_mask = QPainterPath(path)
+        layer.vector_mask_enabled = True
+        # Live geometry, not a one-time raster bake: render_into fills
+        # `vector_mask` fresh on every render, so the path stays exact
+        # instead of degrading like a pixel bake would under scale/rotate.
+        layer.path_style = {"fill_color": QColor(self._canvas.fg_color),
+                            "stroke_color": None, "stroke_width": 0.0}
+        layer.rebake_thumbnail()
+
     def _on_opt_changed(self, key: str, value):
-        if key == "text_edit_cancel":
-            self._cancel_text_edit()
-            return
-        if key == "align_layer":
-            self._align_layer(value)
-            return
-        if key == "reset_view_rotation":
-            self._canvas.reset_rotation()
-            return
-        if key == "transform_params":
-            tool = self._canvas.active_tool
-            if hasattr(tool, "set_transform_params"):
-                tool.set_transform_params(self._document, value)
-                self._canvas_refresh()
-            return
-        if key == "sampler_clear":
-            tool = self._tools.get("ColorSampler")
-            if tool: tool.markers.clear()
-            self._canvas_refresh()
-            return
-        if key == "ruler_clear":
-            tool = self._tools.get("Ruler")
-            if tool: tool.clear()
-            self._canvas_refresh()
-            return
-        if key == "clear_slices":
-            if hasattr(self._document, "slices"):
-                self._document.slices.clear()
-                self._canvas_refresh()
-            return
-        if key == "move_apply":
-            self._commit_move_transform()
-            return
-        if key == "move_cancel":
-            tool = self._canvas.active_tool
-            if hasattr(tool, "is_transforming") and tool.is_transforming:
-                tool.cancel_transform(self._document)
-                self._canvas_refresh()
-                self._opts_bar.update_tool_state(None)
-            return
-        if key == "pen_action":
-            tool = self._canvas.active_tool
-            if hasattr(tool, "perform_action"):
-                result = tool.perform_action(self._document, value, self._canvas.fg_color)
-                if result:
-                    action, path = result
-                    if action == "selection":
-                        self._push_history(tr("history.quick_mask"))
-                        self._document.selection = path
-                    elif action == "shape":
-                        self._push_history("New Vector Shape")
-                        from core.layer import VectorLayer
-                        new_layer = self._document.add_layer(
-                            self._document.next_layer_name(VectorLayer, "layer.name.path"),
-                            self._document.active_layer_index + 1, layer_cls=VectorLayer)
-                        new_layer.vector_mask = QPainterPath(path)
-                        new_layer.vector_mask_enabled = True
-                        # Live geometry, not a one-time raster bake: render_into
-                        # fills `vector_mask` fresh on every render, so the
-                        # path stays exact instead of degrading like a pixel
-                        # bake would under future scale/rotate.
-                        new_layer.path_style = {
-                            "fill_color": QColor(self._canvas.fg_color),
-                            "stroke_color": None,
-                            "stroke_width": 0.0,
-                        }
-                        new_layer.rebake_thumbnail()
-                self._refresh_layers()
-                self._canvas_refresh()
+        command = self._OPTION_COMMANDS.get(key)
+        if command is not None:
+            getattr(self, command)(value)
             return
         # Live-edits the active layer's existing shape, if there is one —
         # falls through regardless so tool_opts still updates below (the

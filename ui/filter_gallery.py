@@ -26,12 +26,13 @@ from dataclasses import dataclass, field, replace
 import numpy as np
 from PyQt6.QtCore import Qt, QPointF, QTimer
 from PyQt6.QtGui import QColor, QImage, QPen
-from PyQt6.QtWidgets import (QCheckBox, QComboBox, QDialog, QDialogButtonBox,
+from PyQt6.QtWidgets import (QCheckBox, QComboBox, QDialogButtonBox,
                              QGridLayout, QHBoxLayout, QLabel, QPushButton,
                              QSpinBox, QVBoxLayout, QWidget)
 
 from core.locale import tr
 from ui import theme
+from ui.base_dialog import BaseDialog
 from ui.adjustments_dialog import _JumpSlider
 from ui.preview_canvas_base import (DragCenterMixin, PreviewCanvasBase,
                                     init_live_preview_arrays, run_full_res_commit)
@@ -285,7 +286,7 @@ class GalleryCanvas(DragCenterMixin, PreviewCanvasBase):
 
 # ── the dialog ──────────────────────────────────────────────────────────────
 
-class FilterGalleryDialog(QDialog):
+class FilterGalleryDialog(BaseDialog):
     """A gallery subclass sets MODES (mode key -> FilterMode subclass) and
     GALLERY_TITLE_KEY (None: the window title is the filter's own name)."""
     MODES: dict = {}

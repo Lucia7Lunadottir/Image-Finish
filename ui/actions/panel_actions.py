@@ -94,7 +94,7 @@ class PanelActionsMixin:
     def _on_transform_changed(self, x: int, y: int):
         if not self._canvas:
             return
-        self._push_history("Move Layer")
+        self._push_history(tr("history.move_layer"))
         self._canvas_refresh()
         self._properties_panel.refresh(self._canvas)
 
@@ -108,7 +108,7 @@ class PanelActionsMixin:
         off = getattr(layer, "offset", QPoint(0, 0))
         lw = layer.image.width() if layer.image and not layer.image.isNull() else 0
         lh = layer.image.height() if layer.image and not layer.image.isNull() else 0
-        self._push_history("Align Layer")
+        self._push_history(tr("history.align_layer"))
         if direction == "left":
             layer.offset = QPoint(0, off.y())
         elif direction == "center_h":
@@ -165,7 +165,7 @@ class PanelActionsMixin:
         path = build_bezier_path(wp)
         if wp.get("closed"):
             path.closeSubpath()
-        self._push_history("Before Make Selection")
+        self._push_history(tr("history.make_selection"))
         self._document.selection = path
         self._canvas_refresh()
 
@@ -175,7 +175,7 @@ class PanelActionsMixin:
         wp = self._selected_path_dict()
         if not wp or not wp.get("nodes"):
             return
-        self._push_history("Before Fill Path")
+        self._push_history(tr("history.fill_path"))
         layer = self._document.get_active_layer()
         if layer:
             from PyQt6.QtGui import QPainter
@@ -197,7 +197,7 @@ class PanelActionsMixin:
         wp = self._selected_path_dict()
         if not wp or not wp.get("nodes"):
             return
-        self._push_history("Before Stroke Path")
+        self._push_history(tr("history.stroke_path"))
         layer = self._document.get_active_layer()
         if layer:
             from PyQt6.QtGui import QPainter, QPen
@@ -218,7 +218,7 @@ class PanelActionsMixin:
         kind, idx = self._paths_panel._selected_kind()
         if kind is None:
             return
-        self._push_history("Before Delete Path")
+        self._push_history(tr("history.delete_path"))
         if kind == "work":
             self._document.work_path = {"nodes": [], "closed": False}
         elif kind == "saved":
@@ -238,7 +238,7 @@ class PanelActionsMixin:
         if not wp or not wp.get("nodes"):
             return
         from core.history import clone_work_path
-        self._push_history("Before New Path")
+        self._push_history(tr("history.new_path"))
         saved = clone_work_path(wp)
         n = len(getattr(self._document, "saved_paths", [])) + 1
         saved["name"] = tr("paths.default_name", n=n) if tr("paths.default_name", n=n) != "paths.default_name" else f"Path {n}"
