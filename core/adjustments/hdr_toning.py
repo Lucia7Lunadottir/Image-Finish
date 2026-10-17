@@ -164,11 +164,7 @@ class HDRToningDialog(_AdjustDialog):
 
         for row in (self._radius, self._strength, self._gamma, self._detail):
             self._add_row(row)
-        self._seal(reset_fn=self._reset)
-
-    def _reset(self):
-        for row in (self._radius, self._strength, self._gamma, self._detail):
-            row.reset()
+        self._seal(reset_fn=self._reset_to_defaults)
 
     def _on_full_res_restored(self):
         """_orig_bgr/_orig_f/_orig_alpha and the radius-keyed blur cache are
@@ -187,25 +183,19 @@ class HDRToningDialog(_AdjustDialog):
         self._blur_radius = None
         self._blur_cache  = None
 
-    def _apply_preview(self):
-        if not self._np_ok:
-            # No numpy — delegate to standalone function (slow but correct)
-            self._layer.image = apply_hdr_toning(
-                self._orig_argb32,
-                radius   = int(self._radius.value()),
-                strength = self._strength.value() / 100.0,
-                gamma    = self._gamma.value(),
-                detail   = self._detail.value() / 100.0,
-            )
-            self._canvas_refresh()
-            return
+    def _render(self, src, p):
+        """Same result as the registry's apply_hdr_toning, but reuses the
+        arrays extracted from _orig_argb32 and the radius-keyed blur."""
+        radius   = int(p["radius"])
+        strength = p["strength"] / 100.0
+        gamma    = p["gamma"]
+        detail   = p["detail"] / 100.0
+        if not self._np_ok or src is not self._orig_argb32:
+            # No numpy — standalone function (slow but correct)
+            return apply_hdr_toning(src, radius=radius, strength=strength,
+                                    gamma=gamma, detail=detail)
 
         import numpy as np
-
-        radius   = int(self._radius.value())
-        strength = self._strength.value() / 100.0
-        gamma    = self._gamma.value()
-        detail   = self._detail.value() / 100.0
 
         # ── 1. Blur (cached by radius) ────────────────────────────────────
         if self._blur_radius != radius:
@@ -218,13 +208,12 @@ class HDRToningDialog(_AdjustDialog):
             np, self._orig_f, self._blur_cache, strength, gamma, detail)
 
         # ── 3. Write output (preserve alpha) ─────────────────────────────
-        h, w = self._orig_argb32.height(), self._orig_argb32.width()
+        h, w = src.height(), src.width()
         out = np.empty((h, w, 4), dtype=np.uint8)
         out[:, :, :3] = result_u8
         out[:, :,  3] = self._orig_alpha
-        
+
         new_img = QImage(w, h, QImage.Format.Format_ARGB32)
         import ctypes
         ctypes.memmove(int(new_img.bits()), out.ctypes.data, new_img.sizeInBytes())
-        self._layer.image = new_img.convertToFormat(QImage.Format.Format_ARGB32_Premultiplied)
-        self._canvas_refresh()
+        return new_img.convertToFormat(QImage.Format.Format_ARGB32_Premultiplied)

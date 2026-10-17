@@ -117,6 +117,9 @@ SAVED = {
     "posterize": {"levels": 7},
     "threshold": {"threshold": 77},
     "photo_filter": {"color": QColor(20, 200, 90), "density": 66, "preserve": False},
+    "channel_mixer": {"red": [60, 30, 10], "green": [0, 140, -40], "blue": [20, 0, 80],
+                      "monochrome": False},
+    "selective_color": {"ranges": {"Reds": [10, -20, 30, 0], "Neutrals": [0, 0, 0, 25]}},
     "curves": {"points": {"rgb": [(0, 0), (128, 170), (255, 255)], "r": [(0, 0), (255, 255)],
                           "g": [(0, 0), (255, 255)], "b": [(0, 0), (255, 255)]}},
 }
@@ -317,8 +320,11 @@ def test_match_color_offers_only_layers_with_pixels(main_window, mocked_dialogs,
     assert doc.layers[0].name not in seen["names"]
 
 
-def test_has_own_pixels(qapp):
-    from core.layer import RasterLayer, GroupLayer
-    assert RasterLayer("r", 2, 2).has_own_pixels
-    assert not AdjustmentLayer("a", 2, 2).has_own_pixels
-    assert not GroupLayer("g", 2, 2).has_own_pixels
+def test_pixel_access(qapp):
+    from core.layer import RasterLayer, GroupLayer, FillLayer, TextLayer, SmartObjectLayer
+    assert RasterLayer("r", 2, 2).pixel_access == "direct"
+    assert SmartObjectLayer("s", 2, 2).pixel_access == "direct"
+    assert TextLayer("t", 2, 2).pixel_access == "rasterize"
+    assert FillLayer("f", 2, 2).pixel_access == "rasterize"
+    assert AdjustmentLayer("a", 2, 2).pixel_access == "none"
+    assert GroupLayer("g", 2, 2).pixel_access == "none"

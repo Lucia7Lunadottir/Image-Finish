@@ -7,6 +7,7 @@ from PyQt6.QtGui import QImage
 
 from core.locale import tr
 from ui.adjustments_dialog import _AdjustDialog, _SliderRow, _to_argb32, _from_ba, _bits_ba
+from core.adjustments._widgets import _FSliderRow
 
 
 # ── numpy helpers ─────────────────────────────────────────────────────────────
@@ -103,27 +104,12 @@ class GaussianBlurDialog(_AdjustDialog):
 
     def __init__(self, layer, canvas_refresh, parent=None):
         super().__init__(tr("flt.gaussian.title"), layer, canvas_refresh, parent)
-        # Slider 1..2500 → displayed as value/10 = 0.1..250.0
-        self._radius = _SliderRow(tr("flt.radius_px"), 1, 2500, 10)
+        self._radius = self._bind("radius", _FSliderRow(tr("flt.radius_px"), 1, 2500, 10, 10.0, 1))
         self._add_row(self._radius)
-        self._seal(reset_fn=self._reset)
-        # Show one decimal place instead of the raw integer
-        self._radius._slider.valueChanged.connect(self._update_label)
-        self._update_label(self._radius.value())
+        self._seal(reset_fn=self._reset_to_defaults)
 
-    def _update_label(self, v: int):
-        self._radius._val_lbl.setText(f"{v / 10:.1f}")
-
-    def _reset(self):
-        self._radius.reset()
-        self._layer.image = self._original.copy()
-        self._canvas_refresh()
-
-    def _apply_preview(self):
-        self._layer.image = apply_gaussian_blur(
-            self._orig_argb32, self._radius.value() / 10.0
-        )
-        self._canvas_refresh()
+    def _render(self, src, p):
+        return apply_gaussian_blur(src, p["radius"])
 
 
 def apply_average(src: QImage) -> QImage:
@@ -172,18 +158,12 @@ def apply_box_blur(src: QImage, radius: int) -> QImage:
 class BoxBlurDialog(_AdjustDialog):
     def __init__(self, layer, canvas_refresh, parent=None):
         super().__init__(tr("flt.box.title"), layer, canvas_refresh, parent)
-        self._radius = _SliderRow(tr("flt.radius_px"), 1, 100, 5)
+        self._radius = self._bind("radius", _SliderRow(tr("flt.radius_px"), 1, 100, 5))
         self._add_row(self._radius)
-        self._seal(reset_fn=self._reset)
+        self._seal(reset_fn=self._reset_to_defaults)
 
-    def _reset(self):
-        self._radius.reset()
-        self._layer.image = self._original.copy()
-        self._canvas_refresh()
-
-    def _apply_preview(self):
-        self._layer.image = apply_box_blur(self._orig_argb32, self._radius.value())
-        self._canvas_refresh()
+    def _render(self, src, p):
+        return apply_box_blur(src, p["radius"])
 
 
 def apply_smart_blur(src: QImage, radius: int, threshold: int) -> QImage:
@@ -246,49 +226,27 @@ def apply_surface_blur(src: QImage, radius: int, threshold: int) -> QImage:
 class SurfaceBlurDialog(_AdjustDialog):
     def __init__(self, layer, canvas_refresh, parent=None):
         super().__init__(tr("flt.surface.title"), layer, canvas_refresh, parent)
-        self._radius    = _SliderRow(tr("flt.radius"),    1, 100, 5)
-        self._threshold = _SliderRow(tr("flt.threshold"), 1, 100, 15)
+        self._radius    = self._bind("radius", _SliderRow(tr("flt.radius"), 1, 100, 5))
+        self._threshold = self._bind("threshold", _SliderRow(tr("flt.threshold"), 1, 100, 15))
         self._add_row(self._radius)
         self._add_row(self._threshold)
-        self._seal(reset_fn=self._reset)
+        self._seal(reset_fn=self._reset_to_defaults)
 
-    def _reset(self):
-        self._radius.reset()
-        self._threshold.reset()
-        self._layer.image = self._original.copy()
-        self._canvas_refresh()
-
-    def _apply_preview(self):
-        self._layer.image = apply_surface_blur(
-            self._orig_argb32,
-            self._radius.value(),
-            self._threshold.value(),
-        )
-        self._canvas_refresh()
+    def _render(self, src, p):
+        return apply_surface_blur(src, p["radius"], p["threshold"])
 
 
 class SmartBlurDialog(_AdjustDialog):
     def __init__(self, layer, canvas_refresh, parent=None):
         super().__init__(tr("flt.smart.title"), layer, canvas_refresh, parent)
-        self._radius    = _SliderRow(tr("flt.radius"),    1, 100, 5)
-        self._threshold = _SliderRow(tr("flt.threshold"), 0, 100, 15)
+        self._radius    = self._bind("radius", _SliderRow(tr("flt.radius"), 1, 100, 5))
+        self._threshold = self._bind("threshold", _SliderRow(tr("flt.threshold"), 0, 100, 15))
         self._add_row(self._radius)
         self._add_row(self._threshold)
-        self._seal(reset_fn=self._reset)
+        self._seal(reset_fn=self._reset_to_defaults)
 
-    def _reset(self):
-        self._radius.reset()
-        self._threshold.reset()
-        self._layer.image = self._original.copy()
-        self._canvas_refresh()
-
-    def _apply_preview(self):
-        self._layer.image = apply_smart_blur(
-            self._orig_argb32,
-            self._radius.value(),
-            self._threshold.value(),
-        )
-        self._canvas_refresh()
+    def _render(self, src, p):
+        return apply_smart_blur(src, p["radius"], p["threshold"])
 
 
 _SHAPES = ("Circle", "Square", "Triangle", "Diamond")
@@ -349,32 +307,20 @@ class ShapeBlurDialog(_AdjustDialog):
         row = QHBoxLayout()
         lbl = QLabel(tr("flt.shape.shape"))
         lbl.setFixedWidth(90)
-        self._shape_combo = QComboBox()
-        self._shape_combo.addItems([tr(k) for k in _SHAPE_KEYS])
+        self._shape_combo = self._bind("shape", QComboBox())
+        for shape, key in zip(_SHAPES, _SHAPE_KEYS):
+            self._shape_combo.addItem(tr(key), shape)
         self._shape_combo.currentIndexChanged.connect(self._on_change)
         row.addWidget(lbl)
         row.addWidget(self._shape_combo, 1)
         self._vbox.addLayout(row)
 
-        self._radius = _SliderRow(tr("flt.radius"), 1, 100, 10)
+        self._radius = self._bind("radius", _SliderRow(tr("flt.radius"), 1, 100, 10))
         self._add_row(self._radius)
-        self._seal(reset_fn=self._reset)
+        self._seal(reset_fn=self._reset_to_defaults)
 
-    def _reset(self):
-        self._shape_combo.setCurrentIndex(0)
-        self._radius.reset()
-        self._layer.image = self._original.copy()
-        self._canvas_refresh()
-
-    def _apply_preview(self):
-        idx = self._shape_combo.currentIndex()
-        shape = _SHAPES[idx] if 0 <= idx < len(_SHAPES) else _SHAPES[0]
-        self._layer.image = apply_shape_blur(
-            self._orig_argb32,
-            self._radius.value(),
-            shape,
-        )
-        self._canvas_refresh()
+    def _render(self, src, p):
+        return apply_shape_blur(src, p["radius"], p["shape"] or _SHAPES[0])
 
 
 def _lens_kernel(r: int, curvature: int):
@@ -429,22 +375,11 @@ def apply_lens_blur(src: QImage, radius: int, curvature: int) -> QImage:
 class LensBlurDialog(_AdjustDialog):
     def __init__(self, layer, canvas_refresh, parent=None):
         super().__init__(tr("flt.lens.title"), layer, canvas_refresh, parent)
-        self._radius    = _SliderRow(tr("flt.radius"),         1, 100, 10)
-        self._curvature = _SliderRow(tr("flt.lens.curvature"), 0, 100, 50)
+        self._radius    = self._bind("radius", _SliderRow(tr("flt.radius"), 1, 100, 10))
+        self._curvature = self._bind("curvature", _SliderRow(tr("flt.lens.curvature"), 0, 100, 50))
         self._add_row(self._radius)
         self._add_row(self._curvature)
-        self._seal(reset_fn=self._reset)
+        self._seal(reset_fn=self._reset_to_defaults)
 
-    def _reset(self):
-        self._radius.reset()
-        self._curvature.reset()
-        self._layer.image = self._original.copy()
-        self._canvas_refresh()
-
-    def _apply_preview(self):
-        self._layer.image = apply_lens_blur(
-            self._orig_argb32,
-            self._radius.value(),
-            self._curvature.value(),
-        )
-        self._canvas_refresh()
+    def _render(self, src, p):
+        return apply_lens_blur(src, p["radius"], p["curvature"])

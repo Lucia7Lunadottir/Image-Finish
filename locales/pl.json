@@ -347,6 +347,9 @@
   "err.text_layer_no_draw": "To jest warstwa tekstowa. Rasteryzuj ją, aby móc rysować.",
   "err.smart_object_no_draw": "To jest obiekt inteligentny. Rasteryzuj go, aby móc rysować.",
 
+  "err.layer_no_pixels": "Niedostępne: warstwy dopasowania i grupy nie mają własnych pikseli.",
+  "dlg.rasterize.title": "Rasteryzować warstwę?",
+  "dlg.rasterize.text": "Warstwa „{name}” jest rysowana z danych (tekst, kształt lub wypełnienie), a to polecenie działa na pikselach. Zrasteryzować ją? Tekstu lub kształtu nie będzie można już edytować.",
   "title.untitled":  "ImageFinish — bez tytułu ({mode})",
   "title.with_file": "ImageFinish — {name} ({mode})",
   "title.canvas":    "ImageFinish — {w}×{h} ({mode})",

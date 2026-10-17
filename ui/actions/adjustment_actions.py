@@ -1,10 +1,12 @@
 from core.locale import tr
+from ui.actions.pixel_target import pixel_layer_for_edit
 
 
 class AdjustmentActionsMixin:
     def _show_adj_dialog(self, DialogClass, history_desc: str):
-        layer = self._document and self._document.get_active_layer()
-        if not layer or layer.image.isNull(): return
+        layer = pixel_layer_for_edit(self)
+        if layer is None:
+            return
         self._push_history(tr(history_desc), modified_index=self._document.active_layer_index)
         from ui.adjustments_dialog import build_adjustment_dialog
         dlg = build_adjustment_dialog(DialogClass, layer, self._canvas_refresh, self)
@@ -35,8 +37,8 @@ class AdjustmentActionsMixin:
         self._show_adj_dialog(HueSaturationDialog, "history.before_hs")
 
     def _invert(self):
-        layer = self._document and self._document.get_active_layer()
-        if not layer:
+        layer = pixel_layer_for_edit(self)
+        if layer is None:
             return
         from ui.adjustments_dialog import apply_invert
         self._push_history(tr("history.invert"), modified_index=self._document.active_layer_index)
@@ -72,15 +74,20 @@ class AdjustmentActionsMixin:
         self._show_adj_dialog(SelectiveColorDialog, "history.before_sel_color")
 
     def _match_color(self):
-        layer = self._document and self._document.get_active_layer()
-        if not layer or layer.image.isNull():
+        layer = pixel_layer_for_edit(self)
+        if layer is None:
             return
         from ui.more_adjustments import MatchColorDialog
-        # Only layers with pictures of their own can be a colour source —
-        # not adjustment layers or groups/artboards.
-        sources = [(lyr.name, lyr.image) for lyr in self._document.layers
-                   if lyr is not layer and lyr.has_own_pixels
-                   and lyr.image is not None and not lyr.image.isNull()]
+        # Any layer that looks like something can be a colour source (fill
+        # and shape layers as rendered) — not adjustment layers or groups.
+        doc = self._document
+        sources = []
+        for lyr in doc.layers:
+            if lyr is layer or lyr.pixel_access == "none":
+                continue
+            img = lyr.content_image(doc)
+            if img is not None and not img.isNull():
+                sources.append((lyr.name, img))
         self._push_history(tr("history.before_match_color"), modified_index=self._document.active_layer_index)
         MatchColorDialog(layer, sources, self._canvas_refresh, self).exec()
 
@@ -105,8 +112,8 @@ class AdjustmentActionsMixin:
         self._show_adj_dialog(ColorLookupDialog, "history.before_lookup")
 
     def _equalize(self):
-        layer = self._document and self._document.get_active_layer()
-        if not layer:
+        layer = pixel_layer_for_edit(self)
+        if layer is None:
             return
         from ui.more_adjustments import apply_equalize
         self._push_history(tr("history.equalize"), modified_index=self._document.active_layer_index)

@@ -14,6 +14,8 @@ _ADJUSTMENT_LAYER_DIALOGS = {
     "black_white":  "core.adjustments.black_white:BlackWhiteDialog",
     "posterize":    "core.adjustments.posterize:PosterizeDialog",
     "threshold":    "core.adjustments.threshold:ThresholdDialog",
+    "channel_mixer":   "core.adjustments.channel_mixer:ChannelMixerDialog",
+    "selective_color": "core.adjustments.selective_color:SelectiveColorDialog",
     "photo_filter": "core.adjustments.photo_filter:PhotoFilterDialog",
     "gradient_map": "core.adjustments.gradient_map:GradientMapDialog",
     "color_lookup": "core.adjustments.color_lookup:ColorLookupDialog",

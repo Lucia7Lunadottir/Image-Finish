@@ -1,11 +1,12 @@
 from core.locale import tr
+from ui.actions.pixel_target import pixel_layer_for_edit
 from ui.document_controller import require_document
 
 
 class FilterActionsMixin:
     def _blur_average(self):
-        layer = self._document and self._document.get_active_layer()
-        if not layer:
+        layer = pixel_layer_for_edit(self)
+        if layer is None:
             return
         from core.filters.blur_filters import apply_average
         self._push_history(tr("history.average"), modified_index=self._document.active_layer_index)
@@ -13,8 +14,8 @@ class FilterActionsMixin:
         self._canvas_refresh()
 
     def _blur_simple(self):
-        layer = self._document and self._document.get_active_layer()
-        if not layer:
+        layer = pixel_layer_for_edit(self)
+        if layer is None:
             return
         from core.filters.blur_filters import apply_blur
         self._push_history(tr("history.blur"), modified_index=self._document.active_layer_index)
@@ -22,8 +23,8 @@ class FilterActionsMixin:
         self._canvas_refresh()
 
     def _blur_more(self):
-        layer = self._document and self._document.get_active_layer()
-        if not layer:
+        layer = pixel_layer_for_edit(self)
+        if layer is None:
             return
         from core.filters.blur_filters import apply_blur_more
         self._push_history(tr("history.blur_more"), modified_index=self._document.active_layer_index)
@@ -31,64 +32,64 @@ class FilterActionsMixin:
         self._canvas_refresh()
 
     def _box_blur(self):
-        layer = self._document and self._document.get_active_layer()
-        if not layer:
+        layer = pixel_layer_for_edit(self)
+        if layer is None:
             return
         from core.filters.blur_filters import BoxBlurDialog
         self._push_history(tr("history.before_box_blur"), modified_index=self._document.active_layer_index)
         BoxBlurDialog(layer, self._canvas_refresh, self).exec()
 
     def _gaussian_blur(self):
-        layer = self._document and self._document.get_active_layer()
-        if not layer:
+        layer = pixel_layer_for_edit(self)
+        if layer is None:
             return
         from core.filters.blur_filters import GaussianBlurDialog
         self._push_history(tr("history.before_gaussian"), modified_index=self._document.active_layer_index)
         GaussianBlurDialog(layer, self._canvas_refresh, self).exec()
 
     def _motion_blur(self):
-        layer = self._document and self._document.get_active_layer()
-        if not layer:
+        layer = pixel_layer_for_edit(self)
+        if layer is None:
             return
         from core.filters.motion_blur import MotionBlurDialog
         self._push_history(tr("history.before_motion"), modified_index=self._document.active_layer_index)
         MotionBlurDialog(layer, self._canvas_refresh, self).exec()
 
     def _radial_blur(self):
-        layer = self._document and self._document.get_active_layer()
-        if not layer:
+        layer = pixel_layer_for_edit(self)
+        if layer is None:
             return
         from core.filters.radial_blur import RadialBlurDialog
         self._push_history(tr("history.before_radial"), modified_index=self._document.active_layer_index)
         RadialBlurDialog(layer, self._canvas_refresh, self).exec()
 
     def _smart_blur(self):
-        layer = self._document and self._document.get_active_layer()
-        if not layer:
+        layer = pixel_layer_for_edit(self)
+        if layer is None:
             return
         from core.filters.blur_filters import SmartBlurDialog
         self._push_history(tr("history.before_smart"), modified_index=self._document.active_layer_index)
         SmartBlurDialog(layer, self._canvas_refresh, self).exec()
 
     def _surface_blur(self):
-        layer = self._document and self._document.get_active_layer()
-        if not layer:
+        layer = pixel_layer_for_edit(self)
+        if layer is None:
             return
         from core.filters.blur_filters import SurfaceBlurDialog
         self._push_history(tr("history.before_surface"), modified_index=self._document.active_layer_index)
         SurfaceBlurDialog(layer, self._canvas_refresh, self).exec()
 
     def _shape_blur(self):
-        layer = self._document and self._document.get_active_layer()
-        if not layer:
+        layer = pixel_layer_for_edit(self)
+        if layer is None:
             return
         from core.filters.blur_filters import ShapeBlurDialog
         self._push_history(tr("history.before_shape"), modified_index=self._document.active_layer_index)
         ShapeBlurDialog(layer, self._canvas_refresh, self).exec()
 
     def _lens_blur(self):
-        layer = self._document and self._document.get_active_layer()
-        if not layer:
+        layer = pixel_layer_for_edit(self)
+        if layer is None:
             return
         from core.filters.blur_filters import LensBlurDialog
         self._push_history(tr("history.before_lens"), modified_index=self._document.active_layer_index)
@@ -98,8 +99,8 @@ class FilterActionsMixin:
 
     @require_document
     def _open_blur_gallery(self, mode: str):
-        layer = self._document.get_active_layer()
-        if not layer or layer.image.isNull() or getattr(layer, "layer_type", "raster") not in ("raster", "smart_object"):
+        layer = pixel_layer_for_edit(self)
+        if layer is None:
             return
 
         pre_state = self._make_history_state(tr("menu.blur_gallery") + f" ({mode})", modified_index=self._document.active_layer_index)
@@ -121,8 +122,8 @@ class FilterActionsMixin:
 
     @require_document
     def _open_specific_filter(self, mode: str):
-        layer = self._document.get_active_layer()
-        if not layer or layer.image.isNull() or getattr(layer, "layer_type", "raster") not in ("raster", "smart_object"):
+        layer = pixel_layer_for_edit(self)
+        if layer is None:
             return
 
         pre_state = self._make_history_state(tr(f"menu.filter.{mode}").replace('…', ''), modified_index=self._document.active_layer_index)
@@ -138,8 +139,8 @@ class FilterActionsMixin:
 
     @require_document
     def _open_render(self, mode: str):
-        layer = self._document.get_active_layer()
-        if not layer or layer.image.isNull() or getattr(layer, "layer_type", "raster") not in ("raster", "smart_object"):
+        layer = pixel_layer_for_edit(self)
+        if layer is None:
             return
 
         pre_state = self._make_history_state(tr(f"menu.render.{mode}").replace('…', ''), modified_index=self._document.active_layer_index)
@@ -155,8 +156,8 @@ class FilterActionsMixin:
 
     @require_document
     def _open_sharpen(self, mode: str):
-        layer = self._document.get_active_layer()
-        if not layer or layer.image.isNull() or getattr(layer, "layer_type", "raster") not in ("raster", "smart_object"):
+        layer = pixel_layer_for_edit(self)
+        if layer is None:
             return
 
         pre_state = self._make_history_state(tr(f"menu.sharpen.{mode}").replace('…', ''), modified_index=self._document.active_layer_index)
@@ -172,8 +173,8 @@ class FilterActionsMixin:
 
     @require_document
     def _open_stylize(self, mode: str):
-        layer = self._document.get_active_layer()
-        if not layer or layer.image.isNull() or getattr(layer, "layer_type", "raster") not in ("raster", "smart_object"):
+        layer = pixel_layer_for_edit(self)
+        if layer is None:
             return
 
         pre_state = self._make_history_state(tr(f"menu.stylize.{mode}").replace('…', ''), modified_index=self._document.active_layer_index)
@@ -189,8 +190,8 @@ class FilterActionsMixin:
 
     @require_document
     def _open_other(self, mode: str):
-        layer = self._document.get_active_layer()
-        if not layer or layer.image.isNull() or getattr(layer, "layer_type", "raster") not in ("raster", "smart_object"):
+        layer = pixel_layer_for_edit(self)
+        if layer is None:
             return
 
         pre_state = self._make_history_state(tr(f"menu.other.{mode}").replace('…', ''), modified_index=self._document.active_layer_index)
@@ -206,8 +207,8 @@ class FilterActionsMixin:
 
     @require_document
     def _open_pixelate(self, mode: str):
-        layer = self._document.get_active_layer()
-        if not layer or layer.image.isNull() or getattr(layer, "layer_type", "raster") not in ("raster", "smart_object"):
+        layer = pixel_layer_for_edit(self)
+        if layer is None:
             return
 
         pre_state = self._make_history_state(tr(f"menu.pixelate.{mode}").replace('…', ''), modified_index=self._document.active_layer_index)
@@ -223,8 +224,8 @@ class FilterActionsMixin:
 
     @require_document
     def _open_noise(self, mode: str):
-        layer = self._document.get_active_layer()
-        if not layer or layer.image.isNull() or getattr(layer, "layer_type", "raster") not in ("raster", "smart_object"):
+        layer = pixel_layer_for_edit(self)
+        if layer is None:
             return
 
         desc_key = "menu.noise.add"
@@ -245,8 +246,8 @@ class FilterActionsMixin:
 
     @require_document
     def _open_distort(self, mode: str):
-        layer = self._document.get_active_layer()
-        if not layer or layer.image.isNull() or getattr(layer, "layer_type", "raster") not in ("raster", "smart_object"):
+        layer = pixel_layer_for_edit(self)
+        if layer is None:
             return
 
         pre_state = self._make_history_state(tr(f"menu.distort.{mode}"), modified_index=self._document.active_layer_index)

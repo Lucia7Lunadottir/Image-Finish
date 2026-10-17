@@ -101,22 +101,11 @@ class MotionBlurDialog(_AdjustDialog):
 
     def __init__(self, layer, canvas_refresh, parent=None):
         super().__init__(tr("flt.motion.title"), layer, canvas_refresh, parent)
-        self._angle    = _SliderRow(tr("flt.motion.angle"),    0, 360, 0)
-        self._strength = _SliderRow(tr("flt.motion.strength"), 1, 999, 10)
+        self._angle    = self._bind("angle", _SliderRow(tr("flt.motion.angle"), 0, 360, 0))
+        self._strength = self._bind("strength", _SliderRow(tr("flt.motion.strength"), 1, 999, 10))
         self._add_row(self._angle)
         self._add_row(self._strength)
-        self._seal(reset_fn=self._reset)
+        self._seal(reset_fn=self._reset_to_defaults)
 
-    def _reset(self):
-        self._angle.reset()
-        self._strength.reset()
-        self._layer.image = self._original.copy()
-        self._canvas_refresh()
-
-    def _apply_preview(self):
-        self._layer.image = apply_motion_blur(
-            self._orig_argb32,
-            self._angle.value(),
-            self._strength.value(),
-        )
-        self._canvas_refresh()
+    def _render(self, src, p):
+        return apply_motion_blur(src, p["angle"], p["strength"])

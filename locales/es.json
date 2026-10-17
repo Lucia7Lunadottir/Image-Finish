@@ -347,6 +347,9 @@
   "err.text_layer_no_draw": "Esta es una capa de texto. Rasterícela para dibujar.",
   "err.smart_object_no_draw": "Este es un objeto inteligente. Rasterícelo para dibujar.",
 
+  "err.layer_no_pixels": "No disponible: las capas de ajuste y los grupos no tienen píxeles propios.",
+  "dlg.rasterize.title": "¿Rasterizar capa?",
+  "dlg.rasterize.text": "La capa «{name}» se dibuja a partir de datos (texto, forma o relleno) y este comando trabaja con píxeles. ¿Rasterizarla? El texto o la forma dejarán de ser editables.",
   "title.untitled":  "ImageFinish — sin título ({mode})",
   "title.with_file": "ImageFinish — {name} ({mode})",
   "title.canvas":    "ImageFinish — {w}×{h} ({mode})",

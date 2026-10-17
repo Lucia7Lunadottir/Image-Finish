@@ -21,10 +21,10 @@ def _bilinear_sample_all(all_chs, rows, cols, h, w):
     c1 = np.clip(c0 + 1, 0, w - 1)
     dr = (rows - np.floor(rows))[np.newaxis, :, :]   # (1, H, W)
     dc = (cols - np.floor(cols))[np.newaxis, :, :]   # (1, H, W)
-    # all_chs[:, r0, c0] → (3, H, W) via advanced indexing
+    # all_chs[:, r0, c0] → (C, H, W) via advanced indexing
     top    = all_chs[:, r0, c0] * (1 - dc) + all_chs[:, r0, c1] * dc
     bottom = all_chs[:, r1, c0] * (1 - dc) + all_chs[:, r1, c1] * dc
-    return (top * (1 - dr) + bottom * dr).transpose(1, 2, 0)  # (H, W, 3)
+    return (top * (1 - dr) + bottom * dr).transpose(1, 2, 0)  # (H, W, C)
 
 
 # ── core algorithms ───────────────────────────────────────────────────────────
@@ -64,11 +64,13 @@ def _apply_zoom_np(arr, amount: int):
     y_g, x_g = np.mgrid[0:h, 0:w]
     rx = x_g.astype(np.float32) - cx
     ry = y_g.astype(np.float32) - cy
-    all_chs = np.stack([arr[:, :, c].astype(np.float32) for c in range(3)])  # (3,H,W) once
+    # All four channels, like Spin: the caller writes back a (H, W, 4) array
+    # (with 3 here, every Zoom blur raised a broadcast ValueError).
+    all_chs = np.stack([arr[:, :, c].astype(np.float32) for c in range(4)])  # (4,H,W) once
 
     t_vals = np.linspace(1.0 - max_scale, 1.0, n)
 
-    acc = np.zeros((h, w, 3), dtype=np.float32)
+    acc = np.zeros((h, w, 4), dtype=np.float32)
     for t in t_vals:
         sx = np.clip(t * rx + cx, 0, w - 1)
         sy = np.clip(t * ry + cy, 0, h - 1)
@@ -114,29 +116,17 @@ class RadialBlurDialog(_AdjustDialog):
         type_row = QHBoxLayout()
         lbl = QLabel(tr("flt.radial.type"))
         lbl.setFixedWidth(90)
-        self._type_combo = QComboBox()
-        self._type_combo.addItems([tr(k) for k in _RADIAL_MODE_KEYS])
+        self._type_combo = self._bind("mode", QComboBox())
+        for mode, key in zip(_RADIAL_MODES, _RADIAL_MODE_KEYS):
+            self._type_combo.addItem(tr(key), mode)
         self._type_combo.currentIndexChanged.connect(self._on_change)
         type_row.addWidget(lbl)
         type_row.addWidget(self._type_combo, 1)
         self._vbox.addLayout(type_row)
 
-        self._amount = _SliderRow(tr("flt.amount"), 1, 100, 10)
+        self._amount = self._bind("amount", _SliderRow(tr("flt.amount"), 1, 100, 10))
         self._add_row(self._amount)
-        self._seal(reset_fn=self._reset)
+        self._seal(reset_fn=self._reset_to_defaults)
 
-    def _reset(self):
-        self._type_combo.setCurrentIndex(0)
-        self._amount.reset()
-        self._layer.image = self._original.copy()
-        self._canvas_refresh()
-
-    def _apply_preview(self):
-        idx = self._type_combo.currentIndex()
-        mode = _RADIAL_MODES[idx] if 0 <= idx < len(_RADIAL_MODES) else _RADIAL_MODES[0]
-        self._layer.image = apply_radial_blur(
-            self._orig_argb32,
-            mode,
-            self._amount.value(),
-        )
-        self._canvas_refresh()
+    def _render(self, src, p):
+        return apply_radial_blur(src, p["mode"] or _RADIAL_MODES[0], p["amount"])

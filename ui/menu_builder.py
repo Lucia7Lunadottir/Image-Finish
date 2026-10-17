@@ -158,6 +158,8 @@ def build_menu_bar(win) -> None:
     win._act(adj_m, "menu.black_white",  lambda: win._new_adj_layer("black_white"))
     win._act(adj_m, "menu.posterize",    lambda: win._new_adj_layer("posterize"))
     win._act(adj_m, "menu.threshold",    lambda: win._new_adj_layer("threshold"))
+    win._act(adj_m, "menu.channel_mixer",   lambda: win._new_adj_layer("channel_mixer"))
+    win._act(adj_m, "menu.selective_color", lambda: win._new_adj_layer("selective_color"))
     win._act(adj_m, "menu.photo_filter", lambda: win._new_adj_layer("photo_filter"))
     win._act(adj_m, "menu.gradient_map", lambda: win._new_adj_layer("gradient_map"))
     win._act(adj_m, "menu.color_lookup", lambda: win._new_adj_layer("color_lookup"))

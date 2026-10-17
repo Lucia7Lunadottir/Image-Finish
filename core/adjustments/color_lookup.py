@@ -199,7 +199,7 @@ class ColorLookupDialog(_AdjustDialog):
         self._intensity = self._bind("intensity", _SliderRow(tr("adj.color_lookup.intensity"), 0, 100, 100))
         self._add_row(self._intensity)
 
-        self._seal(reset_fn=self._do_reset)
+        self._seal(reset_fn=self._reset_to_defaults)
 
     # ── helpers ───────────────────────────────────────────────────────────────
 
@@ -220,14 +220,6 @@ class ColorLookupDialog(_AdjustDialog):
         self._file_lbl.setStyleSheet("color: #a6e3a1; font-size: 11px;")
         self._on_change()
 
-    def _do_reset(self):
-        self._timer.stop()
-        self._lut = None
-        self._file_lbl.setText(tr("adj.color_lookup.no_file"))
-        self._file_lbl.setStyleSheet("color: #7f849c; font-size: 11px;")
-        self._intensity.reset()
-        self._apply_preview()
-
     # The loaded table isn't a control, so it's added to the bound values.
     def adjustment_data(self) -> dict:
         d = super().adjustment_data()
@@ -239,3 +231,6 @@ class ColorLookupDialog(_AdjustDialog):
         if self._lut:
             self._file_lbl.setText(tr("adj.color_lookup.loaded"))
             self._file_lbl.setStyleSheet("color: #a6e3a1; font-size: 11px;")
+        else:
+            self._file_lbl.setText(tr("adj.color_lookup.no_file"))
+            self._file_lbl.setStyleSheet("color: #7f849c; font-size: 11px;")

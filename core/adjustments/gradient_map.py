@@ -56,28 +56,26 @@ class GradientMapDialog(_AdjustDialog):
         self._swatch.setToolTip(tr("opts.gradient.edit_tip"))
         self._swatch.clicked.connect(self._edit_gradient)
         row.addWidget(self._swatch, 1)
-        self._reverse = QCheckBox(tr("gradient_editor.reverse"))
+        self._reverse = self._bind("reverse", QCheckBox(tr("gradient_editor.reverse")))
         self._reverse.toggled.connect(lambda _v: self._on_change())
         row.addWidget(self._reverse)
         self._vbox.addLayout(row)
 
-        self._seal(reset_fn=self._do_reset)
+        self._seal(reset_fn=self._reset_to_defaults)
         self._sync_swatch()
 
-    # ── adjustment-layer data (explicit, not scraped from widgets) ────
+    # The edited gradient isn't a control, so it's added to the bound values
+    # ("reverse" is the checkbox).
     def adjustment_data(self) -> dict:
-        return {"type": "gradient_map", "gradient": self._gradient.to_dict(),
-                "reverse": self._reverse.isChecked()}
+        d = super().adjustment_data()
+        d["gradient"] = self._gradient.to_dict()
+        return d
 
-    def load_adjustment_data(self, d: dict):
-        g = gradient_map_from_data(d)
-        self._reverse.blockSignals(True)
-        self._reverse.setChecked(g.reverse)
-        self._reverse.blockSignals(False)
-        g.reverse = False
+    def _after_load(self, params: dict):
+        g = gradient_map_from_data(params)
+        g.reverse = False           # kept on the checkbox, not the gradient
         self._gradient = g
         self._sync_swatch()
-        self._apply_preview()
 
     # ── UI ────────────────────────────────────────────────────────────
     def _current(self) -> Gradient:
@@ -105,13 +103,3 @@ class GradientMapDialog(_AdjustDialog):
         self._sync_swatch()
         super()._on_change()
 
-    def _do_reset(self):
-        self._timer.stop()
-        self._gradient = Gradient.two_color(QColor(0, 0, 0), QColor(255, 255, 255))
-        self._reverse.setChecked(False)
-        self._sync_swatch()
-        self._apply_preview()
-
-    def _apply_preview(self):
-        self._layer.image = apply_gradient_map(self._orig_argb32, self._current())
-        self._canvas_refresh()

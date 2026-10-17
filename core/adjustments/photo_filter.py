@@ -1,9 +1,10 @@
 from PyQt6.QtWidgets import QHBoxLayout, QLabel, QCheckBox
-from PyQt6.QtGui import QImage, QColor
+from PyQt6.QtGui import QImage
 
 from core.locale import tr
 from ui.adjustments_dialog import _to_argb32, _in_place_arr, _AdjustDialog, _SliderRow
 from core.adjustments._widgets import _ColorButton
+from core.adjustments.registry import get_kind
 
 
 def apply_photo_filter(src: QImage, r: int, g: int, b: int,
@@ -64,38 +65,28 @@ def apply_photo_filter(src: QImage, r: int, g: int, b: int,
 
 class PhotoFilterDialog(_AdjustDialog):
     ADJUSTMENT_TYPE = "photo_filter"
-    _DEFAULT_COLOR   = QColor(235, 115, 25)   # warm Kodak orange
-    _DEFAULT_DENSITY = 25
 
     def __init__(self, layer, canvas_refresh, parent=None):
         super().__init__(tr("adj.photo_filter.title"), layer, canvas_refresh, parent)
+        defaults = get_kind(self.ADJUSTMENT_TYPE).defaults()
 
         color_row = QHBoxLayout()
         color_lbl = QLabel(tr("adj.photo_filter.color"))
         color_lbl.setFixedWidth(90)
-        self._color_btn = self._bind("color", _ColorButton(self._DEFAULT_COLOR))
+        self._color_btn = self._bind("color", _ColorButton(defaults["color"]))
         self._color_btn.colorChanged.connect(self._on_change)
         color_row.addWidget(color_lbl)
         color_row.addWidget(self._color_btn)
         color_row.addStretch()
         self._vbox.addLayout(color_row)
 
-        self._density = self._bind("density", _SliderRow(tr("adj.photo_filter.density"), 1, 100, self._DEFAULT_DENSITY))
+        self._density = self._bind("density", _SliderRow(tr("adj.photo_filter.density"),
+                                                         1, 100, defaults["density"]))
         self._add_row(self._density)
 
         self._preserve = self._bind("preserve", QCheckBox(tr("adj.photo_filter.preserve")))
-        self._preserve.setChecked(True)
+        self._preserve.setChecked(defaults["preserve"])
         self._preserve.stateChanged.connect(self._on_change)
         self._vbox.addWidget(self._preserve)
 
-        self._seal(reset_fn=self._do_reset)
-
-    def _do_reset(self):
-        self._timer.stop()
-        self._color_btn.set_color(self._DEFAULT_COLOR)
-        self._density.reset()
-        self._preserve.blockSignals(True)
-        self._preserve.setChecked(True)
-        self._preserve.blockSignals(False)
-        self._apply_preview()
-
+        self._seal(reset_fn=self._reset_to_defaults)

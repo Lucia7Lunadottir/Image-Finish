@@ -103,15 +103,24 @@ class Layer:
     # no base to clip against" gate, which only makes sense for pixel layers.
     _is_container = False
 
-    # `_draws_own_pixels`: False for layers whose `image` is not their
-    # content — adjustment layers re-grade what's below them. Together with
-    # `_is_container` it answers "can this layer's image be used as a
-    # picture" (e.g. a Match Color source).
-    _draws_own_pixels = True
+    # `_PIXEL_ACCESS`: can pixel commands (filters, Image > Adjustments)
+    # work on this layer's `image`?
+    #   "direct"    — yes, `image` is what the layer shows (raster, smart
+    #                 object, frame);
+    #   "rasterize" — the layer is drawn from data (text, shapes, fill) and
+    #                 `image` is only a baked copy, so an edit there would
+    #                 never show: it has to be rasterized first;
+    #   "none"      — no pixels of its own (adjustment layers, containers).
+    _PIXEL_ACCESS = "direct"
 
     @property
-    def has_own_pixels(self) -> bool:
-        return self._draws_own_pixels and not self._is_container
+    def pixel_access(self) -> str:
+        return "none" if self._is_container else self._PIXEL_ACCESS
+
+    def content_image(self, document) -> QImage:
+        """What the layer looks like, as pixels at its own size/offset —
+        also for layers drawn from data (fill layers render on demand)."""
+        return self._get_source_image(document)
 
     # `_move_tool_uniform_scale_only`: True forbids MoveTool free (per-axis)
     # resize — edge handles are hidden and corner handles always scale with
@@ -489,6 +498,7 @@ def transform_shape_rect(rect: QRectF, angle: float, transform) -> tuple[QRectF,
 
 class LiveRenderedLayer(Layer):
     _live_edit_hidden = False   # class default: clones made via __new__ skip __init__
+    _PIXEL_ACCESS = "rasterize"
 
     """A layer whose pixels are a rendering of data (shape geometry, text)
     rather than stored pixels. Subclasses implement `has_live_content()`,
@@ -1040,7 +1050,7 @@ class VectorLayer(LiveRenderedLayer):
 
 class AdjustmentLayer(Layer):
     _LAYER_TAG = "adjustment"
-    _draws_own_pixels = False
+    _PIXEL_ACCESS = "none"
 
     def __init__(self, name: str, width: int, height: int, fill_color: QColor = None):
         super().__init__(name, width, height, fill_color)
@@ -1171,6 +1181,7 @@ def _resample_coverage(frac, view_transform, width: int, height: int, smooth: bo
 
 class FillLayer(Layer):
     _LAYER_TAG = "fill"
+    _PIXEL_ACCESS = "rasterize"
 
     def __init__(self, name: str, width: int, height: int, fill_color: QColor = None):
         super().__init__(name, width, height, fill_color)

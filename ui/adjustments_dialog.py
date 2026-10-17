@@ -353,6 +353,8 @@ class _AdjustDialog(BaseDialog):
         self._timer.setInterval(self._DEBOUNCE_MS)
         self._timer.timeout.connect(self._apply_preview)
         self._bindings: dict = {}
+        self._initial_data: dict = {}
+        self._preview_stale = True
         # Parameters captured on the GUI thread for the full-resolution
         # apply, which runs on a worker thread and must not read widgets.
         self._frozen_data = None
@@ -393,30 +395,55 @@ class _AdjustDialog(BaseDialog):
             reset_btn.clicked.connect(reset_fn)
             self._btns.addButton(reset_btn, QDialogButtonBox.ButtonRole.ResetRole)
         self._vbox.addWidget(self._btns)
+        # The controls' construction values are the defaults of dialogs that
+        # aren't in the adjustment registry (the filters).
+        self._initial_data = self.adjustment_data()
+        # Show the effect as soon as the dialog opens (as Photoshop does) —
+        # otherwise the canvas shows the untouched layer while OK applies
+        # the default settings.
+        self._preview_stale = True
+        self._timer.start()
 
     # ── parameters: explicit widget <-> key bindings ─────────────────
-    # A dialog declares `ADJUSTMENT_TYPE` and binds each control to its
-    # parameter key (core/adjustments/registry.py). From that alone the
-    # base class saves the adjustment layer's data, restores it when the
-    # layer is re-opened, and renders the preview through the same
-    # AdjustmentKind.apply as the layer itself.
+    # A dialog binds each control to its parameter key with `_bind` and
+    # renders from a parameter dict in `_render(src, params)` — never from
+    # its widgets, because the final full-resolution pass runs on a worker
+    # thread with the parameters frozen on the GUI thread (see accept()).
+    # Dialogs that declare `ADJUSTMENT_TYPE` get `_render`, defaults and
+    # old-data handling from core/adjustments/registry.py, so the preview,
+    # Image > Adjustments and the adjustment layer all use one
+    # AdjustmentKind.apply.
     ADJUSTMENT_TYPE: str | None = None
 
     def _bind(self, key: str, widget):
         self._bindings[key] = widget
         return widget
 
+    def _kind(self):
+        from core.adjustments.registry import get_kind
+        return get_kind(self.ADJUSTMENT_TYPE) if self.ADJUSTMENT_TYPE else None
+
     def adjustment_data(self) -> dict:
         d = {"type": self.ADJUSTMENT_TYPE}
         d.update({k: _read_control(w) for k, w in self._bindings.items()})
         return d
 
+    def _normalize(self, data: dict) -> dict:
+        kind = self._kind()
+        return kind.normalize(data) if kind is not None else dict(data)
+
+    def _params(self) -> dict:
+        """The parameters to render with: frozen ones during the final
+        full-resolution pass, the controls' current values otherwise."""
+        data = self._frozen_data if self._frozen_data is not None else self.adjustment_data()
+        return self._normalize(data)
+
+    def _defaults(self) -> dict:
+        kind = self._kind()
+        return kind.defaults() if kind is not None else dict(self._initial_data)
+
     def load_adjustment_data(self, data: dict):
-        from core.adjustments.registry import get_kind
-        kind = get_kind(self.ADJUSTMENT_TYPE)
-        if kind is None:
-            return
-        params = kind.normalize(data)
+        params = self._normalize(data)
         for k, w in self._bindings.items():
             if k in params:
                 _write_control(w, params[k])
@@ -427,12 +454,11 @@ class _AdjustDialog(BaseDialog):
         """Hook for parameters that aren't plain bound controls."""
 
     def _reset_to_defaults(self):
-        """"Reset" button: the registered defaults, through the same path
-        that restores a saved layer — no per-dialog list of widgets to
-        reset by hand (and forget one of)."""
-        from core.adjustments.registry import get_kind
+        """"Reset" button: the defaults, through the same path that
+        restores a saved layer — no per-dialog list of widgets to reset by
+        hand (and forget one of)."""
         self._timer.stop()
-        self.load_adjustment_data(get_kind(self.ADJUSTMENT_TYPE).defaults())
+        self.load_adjustment_data(self._defaults())
         if getattr(self, "_is_adj_layer", False):
             self._layer.adjustment_data = self.adjustment_data()
 
@@ -440,15 +466,18 @@ class _AdjustDialog(BaseDialog):
         """Slider moved — (re)start debounce timer."""
         if getattr(self, "_is_adj_layer", False):
             self._layer.adjustment_data = self.adjustment_data()
+        self._preview_stale = True
         self._timer.start()
 
+    def _render(self, src: QImage, params: dict) -> QImage:
+        """The effect itself: pure function of the source image and the
+        parameter dict (no widget access — may run on a worker thread).
+        Registered adjustments use their AdjustmentKind; filters override."""
+        return self._kind().apply(src, params)
+
     def _apply_preview(self):
-        """Default preview: the registered adjustment, applied with the
-        bound controls' values — exactly what the adjustment layer renders."""
-        from core.adjustments.registry import get_kind
-        kind = get_kind(self.ADJUSTMENT_TYPE)
-        data = self._frozen_data if self._frozen_data is not None else self.adjustment_data()
-        self._layer.image = kind.apply(self._orig_argb32, kind.normalize(data))
+        self._layer.image = self._render(self._orig_argb32, self._params())
+        self._preview_stale = False
         self._canvas_refresh()
 
     def _on_full_res_restored(self):
@@ -485,6 +514,10 @@ class _AdjustDialog(BaseDialog):
             # avoid.
             self._run_final_apply_with_progress()
             return
+        if self._preview_stale:
+            # OK pressed inside the debounce window: the layer must get
+            # exactly the settings being accepted.
+            self._apply_preview()
         super().accept()
 
     def _run_final_apply_with_progress(self):

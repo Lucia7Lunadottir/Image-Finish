@@ -347,6 +347,9 @@
   "err.text_layer_no_draw": "Esta é uma camada de texto. Rasterize para desenhar.",
   "err.smart_object_no_draw": "Este é um objeto inteligente. Rasterize para desenhar.",
 
+  "err.layer_no_pixels": "Indisponível: camadas de ajuste e grupos não têm pixels próprios.",
+  "dlg.rasterize.title": "Rasterizar camada?",
+  "dlg.rasterize.text": "A camada “{name}” é desenhada a partir de dados (texto, forma ou preenchimento) e este comando trabalha com pixels. Rasterizá-la? O texto ou a forma deixarão de ser editáveis.",
   "title.untitled":  "ImageFinish — sem título ({mode})",
   "title.with_file": "ImageFinish — {name} ({mode})",
   "title.canvas":    "ImageFinish — {w}×{h} ({mode})",
