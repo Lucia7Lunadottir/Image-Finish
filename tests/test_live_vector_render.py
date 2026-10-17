@@ -217,3 +217,72 @@ def test_shape_clipped_onto_raster_below_in_composite_and_view():
     view = _view(doc, 4)
     assert view.pixelColor(10 * 4, 20 * 4).getRgb()[:3] == (255, 0, 0)
     assert view.pixelColor(30 * 4, 20 * 4).getRgb()[:3] == (255, 255, 255)
+
+
+# ── layer styles on live layers (2026-10-17) ──────────────────────────────
+
+def _styled_shape_doc(styles, rect=(20, 20, 40, 40), shape="ellipse"):
+    doc = Document(100, 100)
+    doc.layers[0].image.fill(QColor(255, 255, 255))
+    layer = _shape_layer(doc, rect=rect, shape=shape)
+    layer.layer_styles = styles
+    return doc, layer
+
+
+def test_styled_shape_edge_stays_sharp_in_render_view():
+    doc, _ = _styled_shape_doc({"drop_shadow": {"enabled": True, "distance": 6, "size": 0,
+                                                "angle": -45, "opacity": 100, "color": QColor(0, 0, 255),
+                                                "blend_mode": "SourceOver"}})
+    doc.layers[0].image.fill(QColor(0, 0, 0, 0))
+    view = _view(doc, 8)
+    # the shape's own left edge (red), above the shadow, is 1-2 px wide at 8x
+    y = int(40 * 8)
+    row = [view.pixelColor(x, y) for x in range(0, 50 * 8)]
+    partial = sum(1 for c in row[:30 * 8] if 0 < c.alpha() < 255)
+    assert partial <= 3
+
+
+def test_styled_shape_zoomed_matches_document_resolution():
+    doc, _ = _styled_shape_doc({"drop_shadow": {"enabled": True, "distance": 8, "size": 2, "angle": -45,
+                                                "opacity": 100, "color": QColor(0, 0, 255),
+                                                "blend_mode": "SourceOver"},
+                                "stroke": {"enabled": True, "size": 3, "color": QColor(0, 160, 0),
+                                           "opacity": 100, "blend_mode": "SourceOver"}}, shape="rect")
+    comp = doc.get_composite()
+    view = _view(doc, 4)
+    for x, y in ((40, 40), (66, 66), (18, 40), (40, 18), (90, 90)):
+        a, b = comp.pixelColor(x, y), view.pixelColor(x * 4 + 2, y * 4 + 2)
+        assert max(abs(a.red() - b.red()), abs(a.green() - b.green()), abs(a.blue() - b.blue())) < 40, (x, y)
+
+
+def test_gradient_overlay_spans_the_shape_not_the_document():
+    stops = [(0.0, QColor(0, 0, 0)), (1.0, QColor(255, 255, 255))]
+    doc, layer = _styled_shape_doc({"gradient_overlay": {"enabled": True, "stops": stops, "type": "linear",
+                                                         "angle": 0, "opacity": 100}},
+                                   rect=(60, 10, 30, 30), shape="rect")
+    comp = doc.get_composite()
+    # left edge of the shape is the gradient start, right edge its end
+    assert comp.pixelColor(62, 25).red() < 40
+    assert comp.pixelColor(88, 25).red() > 215
+
+
+def test_text_with_layer_style_is_sharp_and_shadowed():
+    from core.layer import TextLayer
+    from core.text_model import TextData, CharStyle
+    doc = Document(200, 100)
+    doc.layers[0].image.fill(QColor(0, 0, 0, 0))
+    layer = TextLayer("t", 200, 100)
+    layer.set_data(TextData(text="O", runs=[(1, CharStyle(size=36))], x=10, y=10))
+    layer.layer_styles = {"drop_shadow": {"enabled": True, "distance": 10, "size": 0, "angle": 0,
+                                          "opacity": 100, "color": QColor(255, 0, 0),
+                                          "blend_mode": "SourceOver"}}
+    doc.layers.append(layer)
+    scale = 8
+    view = doc.render_view(QTransform.fromScale(scale, scale), QSize(200 * scale, 100 * scale))
+    b = layer.text_layout().ink_bounds().translated(10, 10)
+    y = int(b.center().y() * scale)
+    xs = range(int(b.left() * scale) - 4, int(b.center().x() * scale))
+    assert sum(1 for x in xs if 0 < view.pixelColor(x, y).alpha() < 255) <= 4
+    # The shadow is the "O" ring shifted 10 px right: its right wall ends at right+10.
+    shadow_wall = int((b.right() + 9) * scale)
+    assert view.pixelColor(shadow_wall, y).red() > 200

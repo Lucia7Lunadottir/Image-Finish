@@ -1,3 +1,4 @@
+import math
 from PyQt6.QtGui import QImage, QColor, QPainterPath, QPainter, QPen, QTransform
 from PyQt6.QtCore import Qt, QPoint, QPointF, QRect, QRectF, QBuffer, QIODevice, QByteArray
 import uuid
@@ -529,12 +530,12 @@ class LiveRenderedLayer(Layer):
         return img
 
     def _needs_raster_pipeline(self, is_clipping: bool) -> bool:
-        """Layer styles (shadow/glow/bevel...) and an in-progress brush
-        stroke on the layer are computed on document-resolution pixels by
-        Layer.render_into; everything else (mask, clipping, blend, opacity)
-        is applied by _render_direct on top of a sharp, device-resolution
-        render of the geometry."""
-        return bool(getattr(self, "active_stroke", None) or getattr(self, "layer_styles", None))
+        """Only an in-progress brush stroke on the layer needs the
+        document-resolution pixel pipeline (Layer.render_into); masks,
+        clipping, blend, opacity and layer styles are all applied by
+        _render_direct on a render of the content at the target's own
+        resolution."""
+        return bool(getattr(self, "active_stroke", None))
 
     def _has_pixel_mask(self) -> bool:
         return getattr(self, "mask", None) is not None and getattr(self, "mask_enabled", True)
@@ -571,13 +572,58 @@ class LiveRenderedLayer(Layer):
             return
         self._render_direct(ctx, layer_artboard_rect, is_clipping, next_clipping)
 
+    def render_layer_image(self, to_device: QTransform, device_rect: QRect):
+        """The layer's own pixels (content + layer styles) rendered through
+        `to_device` (document -> target pixels), limited to what can affect
+        `device_rect`. Returns (image, device top-left) or (None, None).
+
+        Layer styles are applied here at the target resolution, with their
+        pixel sizes scaled to match — so a shadowed or stroked shape/text
+        stays sharp in a zoomed view instead of being a magnified
+        document-resolution bitmap. Gradient/pattern overlays span the
+        layer's full content frame even when only part of it is rendered."""
+        styles = getattr(self, "layer_styles", None) or None
+        scale = math.sqrt(abs(to_device.determinant())) or 1.0
+        frame = to_device.mapRect(self.content_bounds())
+        reach = 0
+        if styles:
+            from core.layer_styles import layer_styles_padding, scale_layer_styles
+            styles = scale_layer_styles(styles, scale)
+            reach = layer_styles_padding(styles)
+        area = frame.toAlignedRect().adjusted(-1, -1, 1, 1)
+        area = area.intersected(device_rect.adjusted(-reach, -reach, reach, reach))
+        if area.isEmpty():
+            return None, None
+        img = QImage(area.size(), QImage.Format.Format_ARGB32_Premultiplied)
+        img.fill(Qt.GlobalColor.transparent)
+        p = QPainter(img)
+        p.setRenderHint(QPainter.RenderHint.Antialiasing)
+        p.setTransform(to_device * QTransform.fromTranslate(-area.x(), -area.y()))
+        self.paint_content(p)
+        p.end()
+        top_left = area.topLeft()
+        if styles:
+            from core.layer_styles import apply_layer_styles
+            img, delta = apply_layer_styles(img, styles, frame.translated(-area.x(), -area.y()))
+            top_left = top_left + delta
+            offset_style = styles.get("offset", {})
+            if offset_style.get("enabled") and (offset_style.get("dx_pct") or offset_style.get("dy_pct")):
+                from core.document import _qimage_argb_view, _shift_pixels_edge
+                w, h = img.width(), img.height()
+                arr = _qimage_argb_view(img, writable=False)
+                shifted = _shift_pixels_edge(arr, w, h, int(w * offset_style.get("dx_pct", 0) / 100.0),
+                                             int(h * offset_style.get("dy_pct", 0) / 100.0),
+                                             offset_style.get("edge_mode", "wrap"))
+                img = QImage(shifted.data, w, h, w * 4, QImage.Format.Format_ARGB32_Premultiplied).copy()
+        return img, top_left
+
     def _render_direct(self, ctx, layer_artboard_rect, is_clipping, next_clipping):
-        """Paints the geometry straight at the target's resolution — the
+        """Composites the layer at the target's resolution — the
         composite's own device pixels, whether that's document resolution
         or Document.render_view's zoomed viewport. That's what keeps shapes
-        and text sharp at any zoom. Painted into a temporary first so
-        opacity and blend mode apply to the layer as a whole (fill + stroke
-        overlap must not double up), exactly like a pixel layer."""
+        and text (and their layer styles) sharp at any zoom. Rendered into
+        a temporary first so opacity and blend mode apply to the layer as a
+        whole, exactly like a pixel layer."""
         from core.document import _get_composition_mode, _qimage_argb_view
         import numpy as np
         painter = ctx.painter
@@ -593,14 +639,15 @@ class LiveRenderedLayer(Layer):
                 # alpha at document resolution, same as Layer.render_into.
                 base_alpha = QImage(document.width, document.height, QImage.Format.Format_ARGB32_Premultiplied)
                 base_alpha.fill(0)
-                ap = QPainter(base_alpha)
-                ap.setRenderHint(QPainter.RenderHint.Antialiasing)
-                clip_path = self._render_clip_path()
-                if clip_path is not None:
-                    ap.setClipPath(clip_path)
-                ap.setOpacity(self.opacity)
-                self.paint_content(ap)
-                ap.end()
+                doc_img, doc_pos = self.render_layer_image(QTransform(), base_alpha.rect())
+                if doc_img is not None:
+                    ap = QPainter(base_alpha)
+                    clip_path = self._render_clip_path()
+                    if clip_path is not None:
+                        ap.setClipPath(clip_path)
+                    ap.setOpacity(self.opacity)
+                    ap.drawImage(doc_pos, doc_img)
+                    ap.end()
                 arr = _qimage_argb_view(base_alpha, writable=False)
                 alpha = arr[:, :document.width, 3].astype(np.float32) / 255.0
                 ctx.clip_alpha = alpha * coverage if coverage is not None else alpha.copy()
@@ -609,24 +656,16 @@ class LiveRenderedLayer(Layer):
 
         to_device = painter.transform()
         device = painter.device()
-        area = to_device.mapRect(self.content_bounds()).toAlignedRect().adjusted(-1, -1, 1, 1)
-        area = area.intersected(QRect(0, 0, device.width(), device.height()))
-        if area.isEmpty():
+        tmp, top_left = self.render_layer_image(to_device, QRect(0, 0, device.width(), device.height()))
+        if tmp is None:
             return
-        tmp = QImage(area.size(), QImage.Format.Format_ARGB32_Premultiplied)
-        tmp.fill(Qt.GlobalColor.transparent)
-        tp = QPainter(tmp)
-        tp.setRenderHint(QPainter.RenderHint.Antialiasing)
-        local = to_device * QTransform.fromTranslate(-area.x(), -area.y())
-        tp.setTransform(local)
-        self.paint_content(tp)
-        tp.end()
 
         if coverage is not None:
             smooth = painter.testRenderHint(QPainter.RenderHint.SmoothPixmapTransform)
-            cov = _resample_coverage(coverage, local, area.width(), area.height(), smooth)
+            local = to_device * QTransform.fromTranslate(-top_left.x(), -top_left.y())
+            cov = _resample_coverage(coverage, local, tmp.width(), tmp.height(), smooth)
             tarr = _qimage_argb_view(tmp, writable=True)
-            w = area.width()
+            w = tmp.width()
             tarr[:, :w, :] = (tarr[:, :w, :].astype(np.float32) * cov[..., np.newaxis]).astype(np.uint8)
             del tarr
 
@@ -639,7 +678,7 @@ class LiveRenderedLayer(Layer):
         painter.setCompositionMode(_get_composition_mode(getattr(self, "blend_mode", "SourceOver")))
         painter.setOpacity(self.opacity)
         painter.setTransform(QTransform())
-        painter.drawImage(area.topLeft(), tmp)
+        painter.drawImage(top_left, tmp)
         painter.restore()
 
 

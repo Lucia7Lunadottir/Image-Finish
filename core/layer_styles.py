@@ -54,21 +54,55 @@ def _blur_mask(mask_u8: "np.ndarray", r: int) -> "np.ndarray":
 
 from core.blend_modes import composition_mode as _get_comp_mode  # noqa: E402
 
-def apply_layer_styles(img: QImage, styles: dict) -> tuple[QImage, QPoint]:
-    if not styles or img.isNull():
-        return img, QPoint(0, 0)
-        
-    pad = 0
+# Style parameters measured in pixels — what has to be multiplied when the
+# styles are rendered at another resolution than the document's (zoomed
+# view of a shape/text layer, see core/layer.py::LiveRenderedLayer).
+_PIXEL_KEYS = ("distance", "size")
+
+
+def scale_layer_styles(styles: dict, k: float) -> dict:
+    """Copy of `styles` with every pixel-sized parameter multiplied by k
+    (pattern overlay scale too, so the pattern keeps its document size)."""
+    if abs(k - 1.0) < 1e-6:
+        return styles
+    out = {}
     for key, opts in styles.items():
-        if not opts.get("enabled"): continue
+        o = dict(opts) if isinstance(opts, dict) else opts
+        if isinstance(o, dict):
+            for pk in _PIXEL_KEYS:
+                if pk in o and isinstance(o[pk], (int, float)):
+                    o[pk] = o[pk] * k
+            if key == "pattern_overlay" and isinstance(o.get("scale"), (int, float)):
+                o["scale"] = o["scale"] * k
+        out[key] = o
+    return out
+
+
+def layer_styles_padding(styles: dict) -> int:
+    """How far (pixels) the enabled effects reach outside the layer's pixels."""
+    pad = 0
+    for key, opts in (styles or {}).items():
+        if not isinstance(opts, dict) or not opts.get("enabled"):
+            continue
         if key == "drop_shadow":
             pad = max(pad, opts.get("distance", 0) + opts.get("size", 0) * 2)
         elif key in ("outer_glow", "inner_shadow"):
             pad = max(pad, opts.get("size", 0) * 2)
         elif key == "stroke":
             pad = max(pad, opts.get("size", 0))
-            
-    pad = int(math.ceil(pad)) + 4
+    return int(math.ceil(pad)) + 4
+
+
+def apply_layer_styles(img: QImage, styles: dict, frame: QRectF | None = None) -> tuple[QImage, QPoint]:
+    """`frame` (in `img` coordinates) is the layer's full extent for the
+    overlays that are laid out over it (gradient, pattern) — by default the
+    whole image. A live-rendered layer passes its content frame, so the
+    overlay spans the layer (like Photoshop) even when `img` is only the
+    visible part of it at screen resolution."""
+    if not styles or img.isNull():
+        return img, QPoint(0, 0)
+
+    pad = layer_styles_padding(styles)
     w, h = img.width(), img.height()
     out_w, out_h = w + pad * 2, h + pad * 2
     
@@ -103,7 +137,8 @@ def apply_layer_styles(img: QImage, styles: dict) -> tuple[QImage, QPoint]:
                                        angle=-float(go.get("angle", 90)),
                                        scale=float(go.get("scale", 100)),
                                        reverse=bool(go.get("reverse", False)))
-        grad_brush = g.brush(QRectF(0, 0, w, h), 0.0, QTransform(), base_img.rect())
+        grad_brush = g.brush(frame if frame is not None else QRectF(0, 0, w, h), 0.0, QTransform(),
+                             base_img.rect())
 
         bp.setOpacity(go.get("opacity", 100) / 100.0)
         bp.fillRect(base_img.rect(), grad_brush)
@@ -119,6 +154,8 @@ def apply_layer_styles(img: QImage, styles: dict) -> tuple[QImage, QPoint]:
                 b = QBrush(pixmap)
                 t = QTransform()
                 t.scale(scale, scale)
+                if frame is not None:   # the pattern is anchored to the layer, not to this image
+                    t = t * QTransform.fromTranslate(frame.x(), frame.y())
                 b.setTransform(t)
                 bp.setOpacity(po.get("opacity", 100) / 100.0)
                 bp.fillRect(base_img.rect(), b)
