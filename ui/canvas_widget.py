@@ -15,8 +15,9 @@ from tools.other_tools import (SelectTool, CropTool, ShapesTool,
                                HandTool, ZoomTool, RotateViewTool, GradientTool, PerspectiveCropTool)
 from core.brush_symmetry import BrushSymmetry
 from ui.canvas_cursors import BrushCursorOverlay, selection_cursor, selection_mode
+from ui.canvas_guides import GuideDrag
 from ui.overlay_renderers import (
-    draw_grid, draw_guides, draw_slices, draw_symmetry_axes, draw_selection,
+    draw_grid, draw_guides, draw_rulers, draw_slices, draw_symmetry_axes, draw_selection,
     draw_subtract_drag, draw_lasso_preview, draw_transform_preview,
     draw_brush_stroke, draw_crop_preview, draw_perspective_crop,
     draw_shapes_preview, draw_gradient_preview, draw_artboard_preview,
@@ -137,7 +138,7 @@ class CanvasWidget(QOpenGLWidget):
         self._hires_timer.timeout.connect(self._render_hires)
 
         self.show_rulers: bool = False
-        self._dragging_guide = None
+        self._guides = GuideDrag(self)
 
         self._march_offset: int = 0
         self._march_timer: QTimer | None = None
@@ -350,45 +351,6 @@ class CanvasWidget(QOpenGLWidget):
         self.update()
         self.view_changed.emit()
 
-    def _draw_rulers(self, painter: QPainter):
-        R = 20
-        w, h = self.width(), self.height()
-        painter.fillRect(0, 0, w, R, QColor(theme.MANTLE))
-        painter.fillRect(0, 0, R, h, QColor(theme.MANTLE))
-        painter.fillRect(0, 0, R, R, QColor(theme.CRUST))
-
-        painter.setPen(QColor(theme.SUBTEXT))
-        font = painter.font()
-        font.setPointSize(8)
-        painter.setFont(font)
-        
-        start_x = - (self._pan.x() / self.zoom)
-        end_x = start_x + w / self.zoom
-        step = 100
-        if self.zoom > 2: step = 10
-        elif self.zoom > 0.5: step = 50
-        elif self.zoom < 0.2: step = 500
-        
-        first_x = int(start_x // step) * step
-        for x in range(first_x, int(end_x) + step, step):
-            wx = int(x * self.zoom + self._pan.x())
-            if wx > R:
-                painter.drawLine(wx, R - 6, wx, R)
-                painter.drawText(wx + 2, R - 2, str(x))
-                
-        start_y = - (self._pan.y() / self.zoom)
-        end_y = start_y + h / self.zoom
-        first_y = int(start_y // step) * step
-        for y in range(first_y, int(end_y) + step, step):
-            wy = int(y * self.zoom + self._pan.y())
-            if wy > R:
-                painter.drawLine(R - 6, wy, R, wy)
-                painter.save()
-                painter.translate(R - 2, wy + 2)
-                painter.rotate(-90)
-                painter.drawText(0, 0, str(y))
-                painter.restore()
-
     def initializeGL(self):
         """Called by QOpenGLWidget once a GL context exists (and again if
         the context is ever recreated). Building GLCompositor here, rather
@@ -486,7 +448,7 @@ class CanvasWidget(QOpenGLWidget):
                     doc_size=(self.document.width, self.document.height))
 
             if self.show_rulers:
-                self._draw_rulers(painter)
+                draw_rulers(painter, width=self.width(), height=self.height(), pan=self._pan, zoom=self.zoom)
 
             painter.end()
         except Exception as ce:
@@ -694,7 +656,7 @@ class CanvasWidget(QOpenGLWidget):
 
         draw_grid(painter, doc=_doc, pan=_pan, zoom=_zoom)
         draw_guides(painter, doc=_doc, pan=_pan, zoom=_zoom,
-                    dragging_guide=getattr(self, "_dragging_guide", None))
+                    dragging_guide=self._guides.current)
         draw_slices(painter, doc=_doc, pan=_pan, zoom=_zoom)
 
         if not has_artboards:
@@ -772,9 +734,9 @@ class CanvasWidget(QOpenGLWidget):
         if not self.document:
             return
         try:
-            if self._press_guides(ev):
+            if self._guides.press(ev):
                 return
-            self._store_press_modifiers(ev)
+            self._store_modifiers(ev)
             if self._press_pan_or_view_tool(ev):
                 return
             if ev.button() == Qt.MouseButton.LeftButton and self.active_tool:
@@ -785,49 +747,16 @@ class CanvasWidget(QOpenGLWidget):
             logger.exception("Critical mouse press error")
             self._stroke_in_progress = False
 
-    def _press_guides(self, ev) -> bool:
-        """Drag a new guide out of a ruler, or (Move tool) pick up an existing one."""
-        if getattr(self, "show_rulers", False):
-            R = 20
-            pos = ev.position()
-            if pos.x() < R and pos.y() > R:
-                self._dragging_guide = ('v', self.to_doc(pos).x(), None)
-                self.setCursor(Qt.CursorShape.SplitHCursor)
-                return True
-            if pos.y() < R and pos.x() > R:
-                self._dragging_guide = ('h', self.to_doc(pos).y(), None)
-                self.setCursor(Qt.CursorShape.SplitVCursor)
-                return True
-
-        if getattr(self.active_tool, "name", "") != "Move" or self._space:
-            return False
-        doc_pos = self.to_doc(ev.position())
-        snap = 5 / max(0.01, self.zoom)
-        hit_v = hit_h = None
-        if getattr(self.document, "show_guides", False):
-            for i, gx in enumerate(getattr(self.document, "guides_v", [])):
-                if abs(gx - doc_pos.x()) < snap: hit_v = (i, gx)
-            for i, gy in enumerate(getattr(self.document, "guides_h", [])):
-                if abs(gy - doc_pos.y()) < snap: hit_h = (i, gy)
-        if hit_v:
-            self._dragging_guide = ('v', hit_v[1], hit_v[0])
-            if hasattr(self.document, "guides_v"): self.document.guides_v.pop(hit_v[0])
-            self.setCursor(Qt.CursorShape.SplitHCursor)
-        elif hit_h:
-            self._dragging_guide = ('h', hit_h[1], hit_h[0])
-            if hasattr(self.document, "guides_h"): self.document.guides_h.pop(hit_h[0])
-            self.setCursor(Qt.CursorShape.SplitVCursor)
-        else:
-            return False
-        self.update()
-        return True
-
-    def _store_press_modifiers(self, ev):
+    def _store_modifiers(self, ev):
+        """What tools read from tool_opts about the event: modifiers, zoom,
+        and full pressure for a plain mouse (tablets send their own)."""
         mods = ev.modifiers()
         self.tool_opts["_shift"] = bool(mods & Qt.KeyboardModifier.ShiftModifier)
         self.tool_opts["_ctrl"]  = bool(mods & Qt.KeyboardModifier.ControlModifier)
         self.tool_opts["_alt"]   = bool(mods & Qt.KeyboardModifier.AltModifier)
         self.tool_opts["_zoom"]  = self.zoom
+        if hasattr(ev, "device") and ev.device().type() == QInputDevice.DeviceType.Mouse:
+            self.tool_opts["_pressure"] = 1.0
 
     def _press_pan_or_view_tool(self, ev) -> bool:
         """Middle button / Space+left pans; Hand, Zoom and Rotate View act
@@ -835,8 +764,6 @@ class CanvasWidget(QOpenGLWidget):
         if ev.button() == Qt.MouseButton.MiddleButton or (self._space and ev.button() == Qt.MouseButton.LeftButton):
             self._start_pan(ev)
             return True
-        if hasattr(ev, "device") and ev.device().type() == QInputDevice.DeviceType.Mouse:
-            self.tool_opts["_pressure"] = 1.0
         if ev.button() != Qt.MouseButton.LeftButton:
             return False
         if isinstance(self.active_tool, HandTool):
@@ -869,17 +796,21 @@ class CanvasWidget(QOpenGLWidget):
         doc_pos = self.to_doc(ev.position())
         if ev.modifiers() & Qt.KeyboardModifier.ControlModifier:
             self._dragging_sym_center = True
-            new_cx = max(0.0, min(1.0, doc_pos.x() / max(1, doc.width)))
-            new_cy = max(0.0, min(1.0, doc_pos.y() / max(1, doc.height)))
-            self.tool_opts["brush_mirror_cx"] = new_cx
-            self.tool_opts["brush_mirror_cy"] = new_cy
-            self.tool_state_changed.emit({"brush_mirror_cx": new_cx, "brush_mirror_cy": new_cy})
-            self.update()
+            self._set_symmetry_center(doc_pos)
             return True
         if sym.near_center(doc_pos.x(), doc_pos.y(), self.zoom):
             self._dragging_sym_center = True
             return True
         return False
+
+    def _set_symmetry_center(self, doc_pos):
+        doc = self.document
+        new_cx = max(0.0, min(1.0, doc_pos.x() / max(1, doc.width)))
+        new_cy = max(0.0, min(1.0, doc_pos.y() / max(1, doc.height)))
+        self.tool_opts["brush_mirror_cx"] = new_cx
+        self.tool_opts["brush_mirror_cy"] = new_cy
+        self.tool_state_changed.emit({"brush_mirror_cx": new_cx, "brush_mirror_cy": new_cy})
+        self.update()
 
     def _press_active_tool(self, ev) -> bool:
         """Start a stroke with the active tool: pixel gate, undo snapshot,
@@ -914,9 +845,7 @@ class CanvasWidget(QOpenGLWidget):
             tool.on_press(doc_pos, self.document, self.fg_color, self.bg_color, self.tool_opts)
         except Exception:
             logger.exception("Tool %s failed in on_press", tool_name)
-            if hasattr(win, "_status"):
-                from ui.toolbar import ToolBar
-                win._status.showMessage(tr("err.tool_failed", tool=ToolBar.tool_title(tool_name)), 4000)
+            self._report_tool_failure(4000)
             self._stroke_in_progress = False
             self._pre_stroke_state = None
 
@@ -952,52 +881,18 @@ class CanvasWidget(QOpenGLWidget):
     def mouseMoveEvent(self, ev):
         """Handles mouse move for brush strokes and deformations."""
         try:
-            mods = ev.modifiers()
-            self.tool_opts["_shift"] = bool(mods & Qt.KeyboardModifier.ShiftModifier)
-            self.tool_opts["_ctrl"]  = bool(mods & Qt.KeyboardModifier.ControlModifier)
-            self.tool_opts["_alt"]   = bool(mods & Qt.KeyboardModifier.AltModifier)
-            self.tool_opts["_zoom"]  = self.zoom
-            
-            if hasattr(ev, "device") and ev.device().type() == QInputDevice.DeviceType.Mouse:
-                self.tool_opts["_pressure"] = 1.0
-
+            self._store_modifiers(ev)
             self._mouse_pos = ev.position()
 
             if self._stroke_in_progress and not (ev.buttons() & Qt.MouseButton.LeftButton):
-                doc_pos = self.to_doc(ev.position())
-                if self.active_tool:
-                    try: self.active_tool.on_release(doc_pos, self.document, self.fg_color, self.bg_color, self.tool_opts)
-                    except Exception:
-                        logger.exception("Tool %s failed in on_release", getattr(self.active_tool, "name", "?"))
-                self._stroke_in_progress = False
-                self._prev_brush_wp = None
-                if self._in_effect_stroke and self.active_tool and hasattr(self.active_tool, "_stroke_preview_active"):
-                    self.active_tool._stroke_preview_active = False
-                self._in_effect_stroke = False
-                self._effect_bg_cache = None
-                # Eager composite so paintEvent is instant
-                self._recompute_composite()
-                self._cache_dirty = False
-                self._display_cache = None
-                self._check_marching_ants()
-                self.update()
-                self.document_changed.emit()
+                # The button was released outside the canvas.
+                self._finish_stroke(self.to_doc(ev.position()))
 
             if getattr(self, "_dragging_sym_center", False):
-                doc_pos = self.to_doc(ev.position())
-                new_cx = max(0.0, min(1.0, doc_pos.x() / max(1, self.document.width)))
-                new_cy = max(0.0, min(1.0, doc_pos.y() / max(1, self.document.height)))
-                self.tool_opts["brush_mirror_cx"] = new_cx
-                self.tool_opts["brush_mirror_cy"] = new_cy
-                self.tool_state_changed.emit({"brush_mirror_cx": new_cx, "brush_mirror_cy": new_cy})
-                self.update()
+                self._set_symmetry_center(self.to_doc(ev.position()))
                 return
 
-            if getattr(self, "_dragging_guide", None) is not None:
-                doc_pos = self.to_doc(ev.position())
-                gtype, _, orig_idx = self._dragging_guide
-                self._dragging_guide = (gtype, doc_pos.x() if gtype == 'v' else doc_pos.y(), orig_idx)
-                self.update()
+            if self._guides.move(ev):
                 return
 
             if self._panning and self._pan_last is not None:
@@ -1031,10 +926,9 @@ class CanvasWidget(QOpenGLWidget):
                 # Safe tool move handler
                 try:
                     self.active_tool.on_move(doc_pos, self.document, self.fg_color, self.bg_color, self.tool_opts)
-                except Exception as move_ex:
+                except Exception:
                     logger.exception("Tool %s failed in on_move", getattr(self.active_tool, "name", "?"))
-                    if hasattr(self.window(), "_status"):
-                        self.window()._status.showMessage("Tool move step failed", 1000)
+                    self._report_tool_failure(1000)
 
                 if getattr(self.active_tool, "modifies_canvas_on_move", False):
                     is_brush_preview = (
@@ -1074,78 +968,65 @@ class CanvasWidget(QOpenGLWidget):
                     else:
                         color = QColor(0, 0, 0, 0)
                     self.cursor_info.emit(cx, cy, color)
-        except Exception as global_move_ex:
+        except Exception:
             logger.exception("Critical mouse move error")
 
     def mouseReleaseEvent(self, ev):
-        """Handles mouse release to finalize strokes."""
+        """Finishes whatever the press started: symmetry-centre drag, guide,
+        pan, view rotation, or the tool's stroke."""
         try:
             if getattr(self, "_dragging_sym_center", False) and ev.button() == Qt.MouseButton.LeftButton:
                 self._dragging_sym_center = False
                 self._update_cursor()
                 return
-                
-            if getattr(self, "_dragging_guide", None) is not None:
-                gtype, val, _ = self._dragging_guide
-                wx, wy = self.to_widget(QPoint(int(val), 0)).x(), self.to_widget(QPoint(0, int(val))).y()
-                R = 20 if self.show_rulers else 0
-                if gtype == 'v' and wx > R:
-                    if not hasattr(self.document, "guides_v"): self.document.guides_v = []
-                    self.document.guides_v.append(val)
-                elif gtype == 'h' and wy > R:
-                    if not hasattr(self.document, "guides_h"): self.document.guides_h = []
-                    self.document.guides_h.append(val)
-                self._dragging_guide = None
-                self._update_cursor()
-                self.update()
+            if self._guides.release(ev):
                 return
-                
             if ev.button() == Qt.MouseButton.MiddleButton or (self._panning and ev.button() == Qt.MouseButton.LeftButton):
                 self._panning = False
                 self._pan_last = None
                 self._update_cursor()
                 return
-
             if self._rotating and ev.button() == Qt.MouseButton.LeftButton:
                 self._rotating = False
                 self._update_cursor()
                 return
-
             if ev.button() == Qt.MouseButton.LeftButton and self._stroke_in_progress:
-                doc_pos = self.to_doc(ev.position())
-                tool_name = getattr(self.active_tool, "name", "")
-
-                # Safe tool release handler
-                if self.active_tool:
-                    try:
-                        self.active_tool.on_release(doc_pos, self.document, self.fg_color, self.bg_color, self.tool_opts)
-                    except Exception as rel_ex:
-                        logger.exception("Tool %s failed in on_release", tool_name)
-                        if hasattr(self.window(), "_status"):
-                            self.window()._status.showMessage("Tool release failed", 4000)
-
-                self._stroke_in_progress = False
-                self._prev_brush_wp = None
-                if self._in_effect_stroke and self.active_tool and hasattr(self.active_tool, "_stroke_preview_active"):
-                    self.active_tool._stroke_preview_active = False
-                self._in_effect_stroke = False
-                self._effect_bg_cache = None
-
-                # Eagerly recompute the composite now (stroke already applied to
-                # the layer in on_release above). This keeps paintEvent cheap,
-                # and if the tool can report the touched rect, only that rect
-                # is blitted into the existing cache instead of a full redraw.
-                self._recompute_composite()
-                self._cache_dirty = False
-                self._display_cache = None
-
-                self._check_marching_ants()
-                self.update()
-                self.document_changed.emit()
+                self._finish_stroke(self.to_doc(ev.position()), report_failure=True)
             self._emit_tool_state()
-        except Exception as global_release_ex:
+        except Exception:
             logger.exception("Critical mouse release error")
             self._stroke_in_progress = False
+
+    def _finish_stroke(self, doc_pos, report_failure: bool = False):
+        """The tool's on_release, then an eager composite (the stroke is in
+        the layer now): paint stays cheap, and a tool that reports its
+        touched rect gets only that blitted into the cache."""
+        tool = self.active_tool
+        if tool:
+            try:
+                tool.on_release(doc_pos, self.document, self.fg_color, self.bg_color, self.tool_opts)
+            except Exception:
+                logger.exception("Tool %s failed in on_release", getattr(tool, "name", "?"))
+                if report_failure:
+                    self._report_tool_failure(4000)
+        self._stroke_in_progress = False
+        self._prev_brush_wp = None
+        if self._in_effect_stroke and tool and hasattr(tool, "_stroke_preview_active"):
+            tool._stroke_preview_active = False
+        self._in_effect_stroke = False
+        self._effect_bg_cache = None
+        self._recompute_composite()
+        self._cache_dirty = False
+        self._display_cache = None
+        self._check_marching_ants()
+        self.update()
+        self.document_changed.emit()
+
+    def _report_tool_failure(self, ms: int):
+        win = self.window()
+        if hasattr(win, "_status"):
+            from ui.toolbar import ToolBar
+            win._status.showMessage(tr("err.tool_failed", tool=ToolBar.tool_title(getattr(self.active_tool, "name", ""))), ms)
 
     def enterEvent(self, ev):
         self._is_mouse_in = True

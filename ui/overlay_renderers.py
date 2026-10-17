@@ -10,6 +10,7 @@ from PyQt6.QtGui import (QPainter, QColor, QPen, QBrush, QPainterPath,
                          QPolygonF, QTransform)
 
 from core.app_logging import get_logger
+from ui import theme
 
 logger = get_logger("overlays")
 
@@ -27,6 +28,46 @@ def draw_grid(painter, *, doc, pan, zoom):
     for y in range(0, doc.height, gs):
         painter.drawLine(QPointF(0, y), QPointF(doc.width, y))
     painter.restore()
+
+
+def draw_rulers(painter, *, width, height, pan, zoom):
+    from ui.canvas_guides import RULER_SIZE as R
+    w, h = width, height
+    painter.fillRect(0, 0, w, R, QColor(theme.MANTLE))
+    painter.fillRect(0, 0, R, h, QColor(theme.MANTLE))
+    painter.fillRect(0, 0, R, R, QColor(theme.CRUST))
+
+    painter.setPen(QColor(theme.SUBTEXT))
+    font = painter.font()
+    font.setPointSize(8)
+    painter.setFont(font)
+    
+    start_x = - (pan.x() / zoom)
+    end_x = start_x + w / zoom
+    step = 100
+    if zoom > 2: step = 10
+    elif zoom > 0.5: step = 50
+    elif zoom < 0.2: step = 500
+    
+    first_x = int(start_x // step) * step
+    for x in range(first_x, int(end_x) + step, step):
+        wx = int(x * zoom + pan.x())
+        if wx > R:
+            painter.drawLine(wx, R - 6, wx, R)
+            painter.drawText(wx + 2, R - 2, str(x))
+            
+    start_y = - (pan.y() / zoom)
+    end_y = start_y + h / zoom
+    first_y = int(start_y // step) * step
+    for y in range(first_y, int(end_y) + step, step):
+        wy = int(y * zoom + pan.y())
+        if wy > R:
+            painter.drawLine(R - 6, wy, R, wy)
+            painter.save()
+            painter.translate(R - 2, wy + 2)
+            painter.rotate(-90)
+            painter.drawText(0, 0, str(y))
+            painter.restore()
 
 
 def draw_guides(painter, *, doc, pan, zoom, dragging_guide):
