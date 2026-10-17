@@ -1,70 +1,96 @@
-from PyQt6.QtWidgets import (QWidget, QHBoxLayout, QLabel,
-                             QSpinBox, QComboBox, QCheckBox)
+from PyQt6.QtWidgets import QSpinBox, QComboBox, QCheckBox
 from PyQt6.QtCore import Qt
+from PyQt6.QtGui import QColor
 from .base_options import BaseOptions
 from core.locale import tr
+from core.gradient_model import Gradient, GRADIENT_STYLES
 from ui.gradient_editor import GradientPreviewWidget, GradientEditorDialog
-from PyQt6.QtGui import QColor
+from ui.blend_mode_combo import BlendModeCombo
 from ui.adjustments_dialog import _JumpSlider
 
 
-def _hslider(minimum: int, maximum: int, value: int):
-    s = _JumpSlider(Qt.Orientation.Horizontal)
-    s.setMinimum(minimum)
-    s.setMaximum(maximum)
-    s.setValue(value)
-    s.setFixedWidth(120)
-    return s
-
-
 class GradientOptions(BaseOptions):
+    """Gradient tool options, as in Photoshop: the gradient (swatch ->
+    full editor), style (linear/radial/angle/reflected/diamond), blend
+    mode, opacity, reverse. The style is laid out along the drag — see
+    core/gradient_model.py::Gradient.brush_for_drag."""
+
     def __init__(self, parent=None):
         super().__init__(parent)
-        self.layout.setSpacing(14)
+        self.layout.setSpacing(10)
+        emit = self.option_changed.emit
 
-        _GTYPE_VALUES = ("linear", "radial")
-        _GTYPE_KEYS   = ("opts.gradient.linear", "opts.gradient.radial")
-        
-        type_combo = QComboBox()
-        type_combo.addItems([tr(k) for k in _GTYPE_KEYS])
-        type_combo.currentIndexChanged.connect(
-            lambda i: self.option_changed.emit(
-                "gradient_type", _GTYPE_VALUES[i] if 0 <= i < len(_GTYPE_VALUES) else "linear"))
+        self._gradient = None          # None = foreground -> background
+        self._swatch = GradientPreviewWidget()
+        self._swatch.setToolTip(tr("opts.gradient.edit_tip"))
+        self._swatch.clicked.connect(self._edit_gradient)
 
-        self._grad_preview = GradientPreviewWidget()
+        self._style = QComboBox()
+        for st in GRADIENT_STYLES:
+            self._style.addItem(tr(f"gradient_editor.style.{st}"), st)
+        self._style.currentIndexChanged.connect(lambda _i: emit("gradient_type", self._style.currentData()))
 
-        def _open_gradient_editor():
-            mw = self.window()
-            fg = getattr(mw._canvas, 'fg_color', QColor(0,0,0)) if hasattr(mw, '_canvas') else QColor(0,0,0)
-            bg = getattr(mw._canvas, 'bg_color', QColor(255,255,255)) if hasattr(mw, '_canvas') else QColor(255,255,255)
+        self._mode = BlendModeCombo()
+        self._mode.currentIndexChanged.connect(lambda _i: emit("gradient_mode", self._mode.value()))
 
-            dlg = GradientEditorDialog(self._grad_preview._stops, fg, bg, self)
-            if dlg.exec():
-                stops = dlg.result_stops()
-                self._grad_preview.set_stops(stops)
-                self.option_changed.emit("gradient_stops", stops)
+        self._opacity_sl = _JumpSlider(Qt.Orientation.Horizontal)
+        self._opacity_sl.setRange(1, 100)
+        self._opacity_sl.setValue(100)
+        self._opacity_sl.setFixedWidth(110)
+        self._opacity_sp = QSpinBox()
+        self._opacity_sp.setRange(1, 100)
+        self._opacity_sp.setValue(100)
+        self._opacity_sp.setSuffix("%")
+        self._opacity_sl.valueChanged.connect(self._opacity_sp.setValue)
+        self._opacity_sp.valueChanged.connect(self._opacity_sl.setValue)
+        self._opacity_sp.valueChanged.connect(lambda v: emit("gradient_opacity", v))
 
-        self._grad_preview.clicked.connect(_open_gradient_editor)
+        self._reverse = QCheckBox(tr("opts.gradient.reverse"))
+        self._reverse.toggled.connect(lambda v: emit("gradient_reverse", v))
 
-        op_sl = _hslider(1, 100, 100)
-        op_sp = QSpinBox()
-        op_sp.setRange(1, 100)
-        op_sp.setValue(100)
-        op_sp.setSuffix("%")
-        op_sl.valueChanged.connect(op_sp.setValue)
-        op_sp.valueChanged.connect(op_sl.setValue)
-        op_sp.valueChanged.connect(
-            lambda v: self.option_changed.emit("gradient_opacity", v))
-
-        rev_cb = QCheckBox(tr("opts.gradient.reverse"))
-        rev_cb.setChecked(False)
-        rev_cb.toggled.connect(lambda v: self.option_changed.emit("gradient_reverse", v))
-
-        self.layout.addWidget(self._lbl("opts.gradient.type"))
-        self.layout.addWidget(type_combo)
-        self.layout.addWidget(self._grad_preview)
-        self.layout.addWidget(self._lbl("opts.opacity"))
-        self.layout.addWidget(op_sl)
-        self.layout.addWidget(op_sp)
-        self.layout.addWidget(rev_cb)
+        for w in (self._swatch, self._lbl("opts.gradient.type"), self._style,
+                  self._lbl("opts.blend_mode"), self._mode,
+                  self._lbl("opts.opacity"), self._opacity_sl, self._opacity_sp, self._reverse):
+            self.layout.addWidget(w)
         self.layout.addStretch()
+
+    def _colors(self):
+        canvas = getattr(self.window(), "_canvas", None)
+        return (QColor(getattr(canvas, "fg_color", QColor(0, 0, 0))),
+                QColor(getattr(canvas, "bg_color", QColor(255, 255, 255))))
+
+    def _current(self) -> Gradient:
+        return self._gradient.copy() if self._gradient else Gradient.two_color(*self._colors())
+
+    def _edit_gradient(self):
+        fg, bg = self._colors()
+        dlg = GradientEditorDialog(self._current(), fg, bg, self)
+        if dlg.exec():
+            self._gradient = dlg.result_gradient()
+            self._swatch.set_gradient(self._gradient)
+            self.option_changed.emit("gradient", self._gradient.to_dict())
+
+    def update_from_opts(self, opts: dict):
+        if opts.get("gradient"):
+            self._gradient = Gradient.from_dict(opts["gradient"])
+        self._swatch.set_gradient(self._current())
+        for w, setter, key, default in (
+                (self._style, lambda v: self._style.setCurrentIndex(max(0, self._style.findData(v))),
+                 "gradient_type", "linear"),
+                (self._mode, self._mode.set_value, "gradient_mode", "SourceOver"),
+                (self._opacity_sp, self._opacity_sp.setValue, "gradient_opacity", 100),
+                (self._reverse, self._reverse.setChecked, "gradient_reverse", False)):
+            w.blockSignals(True)
+            setter(opts.get(key, default))
+            w.blockSignals(False)
+        self._opacity_sl.blockSignals(True)
+        self._opacity_sl.setValue(self._opacity_sp.value())
+        self._opacity_sl.blockSignals(False)
+
+    def retranslate(self):
+        super().retranslate()
+        for i, st in enumerate(GRADIENT_STYLES):
+            self._style.setItemText(i, tr(f"gradient_editor.style.{st}"))
+        self._mode.retranslate()
+        self._reverse.setText(tr("opts.gradient.reverse"))
+        self._swatch.setToolTip(tr("opts.gradient.edit_tip"))

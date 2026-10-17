@@ -1,4 +1,4 @@
-from PyQt6.QtGui import QImage, QPainter, QColor, QPainterPath, QLinearGradient, QBrush, qAlpha, QPolygonF, QTransform
+from PyQt6.QtGui import QImage, QPainter, QColor, QPainterPath, qAlpha, QPolygonF, QTransform
 from PyQt6.QtCore import Qt, QRect, QRectF, QPoint, QPointF
 from .layer import Layer, RasterLayer
 from .render_context import CompositeContext
@@ -11,22 +11,7 @@ from core.app_logging import get_logger
 logger = get_logger("document")
 
 
-def _get_composition_mode(mode_str: str) -> QPainter.CompositionMode:
-    mapping = {
-        "SourceOver": QPainter.CompositionMode.CompositionMode_SourceOver,
-        "Multiply": QPainter.CompositionMode.CompositionMode_Multiply,
-        "Screen": QPainter.CompositionMode.CompositionMode_Screen,
-        "Overlay": QPainter.CompositionMode.CompositionMode_Overlay,
-        "Darken": QPainter.CompositionMode.CompositionMode_Darken,
-        "Lighten": QPainter.CompositionMode.CompositionMode_Lighten,
-        "ColorDodge": QPainter.CompositionMode.CompositionMode_ColorDodge,
-        "ColorBurn": QPainter.CompositionMode.CompositionMode_ColorBurn,
-        "HardLight": QPainter.CompositionMode.CompositionMode_HardLight,
-        "SoftLight": QPainter.CompositionMode.CompositionMode_SoftLight,
-        "Difference": QPainter.CompositionMode.CompositionMode_Difference,
-        "Exclusion": QPainter.CompositionMode.CompositionMode_Exclusion,
-    }
-    return mapping.get(mode_str, QPainter.CompositionMode.CompositionMode_SourceOver)
+from core.blend_modes import composition_mode as _get_composition_mode  # noqa: E402  (kept name: imported by core/layer.py)
 
 def _apply_layer_adjustment(image: QImage, layer) -> QImage:
     d = layer.adjustment_data or {}
@@ -140,12 +125,11 @@ def _render_fill_layer(layer, w: int, h: int) -> QImage:
     if ft == "solid":
         p.fillRect(img.rect(), d.get("color", QColor(128, 128, 128)))
     elif ft == "gradient":
-        c1 = d.get("color1", QColor(0, 0, 0))
-        c2 = d.get("color2", QColor(255, 255, 255))
-        grad = QLinearGradient(0, 0, w, 0)
-        grad.setColorAt(0, c1)
-        grad.setColorAt(1, c2)
-        p.fillRect(img.rect(), QBrush(grad))
+        from core.gradient_model import Gradient
+        g = (Gradient.from_dict(d["gradient"]) if d.get("gradient")
+             else Gradient.two_color(QColor(d.get("color1", QColor(0, 0, 0))),
+                                     QColor(d.get("color2", QColor(255, 255, 255)))))
+        p.fillRect(img.rect(), g.brush(QRectF(img.rect()), 0.0, QTransform(), img.rect()))
     p.end()
     return img
 

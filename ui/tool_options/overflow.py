@@ -10,7 +10,7 @@ ends up separated from its control. Units then move between the row and
 the popup as the available width changes.
 """
 from PyQt6.QtCore import QEvent, QObject, QPoint, Qt, QTimer
-from PyQt6.QtWidgets import (QFrame, QHBoxLayout, QLabel, QLayout, QSpacerItem, QToolButton,
+from PyQt6.QtWidgets import (QFrame, QHBoxLayout, QLabel, QLayout, QSizePolicy, QToolButton,
                              QVBoxLayout, QWidget)
 
 
@@ -39,6 +39,10 @@ class _Unit(QWidget):
         for w in widgets:
             lay.addWidget(w)
         self.widgets = list(widgets)
+        # A unit never takes more than it needs: otherwise one containing
+        # an expanding control (slider) soaks up the row's free space and
+        # hands it to its label, leaving a gap between label and control.
+        self.setSizePolicy(QSizePolicy.Policy.Maximum, QSizePolicy.Policy.Preferred)
 
     def width_hint(self) -> int:
         if not any(not w.isHidden() for w in self.widgets):
@@ -151,6 +155,10 @@ class OptionsOverflow(QObject):
             return
         units = entries.units()
         hints = [u.width_hint() for u in units]
+        for u, h in zip(units, hints):
+            # A unit whose controls are all hidden (e.g. the polygon-only
+            # "sides" field) must not leave its row spacing behind.
+            u.setVisible(h > 0)
         sig = (id(page), width, tuple(hints))
         if sig == self._last_sig and not force:
             return
@@ -181,7 +189,7 @@ class OptionsOverflow(QObject):
         for u in entries.units():
             if u in entries.overflowed:
                 self._popup_layout.addWidget(u, 0, Qt.AlignmentFlag.AlignLeft)
-                u.show()
+                u.setVisible(u.width_hint() > 0)
 
     def _show_popup(self):
         self._popup.adjustSize()

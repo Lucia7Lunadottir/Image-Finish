@@ -162,32 +162,51 @@ class Gradient:
             arr[i] = (c.blue() * a, c.green() * a, c.red() * a, a * 255.0)
         return arr
 
-    # ── laying it out over an area ──────────────────────────────────
+    # ── laying it out ───────────────────────────────────────────────
+    # Two ways to place a gradient, one implementation (_axis_brush):
+    # over a frame (shape fill, fill layer, Gradient Overlay style) with the
+    # gradient's own angle/scale, or along a mouse drag (Gradient tool).
+
     def brush(self, frame: QRectF, frame_angle: float, to_device: QTransform,
               device_area=None) -> QBrush:
-        """A brush that paints this gradient over `frame` (document
-        coordinates, rotated by `frame_angle` around its center), for a
-        painter whose transform has been reset to device space.
-        `device_area` (QRect) bounds the texture used by the diamond style."""
+        """Fills `frame` (rotated by `frame_angle` around its center) using
+        this gradient's angle and scale. For a painter whose transform has
+        been reset to device space; `device_area` (QRect) bounds the
+        texture of the diamond style."""
         c = frame.center()
         rot = QTransform().translate(c.x(), c.y()).rotate(frame_angle).translate(-c.x(), -c.y())
-        to_dev = rot * to_device
         a = math.radians(self.angle)
         dx, dy = math.cos(a), math.sin(a)
         k = max(0.01, self.scale / 100.0)
         half = (abs(frame.width() / 2 * dx) + abs(frame.height() / 2 * dy)) * k
-        half = max(half, 0.5)
+        radius = math.hypot(frame.width() / 2, frame.height() / 2) * k
+        return self._axis_brush(c, dx, dy, half, radius, self.angle, rot * to_device, device_area)
 
+    def brush_for_drag(self, start: QPointF, end: QPointF, to_device: QTransform = QTransform(),
+                       device_area=None) -> QBrush:
+        """Photoshop Gradient-tool geometry: linear runs start->end;
+        radial/angle/reflected/diamond are centered on `start` with the
+        drag length as their size and the drag direction as their angle."""
+        vx, vy = end.x() - start.x(), end.y() - start.y()
+        length = max(0.5, math.hypot(vx, vy))
+        dx, dy = vx / length, vy / length
+        angle = math.degrees(math.atan2(vy, vx))
+        if self.style == "linear":
+            center = QPointF((start.x() + end.x()) / 2, (start.y() + end.y()) / 2)
+            return self._axis_brush(center, dx, dy, length / 2, length, angle, to_device, device_area)
+        return self._axis_brush(QPointF(start), dx, dy, length, length, angle, to_device, device_area)
+
+    def _axis_brush(self, c: QPointF, dx: float, dy: float, half: float, radius: float,
+                    angle: float, to_dev: QTransform, device_area) -> QBrush:
+        half = max(half, 0.5)
         if self.style == "diamond":
             return self._diamond_brush(c, dx, dy, half, to_dev, device_area)
-
         if self.style == "radial":
-            radius = max(0.5, math.hypot(frame.width() / 2, frame.height() / 2) * k)
-            grad: QGradient = QRadialGradient(c, radius)
+            grad: QGradient = QRadialGradient(c, max(0.5, radius))
         elif self.style == "angle":
             # Qt's conical angle runs counter-clockwise; ours is screen-
             # clockwise like every other angle in the app.
-            grad = QConicalGradient(c, -self.angle)
+            grad = QConicalGradient(c, -angle)
         elif self.style == "reflected":
             grad = QLinearGradient(c, QPointF(c.x() + dx * half, c.y() + dy * half))
             grad.setSpread(QGradient.Spread.ReflectSpread)
@@ -196,8 +215,8 @@ class Gradient:
                                    QPointF(c.x() + dx * half, c.y() + dy * half))
         stops = self.qt_stops()
         if self.style == "angle":
-            # QConicalGradient runs counter-clockwise; mirror the stops so the
-            # sweep goes clockwise from the angle, matching Photoshop.
+            # ...and sweeps counter-clockwise: mirror the stops so it goes
+            # clockwise from the angle, matching Photoshop.
             stops = [(1.0 - p, col) for p, col in reversed(stops)]
         grad.setStops(stops)
         brush = QBrush(grad)

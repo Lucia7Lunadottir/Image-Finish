@@ -7,6 +7,7 @@ from PyQt6.QtCore import Qt, QSize
 from .base_options import BaseOptions
 from core.locale import tr
 from ui.adjustments_dialog import _JumpSlider
+from ui.blend_mode_combo import BlendModeCombo
 
 class BrushOptions(BaseOptions):
     """Options panel for brush-based tools (Brush, Eraser, etc.)."""
@@ -37,17 +38,7 @@ class BrushOptions(BaseOptions):
 
         # --- Blend mode ---
         self.layout.addWidget(self._lbl("opts.blend_mode"))
-        self._blend_combo = QComboBox()
-        modes = [
-            ("blend.normal", "SourceOver"), ("blend.multiply", "Multiply"),
-            ("blend.screen", "Screen"), ("blend.overlay", "Overlay"),
-            ("blend.darken", "Darken"), ("blend.lighten", "Lighten"),
-            ("blend.color_dodge", "ColorDodge"), ("blend.color_burn", "ColorBurn"),
-            ("blend.hard_light", "HardLight"), ("blend.soft_light", "SoftLight"),
-            ("blend.difference", "Difference"), ("blend.exclusion", "Exclusion")
-        ]
-        for loc_key, val in modes:
-            self._blend_combo.addItem(tr(loc_key), val)
+        self._blend_combo = BlendModeCombo()
         
         self._blend_combo.activated.connect(lambda idx: self.option_changed.emit("brush_blend_mode", self._blend_combo.itemData(idx)))
         self.layout.addWidget(self._blend_combo)
@@ -315,13 +306,7 @@ class BrushOptions(BaseOptions):
         self._mask_combo.setItemText(2, tr("opts.mask.scatter"))
         self._mask_combo.setItemText(self._mask_combo.count() - 1, tr("opts.load"))
 
-        modes = [
-            "blend.normal", "blend.multiply", "blend.screen", "blend.overlay",
-            "blend.darken", "blend.lighten", "blend.color_dodge", "blend.color_burn",
-            "blend.hard_light", "blend.soft_light", "blend.difference", "blend.exclusion"
-        ]
-        for i, loc_key in enumerate(modes):
-            self._blend_combo.setItemText(i, tr(loc_key))
+        self._blend_combo.retranslate()
 
         self._size_dyn_cb.setText(tr("opts.dynamic"))
         self._opacity_dyn_cb.setText(tr("opts.dynamic"))

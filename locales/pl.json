@@ -388,7 +388,6 @@
   "history.flip_v":             "Odbicie w pionie",
   "history.image_size":         "Rozmiar obrazu",
   "history.resize_canvas":      "Zmiana obszaru roboczego",
-  "history.apply_text":         "Zastosowanie stylów tekstu",
   "history.invert":             "Odwrócenie",
   "history.layer_blend":        "Tryb mieszania warstwy",
   "history.lock_alpha":         "Blokada przezroczystości",
@@ -644,12 +643,6 @@
   "opts.anti_alias":         "Wygładzanie",
   "opts.sample_all_layers":  "Próbkuj wszystkie warstwy",
   "opts.gradient.type":           "Typ:",
-  "opts.gradient.linear":         "Liniowy",
-  "opts.gradient.radial":         "Promieniowy",
-  "opts.gradient.mode":           "Kolory:",
-  "opts.gradient.fg_bg":          "Narzędziowy → Tło",
-  "opts.gradient.fg_transparent": "Narzędziowy → Przezroczysty",
-  "opts.gradient.bg_fg":          "Tło → Narzędziowy",
   "opts.gradient.reverse":        "Odwróć",
   "opts.shape":         "Kształt:",
   "opts.shape.rect":     "Prostokąt",
@@ -874,8 +867,6 @@
   "fill_layer.solid":    "Kolor kryjący",
   "fill_layer.gradient": "Gradient",
   "fill_layer.color":    "Kolor:",
-  "fill_layer.color1":   "Kolor 1:",
-  "fill_layer.color2":   "Kolor 2:",
 
   "adj.reset":                     "Resetuj",
 
@@ -1120,5 +1111,6 @@
   "para.align.justify": "Wyjustuj",
   "opts.text.vertical_tip": "Przełącz orientację tekstu (poziomo / pionowo)",
   "opts.text.commit_tip": "Zatwierdź tekst (Ctrl+Enter)",
-  "opts.text.cancel_tip": "Anuluj edycję (Esc)"
+  "opts.text.cancel_tip": "Anuluj edycję (Esc)",
+  "opts.gradient.edit_tip": "Gradient — kliknij, aby edytować"
 }

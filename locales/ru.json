@@ -397,7 +397,6 @@
   "history.flip_v":             "Отражение В",
   "history.image_size":         "Размер изображения",
   "history.resize_canvas":      "Изменение холста",
-  "history.apply_text":         "Применить стили текста",
   "history.invert":             "Инвертирование",
   "history.layer_blend":        "Режим наложения слоя",
   "history.lock_alpha":         "Блокировка прозрачности",
@@ -653,12 +652,6 @@
   "opts.anti_alias":         "Сглаживание",
   "opts.sample_all_layers":  "Со всех слоёв",
   "opts.gradient.type":           "Тип:",
-  "opts.gradient.linear":         "Линейный",
-  "opts.gradient.radial":         "Радиальный",
-  "opts.gradient.mode":           "Цвета:",
-  "opts.gradient.fg_bg":          "Перед → Фон",
-  "opts.gradient.fg_transparent": "Перед → Прозр",
-  "opts.gradient.bg_fg":          "Фон → Перед",
   "opts.gradient.reverse":        "Инверсия",
   "opts.shape":         "Фигура:",
   "opts.shape.rect":     "Прямоугольник",
@@ -885,8 +878,6 @@
   "fill_layer.solid":    "Однотонная заливка",
   "fill_layer.gradient": "Градиент",
   "fill_layer.color":    "Цвет:",
-  "fill_layer.color1":   "Цвет 1:",
-  "fill_layer.color2":   "Цвет 2:",
 
   "adj.reset":                     "Сброс",
   "adj.applying_full_res":         "Применение в полном разрешении…",
@@ -1120,5 +1111,6 @@
   "para.align.justify": "По ширине",
   "opts.text.vertical_tip": "Переключить ориентацию текста (горизонтально / вертикально)",
   "opts.text.commit_tip": "Применить текст (Ctrl+Enter)",
-  "opts.text.cancel_tip": "Отменить правку (Esc)"
+  "opts.text.cancel_tip": "Отменить правку (Esc)",
+  "opts.gradient.edit_tip": "Градиент — щёлкните, чтобы изменить"
 }

@@ -1,8 +1,8 @@
 import os
 import math
 import numpy as np
-from PyQt6.QtGui import QImage, QPainter, QColor, QBrush, QLinearGradient, QRadialGradient, QPixmap, QTransform
-from PyQt6.QtCore import QPoint, Qt
+from PyQt6.QtGui import QImage, QPainter, QColor, QBrush, QPixmap, QTransform
+from PyQt6.QtCore import QPoint, QRectF, Qt
 from core.adjustments.hdr_toning import _gauss_blur
 
 
@@ -52,23 +52,7 @@ def _blur_mask(mask_u8: "np.ndarray", r: int) -> "np.ndarray":
         out = full[:, :w].copy()
     return out
 
-def _get_comp_mode(mode_str):
-    from PyQt6.QtGui import QPainter
-    mapping = {
-        "SourceOver": QPainter.CompositionMode.CompositionMode_SourceOver,
-        "Multiply": QPainter.CompositionMode.CompositionMode_Multiply,
-        "Screen": QPainter.CompositionMode.CompositionMode_Screen,
-        "Overlay": QPainter.CompositionMode.CompositionMode_Overlay,
-        "Darken": QPainter.CompositionMode.CompositionMode_Darken,
-        "Lighten": QPainter.CompositionMode.CompositionMode_Lighten,
-        "ColorDodge": QPainter.CompositionMode.CompositionMode_ColorDodge,
-        "ColorBurn": QPainter.CompositionMode.CompositionMode_ColorBurn,
-        "HardLight": QPainter.CompositionMode.CompositionMode_HardLight,
-        "SoftLight": QPainter.CompositionMode.CompositionMode_SoftLight,
-        "Difference": QPainter.CompositionMode.CompositionMode_Difference,
-        "Exclusion": QPainter.CompositionMode.CompositionMode_Exclusion,
-    }
-    return mapping.get(mode_str, QPainter.CompositionMode.CompositionMode_SourceOver)
+from core.blend_modes import composition_mode as _get_comp_mode  # noqa: E402
 
 def apply_layer_styles(img: QImage, styles: dict) -> tuple[QImage, QPoint]:
     if not styles or img.isNull():
@@ -109,25 +93,20 @@ def apply_layer_styles(img: QImage, styles: dict) -> tuple[QImage, QPoint]:
     if go and go.get("enabled"):
         bp.setCompositionMode(QPainter.CompositionMode.CompositionMode_SourceAtop)
         
+        # Same gradient model as fills/shapes/the Gradient tool. The
+        # style's angle is stored math-style (counter-clockwise, y up);
+        # Gradient angles are screen-clockwise, hence the sign flip.
+        from core.gradient_model import Gradient, GRADIENT_STYLES
         stops = go.get("stops", [(0.0, QColor(0,0,0)), (1.0, QColor(255,255,255))])
         gtype = go.get("type", "linear")
-        angle = math.radians(go.get("angle", 90))
-        cx, cy = w / 2.0, h / 2.0
-        
-        if gtype == "radial":
-            grad = QRadialGradient(cx, cy, math.hypot(w, h) / 2.0)
-        else:
-            # Calculate ideal gradient vector for filling the entire rectangle at an angle
-            r = (w * abs(math.cos(angle)) + h * abs(math.sin(angle))) / 2.0
-            sx, sy = cx - r * math.cos(angle), cy + r * math.sin(angle)
-            ex, ey = cx + r * math.cos(angle), cy - r * math.sin(angle)
-            grad = QLinearGradient(sx, sy, ex, ey)
-            
-        for pos, color in stops:
-            grad.setColorAt(pos, QColor(color))
-            
+        g = Gradient.from_merged_stops(stops, style=gtype if gtype in GRADIENT_STYLES else "linear",
+                                       angle=-float(go.get("angle", 90)),
+                                       scale=float(go.get("scale", 100)),
+                                       reverse=bool(go.get("reverse", False)))
+        grad_brush = g.brush(QRectF(0, 0, w, h), 0.0, QTransform(), base_img.rect())
+
         bp.setOpacity(go.get("opacity", 100) / 100.0)
-        bp.fillRect(base_img.rect(), QBrush(grad))
+        bp.fillRect(base_img.rect(), grad_brush)
         
     po = styles.get("pattern_overlay")
     if po and po.get("enabled"):

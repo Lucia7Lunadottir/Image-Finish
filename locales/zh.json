@@ -388,7 +388,6 @@
   "history.flip_v":             "垂直翻转",
   "history.image_size":         "图像大小",
   "history.resize_canvas":      "更改画布",
-  "history.apply_text":         "应用文字样式",
   "history.invert":             "反相",
   "history.layer_blend":        "图层混合模式",
   "history.lock_alpha":         "锁定透明度",
@@ -644,12 +643,6 @@
   "opts.anti_alias":         "消除锯齿",
   "opts.sample_all_layers":  "对所有图层取样",
   "opts.gradient.type":           "类型:",
-  "opts.gradient.linear":         "线性",
-  "opts.gradient.radial":         "径向",
-  "opts.gradient.mode":           "颜色:",
-  "opts.gradient.fg_bg":          "前景 → 背景",
-  "opts.gradient.fg_transparent": "前景 → 透明",
-  "opts.gradient.bg_fg":          "背景 → 前景",
   "opts.gradient.reverse":        "反向",
   "opts.shape":         "形状:",
   "opts.shape.rect":     "矩形",
@@ -874,8 +867,6 @@
   "fill_layer.solid":    "纯色填充",
   "fill_layer.gradient": "渐变",
   "fill_layer.color":    "颜色:",
-  "fill_layer.color1":   "颜色 1:",
-  "fill_layer.color2":   "颜色 2:",
 
   "adj.reset":                     "重置",
 
@@ -1120,5 +1111,6 @@
   "para.align.justify": "两端对齐",
   "opts.text.vertical_tip": "切换文本方向（横排 / 直排）",
   "opts.text.commit_tip": "提交文本（Ctrl+Enter）",
-  "opts.text.cancel_tip": "取消编辑（Esc）"
+  "opts.text.cancel_tip": "取消编辑（Esc）",
+  "opts.gradient.edit_tip": "渐变 — 单击编辑"
 }

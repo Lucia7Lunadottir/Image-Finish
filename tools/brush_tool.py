@@ -245,22 +245,8 @@ class BrushTool(BaseTool):
 
     def stroke_composition_mode(self, opts=None):
         if opts is None: opts = {}
-        mode_str = opts.get("brush_blend_mode", "SourceOver")
-        mapping = {
-            "SourceOver": QPainter.CompositionMode.CompositionMode_SourceOver,
-            "Multiply": QPainter.CompositionMode.CompositionMode_Multiply,
-            "Screen": QPainter.CompositionMode.CompositionMode_Screen,
-            "Overlay": QPainter.CompositionMode.CompositionMode_Overlay,
-            "Darken": QPainter.CompositionMode.CompositionMode_Darken,
-            "Lighten": QPainter.CompositionMode.CompositionMode_Lighten,
-            "ColorDodge": QPainter.CompositionMode.CompositionMode_ColorDodge,
-            "ColorBurn": QPainter.CompositionMode.CompositionMode_ColorBurn,
-            "HardLight": QPainter.CompositionMode.CompositionMode_HardLight,
-            "SoftLight": QPainter.CompositionMode.CompositionMode_SoftLight,
-            "Difference": QPainter.CompositionMode.CompositionMode_Difference,
-            "Exclusion": QPainter.CompositionMode.CompositionMode_Exclusion,
-        }
-        return mapping.get(mode_str, QPainter.CompositionMode.CompositionMode_SourceOver)
+        from core.blend_modes import composition_mode
+        return composition_mode(opts.get("brush_blend_mode", "SourceOver"))
 
     def _get_stamp(self, size: int, hardness: float, mask) -> QImage:
         """

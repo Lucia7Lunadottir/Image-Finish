@@ -388,7 +388,6 @@
   "history.flip_v":             "Vertikal spiegeln",
   "history.image_size":         "Bildgröße",
   "history.resize_canvas":      "Arbeitsfläche ändern",
-  "history.apply_text":         "Textstile anwenden",
   "history.invert":             "Invertieren",
   "history.layer_blend":        "Ebenenmodus",
   "history.lock_alpha":         "Transparenz sperren",
@@ -644,12 +643,6 @@
   "opts.anti_alias":         "Glätten",
   "opts.sample_all_layers":  "Alle Ebenen aufnehmen",
   "opts.gradient.type":           "Typ:",
-  "opts.gradient.linear":         "Linear",
-  "opts.gradient.radial":         "Radial",
-  "opts.gradient.mode":           "Farben:",
-  "opts.gradient.fg_bg":          "Vorder- → Hintergr.",
-  "opts.gradient.fg_transparent": "Vordergr. → Transp.",
-  "opts.gradient.bg_fg":          "Hintergr. → Vordergr.",
   "opts.gradient.reverse":        "Umkehren",
   "opts.shape":         "Form:",
   "opts.shape.rect":     "Rechteck",
@@ -874,8 +867,6 @@
   "fill_layer.solid":    "Farbfläche",
   "fill_layer.gradient": "Verlauf",
   "fill_layer.color":    "Farbe:",
-  "fill_layer.color1":   "Farbe 1:",
-  "fill_layer.color2":   "Farbe 2:",
 
   "adj.reset":                     "Zurücksetzen",
 
@@ -1120,5 +1111,6 @@
   "para.align.justify": "Blocksatz",
   "opts.text.vertical_tip": "Textausrichtung umschalten (horizontal / vertikal)",
   "opts.text.commit_tip": "Text bestätigen (Strg+Eingabe)",
-  "opts.text.cancel_tip": "Bearbeitung abbrechen (Esc)"
+  "opts.text.cancel_tip": "Bearbeitung abbrechen (Esc)",
+  "opts.gradient.edit_tip": "Verlauf – zum Bearbeiten klicken"
 }

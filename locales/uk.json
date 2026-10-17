@@ -388,7 +388,6 @@
   "history.flip_v":             "Віддзеркалення В",
   "history.image_size":         "Розмір зображення",
   "history.resize_canvas":      "Зміна полотна",
-  "history.apply_text":         "Застосувати стилі тексту",
   "history.invert":             "Інвертування",
   "history.layer_blend":        "Режим накладання шару",
   "history.lock_alpha":         "Блокування прозорості",
@@ -644,12 +643,6 @@
   "opts.anti_alias":         "Згладжування",
   "opts.sample_all_layers":  "З усіх шарів",
   "opts.gradient.type":           "Тип:",
-  "opts.gradient.linear":         "Лінійний",
-  "opts.gradient.radial":         "Радіальний",
-  "opts.gradient.mode":           "Кольори:",
-  "opts.gradient.fg_bg":          "Пер. план → Фон",
-  "opts.gradient.fg_transparent": "Пер. план → Прозр",
-  "opts.gradient.bg_fg":          "Фон → Пер. план",
   "opts.gradient.reverse":        "Інверсія",
   "opts.shape":         "Фігура:",
   "opts.shape.rect":     "Прямокутник",
@@ -874,8 +867,6 @@
   "fill_layer.solid":    "Однотонна заливка",
   "fill_layer.gradient": "Градієнт",
   "fill_layer.color":    "Колір:",
-  "fill_layer.color1":   "Колір 1:",
-  "fill_layer.color2":   "Колір 2:",
 
   "adj.reset":                     "Скидання",
 
@@ -1120,5 +1111,6 @@
   "para.align.justify": "За шириною",
   "opts.text.vertical_tip": "Перемкнути орієнтацію тексту (горизонтально / вертикально)",
   "opts.text.commit_tip": "Застосувати текст (Ctrl+Enter)",
-  "opts.text.cancel_tip": "Скасувати редагування (Esc)"
+  "opts.text.cancel_tip": "Скасувати редагування (Esc)",
+  "opts.gradient.edit_tip": "Градієнт — клацніть, щоб змінити"
 }

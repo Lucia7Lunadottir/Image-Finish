@@ -62,27 +62,23 @@ class FillLayerDialog(QDialog):
         lo.addWidget(self._solid_widget)
 
         # ── Gradient ─────────────────────────────────────────────────────
+        # The same gradient model and editor as shape fills and the Gradient
+        # tool (core/gradient_model.py); old files' two-color fills load as
+        # a two-stop gradient.
+        from core.gradient_model import Gradient
+        from ui.gradient_editor import GradientPreviewWidget
+        self._gradient = (Gradient.from_dict(self._data["gradient"]) if self._data.get("gradient")
+                          else Gradient.two_color(QColor(self._data.get("color1", QColor(0, 0, 0))),
+                                                  QColor(self._data.get("color2", QColor(255, 255, 255)))))
         self._grad_widget = QWidget()
         gr = QHBoxLayout(self._grad_widget)
         gr.setContentsMargins(0, 0, 0, 0)
-        gr.addWidget(QLabel(tr("fill_layer.color1")))
-        self._c1_btn = QPushButton()
-        self._c1_btn.setFixedSize(48, 24)
-        self._color1 = self._data.get("color1", QColor(0, 0, 0))
-        if not isinstance(self._color1, QColor):
-            self._color1 = QColor(0, 0, 0)
-        self._update_c1_btn()
-        self._c1_btn.clicked.connect(self._pick_color1)
-        gr.addWidget(self._c1_btn)
-        gr.addWidget(QLabel(tr("fill_layer.color2")))
-        self._c2_btn = QPushButton()
-        self._c2_btn.setFixedSize(48, 24)
-        self._color2 = self._data.get("color2", QColor(255, 255, 255))
-        if not isinstance(self._color2, QColor):
-            self._color2 = QColor(255, 255, 255)
-        self._update_c2_btn()
-        self._c2_btn.clicked.connect(self._pick_color2)
-        gr.addWidget(self._c2_btn)
+        self._grad_swatch = GradientPreviewWidget()
+        self._grad_swatch.setFixedSize(160, 26)
+        self._grad_swatch.set_gradient(self._gradient)
+        self._grad_swatch.setToolTip(tr("opts.gradient.edit_tip"))
+        self._grad_swatch.clicked.connect(self._edit_gradient)
+        gr.addWidget(self._grad_swatch)
         gr.addStretch()
         lo.addWidget(self._grad_widget)
 
@@ -103,18 +99,6 @@ class FillLayerDialog(QDialog):
         self._color_btn.setIcon(QIcon(pix))
         self._color_btn.setIconSize(pix.size())
 
-    def _update_c1_btn(self):
-        pix = QPixmap(44, 20)
-        pix.fill(self._color1)
-        self._c1_btn.setIcon(QIcon(pix))
-        self._c1_btn.setIconSize(pix.size())
-
-    def _update_c2_btn(self):
-        pix = QPixmap(44, 20)
-        pix.fill(self._color2)
-        self._c2_btn.setIcon(QIcon(pix))
-        self._c2_btn.setIconSize(pix.size())
-
     def _pick_color(self):
         from ui.hsv_picker import ColorPickerDialog
         c = ColorPickerDialog.get_color(self._color, self, tr("adj.choose_color"))
@@ -123,21 +107,18 @@ class FillLayerDialog(QDialog):
             self._update_color_btn()
             self._trigger_preview()
 
-    def _pick_color1(self):
-        from ui.hsv_picker import ColorPickerDialog
-        c = ColorPickerDialog.get_color(self._color1, self, tr("adj.choose_color"))
-        if c is not None:
-            self._color1 = c
-            self._update_c1_btn()
-            self._trigger_preview()
+    def _edit_gradient(self):
+        from ui.gradient_editor import GradientEditorDialog
+        original = self._gradient.copy()
+        dlg = GradientEditorDialog(original, parent=self, with_layout=True)
 
-    def _pick_color2(self):
-        from ui.hsv_picker import ColorPickerDialog
-        c = ColorPickerDialog.get_color(self._color2, self, tr("adj.choose_color"))
-        if c is not None:
-            self._color2 = c
-            self._update_c2_btn()
+        def _live(g):
+            self._gradient = g
+            self._grad_swatch.set_gradient(g)
             self._trigger_preview()
+        dlg.gradient_changed.connect(_live)
+        if not dlg.exec():
+            _live(original)
 
     def _on_type_changed(self):
         t = self._type_combo.currentData()
@@ -151,7 +132,7 @@ class FillLayerDialog(QDialog):
     def result_data(self) -> dict:
         t = self._type_combo.currentData()
         if t == "gradient":
-            return {"type": "gradient", "color1": self._color1, "color2": self._color2}
+            return {"type": "gradient", "gradient": self._gradient.to_dict()}
         return {"type": "solid", "color": self._color}
 
     def _trigger_preview(self):

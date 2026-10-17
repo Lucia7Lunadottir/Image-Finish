@@ -1,10 +1,27 @@
 import math
 import numpy as np
 
-from PyQt6.QtCore import QPoint, QPointF, QRectF, Qt
-from PyQt6.QtGui import (QPainter, QColor, QLinearGradient,
-                         QRadialGradient, QBrush, QGradient)
+from PyQt6.QtCore import QPoint, QPointF, Qt
+from PyQt6.QtGui import QPainter, QColor
 from tools.base_tool import BaseTool
+from core.blend_modes import composition_mode
+from core.gradient_model import Gradient, GRADIENT_STYLES
+
+
+def gradient_from_opts(opts: dict, fg, bg) -> Gradient:
+    """The Gradient tool's gradient: the edited one (opts["gradient"]),
+    or foreground -> background until the editor has been used. Style and
+    reverse come from the options bar, not from the gradient itself."""
+    if opts.get("gradient"):
+        g = Gradient.from_dict(opts["gradient"])
+    elif opts.get("gradient_stops"):
+        g = Gradient.from_merged_stops(opts["gradient_stops"])
+    else:
+        g = Gradient.two_color(QColor(fg), QColor(bg))
+    style = opts.get("gradient_type", "linear")
+    g.style = style if style in GRADIENT_STYLES else "linear"
+    g.reverse = bool(opts.get("gradient_reverse", False))
+    return g
 
 
 class GradientTool(BaseTool):
@@ -45,18 +62,11 @@ class GradientTool(BaseTool):
             self._start = None
             return
 
-        gtype   = opts.get("gradient_type",    "linear")
+        gradient = gradient_from_opts(opts, fg, bg)
         opacity = float(opts.get("gradient_opacity", 100)) / 100
-        reverse = bool(opts.get("gradient_reverse",  False))
+        if bool(opts.get("_shift", False)):
+            ex, ey = self._snap_45(sx, sy, ex, ey)
 
-        # Get the list of gradient stops. If the editor has never been opened,
-        # use the default current colors (from fg to bg)
-        stops = opts.get("gradient_stops", [(0.0, fg), (1.0, bg)])
-
-        if reverse:
-            # Invert positions and order: stop at 0.1 becomes 0.9, etc.
-            stops = [(1.0 - pos, color) for pos, color in reversed(stops)]
-            
         if getattr(layer, "editing_mask", False) and getattr(layer, "mask", None) is not None:
             target_img = layer.mask
             lock_a = False
@@ -72,12 +82,12 @@ class GradientTool(BaseTool):
 
         painter = QPainter(target_img)
         painter.setOpacity(opacity)
+        painter.setCompositionMode(composition_mode(opts.get("gradient_mode", "SourceOver")))
         if doc.selection and not doc.selection.isEmpty():
             painter.setClipPath(doc.selection.translated(-layer.offset.x(), -layer.offset.y()))
-
-        self._apply_gradient(painter, gtype,
-                             target_img.width(), target_img.height(),
-                             sx, sy, ex, ey, stops)
+        area = target_img.rect()
+        painter.fillRect(area, gradient.brush_for_drag(QPointF(sx, sy), QPointF(ex, ey),
+                                                      device_area=area))
         painter.end()
 
         if lock_a:
@@ -92,25 +102,12 @@ class GradientTool(BaseTool):
         self._start = None
 
     @staticmethod
-    def _apply_gradient(painter: QPainter, gtype: str,
-                        w: int, h: int,
-                        sx: int, sy: int, ex: int, ey: int,
-                        stops: list):
-        rect = QRectF(0, 0, w, h)
-
-        if gtype == "radial":
-            r    = math.hypot(ex - sx, ey - sy)
-            grad = QRadialGradient(QPointF(sx, sy), max(r, 1))
-        else:  # linear
-            grad = QLinearGradient(QPointF(sx, sy), QPointF(ex, ey))
-
-        # Apply all color stops from the list
-        for pos, color in stops:
-            grad.setColorAt(pos, color)
-
-        grad.setSpread(QGradient.Spread.PadSpread)
-
-        painter.fillRect(rect, QBrush(grad))
+    def _snap_45(sx, sy, ex, ey):
+        """Shift: constrain the drag to multiples of 45° (Photoshop)."""
+        dx, dy = ex - sx, ey - sy
+        length = math.hypot(dx, dy)
+        a = round(math.atan2(dy, dx) / (math.pi / 4)) * (math.pi / 4)
+        return sx + length * math.cos(a), sy + length * math.sin(a)
 
     def cursor(self):
         return Qt.CursorShape.CrossCursor

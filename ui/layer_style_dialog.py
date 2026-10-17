@@ -112,6 +112,12 @@ class LayerStyleDialog(BaseDialog):
             btn.colorChanged.connect(self._trigger)
             form.addRow(name, btn)
             inputs[prop] = btn
+        def add_check(name, prop, val):
+            cb = QCheckBox()
+            cb.setChecked(val)
+            cb.toggled.connect(self._trigger)
+            form.addRow(name, cb)
+            inputs[prop] = cb
         def add_combo(name, prop, items):
             cb = QComboBox()
             for k, v in items: cb.addItem(k, v)
@@ -162,20 +168,8 @@ class LayerStyleDialog(BaseDialog):
             form.addRow(name, preview)
             inputs[prop] = preview
 
-        blend_modes = [
-            (tr("blend.normal"),      "SourceOver"),
-            (tr("blend.multiply"),    "Multiply"),
-            (tr("blend.screen"),      "Screen"),
-            (tr("blend.overlay"),     "Overlay"),
-            (tr("blend.darken"),      "Darken"),
-            (tr("blend.lighten"),     "Lighten"),
-            (tr("blend.color_dodge"), "ColorDodge"),
-            (tr("blend.color_burn"),  "ColorBurn"),
-            (tr("blend.hard_light"),  "HardLight"),
-            (tr("blend.soft_light"),  "SoftLight"),
-            (tr("blend.difference"),  "Difference"),
-            (tr("blend.exclusion"),   "Exclusion"),
-        ]
+        from core.blend_modes import blend_mode_items
+        blend_modes = blend_mode_items(tr)
 
         if key in ("drop_shadow", "inner_shadow"):
             add_combo(tr("ls.blend_mode"), "blend_mode", blend_modes)
@@ -223,9 +217,12 @@ class LayerStyleDialog(BaseDialog):
             add_slider(tr("ls.opacity"), "opacity", 0, 100, 100, "%")
             
             add_gradient(tr("fill_layer.gradient"), "stops", [(0.0, QColor(0,0,0)), (1.0, QColor(255,255,255))])
-            gtypes = [(tr("opts.gradient.linear"), "linear"), (tr("opts.gradient.radial"), "radial")]
+            from core.gradient_model import GRADIENT_STYLES
+            gtypes = [(tr(f"gradient_editor.style.{st}"), st) for st in GRADIENT_STYLES]
             add_combo(tr("opts.gradient.type"), "type", gtypes)
             add_angle(tr("ls.angle"), "angle", 90)
+            add_slider(tr("ls.scale"), "scale", 10, 1000, 100, "%")
+            add_check(tr("gradient_editor.reverse"), "reverse", False)
         elif key == "pattern_overlay":
             add_combo(tr("ls.blend_mode"), "blend_mode", blend_modes)
             add_slider(tr("ls.opacity"), "opacity", 0, 100, 100, "%")
@@ -252,6 +249,7 @@ class LayerStyleDialog(BaseDialog):
             state = {"enabled": item.checkState() == Qt.CheckState.Checked}
             for prop, widget in inputs.items():
                 if isinstance(widget, QSpinBox): state[prop] = widget.value()
+                elif isinstance(widget, QCheckBox): state[prop] = widget.isChecked()
                 elif hasattr(widget, "color"): state[prop] = widget.color()
                 elif isinstance(widget, QComboBox): state[prop] = widget.currentData()
                 elif isinstance(widget, GradientPreviewWidget): state[prop] = widget._stops
@@ -268,6 +266,7 @@ class LayerStyleDialog(BaseDialog):
                 if prop in state:
                     widget.blockSignals(True)
                     if isinstance(widget, QSpinBox): widget.setValue(state[prop])
+                    elif isinstance(widget, QCheckBox): widget.setChecked(bool(state[prop]))
                     elif hasattr(widget, "set_color"): widget.set_color(state[prop])
                     elif isinstance(widget, QComboBox):
                         idx = widget.findData(state[prop])

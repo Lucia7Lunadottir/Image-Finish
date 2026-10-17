@@ -8,6 +8,7 @@ from core.locale import tr
 from ui.adjustments_dialog import _JumpSlider
 
 from ui import theme
+from ui.blend_mode_combo import BlendModeCombo
 
 
 def _make_eye_icon(visible: bool) -> QIcon:
@@ -354,17 +355,7 @@ class LayersPanel(QWidget):
         blend_lo.setSpacing(6)
         self._blend_lbl = QLabel(tr("opts.blend_mode"))
         blend_lo.addWidget(self._blend_lbl)
-        self._blend_combo = QComboBox()
-        modes = [
-            ("blend.normal", "SourceOver"), ("blend.multiply", "Multiply"),
-            ("blend.screen", "Screen"), ("blend.overlay", "Overlay"),
-            ("blend.darken", "Darken"), ("blend.lighten", "Lighten"),
-            ("blend.color_dodge", "ColorDodge"), ("blend.color_burn", "ColorBurn"),
-            ("blend.hard_light", "HardLight"), ("blend.soft_light", "SoftLight"),
-            ("blend.difference", "Difference"), ("blend.exclusion", "Exclusion")
-        ]
-        for loc_key, val in modes:
-            self._blend_combo.addItem(tr(loc_key), val)
+        self._blend_combo = BlendModeCombo()
         self._blend_combo.activated.connect(lambda idx: self.layer_blend_mode.emit(self._blend_combo.itemData(idx)))
         blend_lo.addWidget(self._blend_combo, 1)
         layout.addWidget(blend_widget)
@@ -684,13 +675,7 @@ class LayersPanel(QWidget):
         self._btn_lock_artboard.setToolTip(tr("layer.lock_artboard"))
         self._btn_lock_alpha.setToolTip(tr("layer.lock_alpha"))
         self._btn_lock_all.setToolTip(tr("layer.lock_all"))
-        modes = [
-            "blend.normal", "blend.multiply", "blend.screen", "blend.overlay",
-            "blend.darken", "blend.lighten", "blend.color_dodge", "blend.color_burn",
-            "blend.hard_light", "blend.soft_light", "blend.difference", "blend.exclusion"
-        ]
-        for i, loc_key in enumerate(modes):
-            self._blend_combo.setItemText(i, tr(loc_key))
+        self._blend_combo.retranslate()
         self._link_btn.setToolTip(tr("layer.btn.link"))
         self._grp_btn.setToolTip(tr("layer.btn.group"))
         self._add_btn.setToolTip(tr("layer.btn.new"))

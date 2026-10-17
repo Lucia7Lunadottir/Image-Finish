@@ -388,7 +388,6 @@
   "history.flip_v":             "Espelhamento V",
   "history.image_size":         "Tamanho da imagem",
   "history.resize_canvas":      "Alteração de tela",
-  "history.apply_text":         "Aplicar estilos de texto",
   "history.invert":             "Inversão",
   "history.layer_blend":        "Modo de mesclagem de camada",
   "history.lock_alpha":         "Bloqueio de transparência",
@@ -644,12 +643,6 @@
   "opts.anti_alias":         "Suavização",
   "opts.sample_all_layers":  "Amostra de todas as camadas",
   "opts.gradient.type":           "Tipo:",
-  "opts.gradient.linear":         "Linear",
-  "opts.gradient.radial":         "Radial",
-  "opts.gradient.mode":           "Cores:",
-  "opts.gradient.fg_bg":          "Primário → Fundo",
-  "opts.gradient.fg_transparent": "Primário → Transparente",
-  "opts.gradient.bg_fg":          "Fundo → Primário",
   "opts.gradient.reverse":        "Inverter",
   "opts.shape":         "Forma:",
   "opts.shape.rect":     "Retângulo",
@@ -874,8 +867,6 @@
   "fill_layer.solid":    "Cor sólida",
   "fill_layer.gradient": "Degradê",
   "fill_layer.color":    "Cor:",
-  "fill_layer.color1":   "Cor 1:",
-  "fill_layer.color2":   "Cor 2:",
 
   "adj.reset":                     "Redefinir",
 
@@ -1120,5 +1111,6 @@
   "para.align.justify": "Justificar",
   "opts.text.vertical_tip": "Alternar orientação do texto (horizontal / vertical)",
   "opts.text.commit_tip": "Confirmar texto (Ctrl+Enter)",
-  "opts.text.cancel_tip": "Cancelar edição (Esc)"
+  "opts.text.cancel_tip": "Cancelar edição (Esc)",
+  "opts.gradient.edit_tip": "Gradiente — clique para editar"
 }

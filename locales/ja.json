@@ -388,7 +388,6 @@
   "history.flip_v":             "垂直方向に反転",
   "history.image_size":         "画像解像度",
   "history.resize_canvas":      "キャンバスサイズの変更",
-  "history.apply_text":         "テキストスタイルを適用",
   "history.invert":             "階調を反転",
   "history.layer_blend":        "レイヤーの描画モード",
   "history.lock_alpha":         "透明部分を保護",
@@ -644,12 +643,6 @@
   "opts.anti_alias":         "アンチエイリアス",
   "opts.sample_all_layers":  "全レイヤーをサンプリング",
   "opts.gradient.type":           "種類:",
-  "opts.gradient.linear":         "線形",
-  "opts.gradient.radial":         "放射状",
-  "opts.gradient.mode":           "カラー:",
-  "opts.gradient.fg_bg":          "描画色 → 背景色",
-  "opts.gradient.fg_transparent": "描画色 → 透明",
-  "opts.gradient.bg_fg":          "背景色 → 描画色",
   "opts.gradient.reverse":        "反転",
   "opts.shape":         "シェイプ:",
   "opts.shape.rect":     "長方形",
@@ -874,8 +867,6 @@
   "fill_layer.solid":    "べた塗り",
   "fill_layer.gradient": "グラデーション",
   "fill_layer.color":    "カラー:",
-  "fill_layer.color1":   "カラー 1:",
-  "fill_layer.color2":   "カラー 2:",
 
   "adj.reset":                     "リセット",
 
@@ -1120,5 +1111,6 @@
   "para.align.justify": "両端揃え",
   "opts.text.vertical_tip": "テキストの方向を切り替え（横書き / 縦書き）",
   "opts.text.commit_tip": "テキストを確定（Ctrl+Enter）",
-  "opts.text.cancel_tip": "編集をキャンセル（Esc）"
+  "opts.text.cancel_tip": "編集をキャンセル（Esc）",
+  "opts.gradient.edit_tip": "グラデーション — クリックして編集"
 }

@@ -397,7 +397,6 @@
   "history.flip_v":             "Flip V",
   "history.image_size":         "Image Size",
   "history.resize_canvas":      "Resize canvas",
-  "history.apply_text":         "Apply text styles",
   "history.invert":             "Invert",
   "history.average":            "Average",
   "history.blur":               "Blur",
@@ -601,12 +600,6 @@
   "opts.contiguous":         "Contiguous",
   "opts.sample_all_layers":  "Sample All Layers",
   "opts.gradient.type":          "Type:",
-  "opts.gradient.linear":        "Linear",
-  "opts.gradient.radial":        "Radial",
-  "opts.gradient.mode":          "Colors:",
-  "opts.gradient.fg_bg":         "FG → BG",
-  "opts.gradient.fg_transparent": "FG → Transparent",
-  "opts.gradient.bg_fg":         "BG → FG",
   "opts.gradient.reverse":       "Reverse",
   "opts.shape":         "Shape:",
   "opts.shape.rect":     "Rectangle",
@@ -892,8 +885,6 @@
   "fill_layer.solid":    "Solid Color",
   "fill_layer.gradient": "Gradient",
   "fill_layer.color":    "Color:",
-  "fill_layer.color1":   "Color 1:",
-  "fill_layer.color2":   "Color 2:",
 
   "adj.reset":                     "Reset",
   "adj.applying_full_res":         "Applying at full resolution…",
@@ -1127,5 +1118,6 @@
   "para.align.justify": "Justify",
   "opts.text.vertical_tip": "Toggle text orientation (horizontal / vertical)",
   "opts.text.commit_tip": "Commit text (Ctrl+Enter)",
-  "opts.text.cancel_tip": "Cancel editing (Esc)"
+  "opts.text.cancel_tip": "Cancel editing (Esc)",
+  "opts.gradient.edit_tip": "Gradient — click to edit"
 }

@@ -388,7 +388,6 @@
   "history.flip_v":             "Symétrie V",
   "history.image_size":         "Taille de l'image",
   "history.resize_canvas":      "Modification zone travail",
-  "history.apply_text":         "Appliquer styles de texte",
   "history.invert":             "Inversion",
   "history.layer_blend":        "Mode de fusion du calque",
   "history.lock_alpha":         "Verrouillage transparence",
@@ -644,12 +643,6 @@
   "opts.anti_alias":         "Lissage",
   "opts.sample_all_layers":  "Échantillonner tous les calques",
   "opts.gradient.type":           "Type :",
-  "opts.gradient.linear":         "Linéaire",
-  "opts.gradient.radial":         "Radial",
-  "opts.gradient.mode":           "Couleurs :",
-  "opts.gradient.fg_bg":          "Pr. plan → Arr. plan",
-  "opts.gradient.fg_transparent": "Pr. plan → Transp.",
-  "opts.gradient.bg_fg":          "Arr. plan → Pr. plan",
   "opts.gradient.reverse":        "Inverser",
   "opts.shape":         "Forme :",
   "opts.shape.rect":     "Rectangle",
@@ -874,8 +867,6 @@
   "fill_layer.solid":    "Couleur unie",
   "fill_layer.gradient": "Dégradé",
   "fill_layer.color":    "Couleur :",
-  "fill_layer.color1":   "Couleur 1 :",
-  "fill_layer.color2":   "Couleur 2 :",
 
   "adj.reset":                     "Réinitialiser",
 
@@ -1120,5 +1111,6 @@
   "para.align.justify": "Justifier",
   "opts.text.vertical_tip": "Basculer l'orientation du texte (horizontale / verticale)",
   "opts.text.commit_tip": "Valider le texte (Ctrl+Entrée)",
-  "opts.text.cancel_tip": "Annuler la modification (Échap)"
+  "opts.text.cancel_tip": "Annuler la modification (Échap)",
+  "opts.gradient.edit_tip": "Dégradé — cliquez pour modifier"
 }
