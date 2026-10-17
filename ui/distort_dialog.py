@@ -1,211 +1,166 @@
-import numpy as np
+"""Filter > Distort gallery (see ui/filter_gallery.py).
+
+Every mode is a backward coordinate map: `_map(X, Y, p, ctx)` says where
+each output pixel samples the source; `apply` does the nearest-pixel
+lookup and clears what falls outside."""
 import math
-from PyQt6.QtWidgets import (QDialog, QVBoxLayout, QHBoxLayout, QLabel, 
-                             QComboBox, QPushButton, QDialogButtonBox, QWidget, QFileDialog)
-from PyQt6.QtCore import Qt, QPointF, QTimer
-from PyQt6.QtGui import QImage, QColor, QPen
 
-from core.locale import tr
-from ui.adjustments_dialog import _JumpSlider
-from ui.preview_canvas_base import PreviewCanvasBase, DragCenterMixin
+import numpy as np
 
-from ui import theme
+from ui.filter_gallery import (Choice, FilterGalleryDialog, FilterMode, ImageFile, Slider,
+                               paint_center_rings)
 
 
-class DistortCanvas(DragCenterMixin, PreviewCanvasBase):
-    _center_hit_radius = 30
+class _DistortMode(FilterMode):
+    identity_at_zero = True     # amount 0 = no change (not for polar/displace)
 
-    def _center_active(self):
-        return self.dialog.mode in ("twirl", "pinch", "spherize", "zigzag")
+    def _map(self, X, Y, p, ctx, w, h):
+        raise NotImplementedError
 
-    def _paint_overlay_in_image_space(self, p, w, h):
-        if self._center_active():
-            cx, cy = self.dialog.cx, self.dialog.cy
-            p.setPen(QPen(QColor(255, 255, 255, 200), max(1.0, 1.5/self.zoom)))
-            p.setBrush(QColor(0, 0, 0, 100))
-            cr = max(4.0, 6.0/self.zoom)
-            p.drawEllipse(QPointF(cx, cy), cr, cr)
-            p.drawEllipse(QPointF(cx, cy), cr*3, cr*3)
+    def apply(self, src, p, ctx):
+        if self.identity_at_zero and p.get("amount", 1) == 0:
+            return ctx.orig_img.copy()
+        h, w = src.shape[:2]
+        Yg, Xg = np.ogrid[:h, :w]
+        X = np.broadcast_to(Xg, (h, w)).astype(np.float32).copy()
+        Y = np.broadcast_to(Yg, (h, w)).astype(np.float32).copy()
+        X, Y = self._map(X, Y, p, ctx, w, h)
+        res = src[np.clip(np.round(Y).astype(np.int32), 0, h - 1),
+                  np.clip(np.round(X).astype(np.int32), 0, w - 1)]
+        outside = (X < 0) | (X >= w) | (Y < 0) | (Y >= h)
+        if np.any(outside):
+            res[outside] = 0
+        return res
 
 
-class DistortDialog(QDialog):
-    def __init__(self, layer, mode, canvas_refresh, parent=None):
-        super().__init__(parent)
-        self.layer = layer
-        self.mode = mode
-        self.canvas_refresh = canvas_refresh
-        
-        mode_title = tr('menu.distort.' + mode).replace('…', '')
-        self.setWindowTitle(f"{tr('menu.distort')} - {mode_title}")
-        self.setWindowFlags(self.windowFlags() | Qt.WindowType.WindowMaximizeButtonHint | Qt.WindowType.WindowMinimizeButtonHint)
-        self.resize(1000, 700)
-        
-        from ui.preview_canvas_base import init_live_preview_arrays
-        init_live_preview_arrays(self, layer)
-        self.cx = self.orig_img.width() / 2.0
-        self.cy = self.orig_img.height() / 2.0
-        self.disp_arr = None
-        
-        self._timer = QTimer(self)
-        self._timer.setSingleShot(True)
-        self._timer.setInterval(60)
-        self._timer.timeout.connect(self._apply_effect)
+class _CenteredMode(_DistortMode):
+    center = True
 
-        self._build_ui()
-        self._apply_effect()
+    def paint_overlay(self, painter, dialog, w, h):
+        paint_center_rings(painter, dialog, dialog.canvas.zoom)
 
-    def _build_ui(self):
-        root = QHBoxLayout(self)
-        root.setContentsMargins(0,0,0,0); root.setSpacing(0)
-        
-        self.canvas = DistortCanvas(self)
-        w, h = self.orig_img.width(), self.orig_img.height()
-        scale = min(700 / max(1, w), 600 / max(1, h))
-        self.canvas.zoom = scale
-        self.canvas._pan = QPointF(50, 50)
-        root.addWidget(self.canvas, 1)
-        
-        props = QWidget()
-        props.setFixedWidth(280)
-        theme.apply_style(props, lambda: f"background: {theme.BASE}; border-left: 1px solid {theme.SURFACE0};")
-        pl = QVBoxLayout(props)
-        pl.setContentsMargins(15, 15, 15, 15); pl.setSpacing(15)
-        
-        def add_slider(name):
-            lbl = QLabel(name)
-            pl.addWidget(lbl)
-            sl = _JumpSlider(Qt.Orientation.Horizontal)
-            sl.valueChanged.connect(self._trigger_update)
-            pl.addWidget(sl)
-            return sl, lbl
-            
-        self.amount_sl, self.amt_lbl = add_slider(tr("distort.amount"))
-        self.param2_sl, self.p2_lbl = add_slider(tr("distort.param2"))
-        
-        def hide_p2(): self.param2_sl.hide(); self.p2_lbl.hide()
-        def hide_amt(): self.amount_sl.hide(); self.amt_lbl.hide()
+    @staticmethod
+    def _polar(X, Y, ctx):
+        dx, dy = X - ctx.cx, Y - ctx.cy
+        return np.hypot(dx, dy), np.arctan2(dy, dx)
 
-        if self.mode == "twirl":
-            self.amount_sl.setRange(-720, 720); self.amount_sl.setValue(100); hide_p2()
-        elif self.mode in ("pinch", "spherize", "shear"):
-            self.amount_sl.setRange(-100, 100); self.amount_sl.setValue(50); hide_p2()
-        elif self.mode == "ripple":
-            self.amount_sl.setRange(1, 100); self.amount_sl.setValue(10)
-            self.param2_sl.setRange(1, 100); self.param2_sl.setValue(30)
-        elif self.mode == "wave":
-            self.amount_sl.setRange(1, 200); self.amount_sl.setValue(20)
-            self.param2_sl.setRange(1, 500); self.param2_sl.setValue(120)
-        elif self.mode == "zigzag":
-            self.amount_sl.setRange(-100, 100); self.amount_sl.setValue(30)
-            self.param2_sl.setRange(1, 50); self.param2_sl.setValue(10)
-        elif self.mode == "polar":
-            hide_amt(); hide_p2()
-            self.mode_combo = QComboBox()
-            self.mode_combo.addItem(tr("distort.polar.r2p"), 0)
-            self.mode_combo.addItem(tr("distort.polar.p2r"), 1)
-            self.mode_combo.currentIndexChanged.connect(self._trigger_update)
-            pl.addWidget(self.mode_combo)
-        elif self.mode == "displace":
-            self.amount_sl.setRange(-200, 200); self.amount_sl.setValue(20)
-            self.param2_sl.setRange(-200, 200); self.param2_sl.setValue(20)
-            self.load_btn = QPushButton(tr("distort.load_map"))
-            self.load_btn.clicked.connect(self._load_map)
-            pl.addWidget(self.load_btn)
+    @staticmethod
+    def _rmax(w, h):
+        return max(1.0, math.hypot(w, h) / 2.0)
 
-        pl.addStretch()
-        btns = QDialogButtonBox(QDialogButtonBox.StandardButton.Ok | QDialogButtonBox.StandardButton.Cancel)
-        btns.accepted.connect(self.accept); btns.rejected.connect(self.reject)
-        pl.addWidget(btns)
-        root.addWidget(props)
 
-    def _load_map(self):
-        path, _ = QFileDialog.getOpenFileName(self, tr("distort.load_map"), "", "Images (*.png *.jpg *.jpeg *.bmp)")
-        if path:
-            img = QImage(path).convertToFormat(QImage.Format.Format_ARGB32_Premultiplied)
-            from core.pixel_buffer import qimage_argb_view
-            self.disp_arr = qimage_argb_view(img, writable=False).copy()
-            self._trigger_update()
+class Twirl(_CenteredMode):
+    key, title_key = "twirl", "menu.distort.twirl"
+    params = (Slider("amount", "distort.amount", -720, 720, 100),)
 
-    def _trigger_update(self):
-        self._timer.start()
+    def _map(self, X, Y, p, ctx, w, h):
+        r, theta = self._polar(X, Y, ctx)
+        rmax = self._rmax(w, h)
+        m = r < rmax
+        theta_src = theta.copy()
+        theta_src[m] = theta[m] - np.radians(p["amount"]) * ((rmax - r[m]) / rmax)
+        X[m] = ctx.cx + r[m] * np.cos(theta_src[m])
+        Y[m] = ctx.cy + r[m] * np.sin(theta_src[m])
+        return X, Y
 
-    def _apply_effect(self):
-        amount = self.amount_sl.value()
-        p2 = self.param2_sl.value()
-        
-        if amount == 0 and self.mode not in ("polar", "displace"):
-            self.preview_img = self.orig_img.copy()
-            self.canvas.update()
-            return
-            
-        h, w = self.orig_arr.shape[:2]
-        
-        Y, X = np.ogrid[:h, :w]
-        X_out = np.broadcast_to(X, (h, w)).astype(np.float32).copy()
-        Y_out = np.broadcast_to(Y, (h, w)).astype(np.float32).copy()
-        
-        cx, cy = self.cx, self.cy
+
+class Pinch(_CenteredMode):
+    key, title_key = "pinch", "menu.distort.pinch"
+    params = (Slider("amount", "distort.amount", -100, 100, 50),)
+    sign = 1.0
+
+    def _map(self, X, Y, p, ctx, w, h):
+        r, theta = self._polar(X, Y, ctx)
+        rmax = self._rmax(w, h)
+        a = self.sign * p["amount"] / 100.0
+        m = r < rmax
+        r_src = r.copy()
+        r_src[m] = rmax * np.power(np.maximum(r[m], 1e-5) / rmax, 1.0 - a)
+        X[m] = ctx.cx + r_src[m] * np.cos(theta[m])
+        Y[m] = ctx.cy + r_src[m] * np.sin(theta[m])
+        return X, Y
+
+
+class Spherize(Pinch):
+    key, title_key = "spherize", "menu.distort.spherize"
+    sign = -1.0
+
+
+class ZigZag(_CenteredMode):
+    key, title_key = "zigzag", "menu.distort.zigzag"
+    params = (Slider("amount", "distort.amount", -100, 100, 30, spatial=True),
+              Slider("ridges", "distort.param2", 1, 50, 10))
+
+    def _map(self, X, Y, p, ctx, w, h):
+        r, theta = self._polar(X, Y, ctx)
+        r_src = r - p["amount"] * np.sin(max(1, p["ridges"]) * 2 * np.pi * r / self._rmax(w, h))
+        return ctx.cx + r_src * np.cos(theta), ctx.cy + r_src * np.sin(theta)
+
+
+class Ripple(_DistortMode):
+    key, title_key = "ripple", "menu.distort.ripple"
+    params = (Slider("amount", "distort.amount", 1, 100, 10, spatial=True),
+              Slider("period", "distort.param2", 1, 100, 30, spatial=True))
+    second = staticmethod(np.sin)
+
+    def _map(self, X, Y, p, ctx, w, h):
+        a, period = p["amount"], max(1, p["period"])
+        X += a * np.sin(2 * np.pi * Y / period)
+        Y += a * self.second(2 * np.pi * X / period)
+        return X, Y
+
+
+class Wave(Ripple):
+    key, title_key = "wave", "menu.distort.wave"
+    params = (Slider("amount", "distort.amount", 1, 200, 20, spatial=True),
+              Slider("period", "distort.param2", 1, 500, 120, spatial=True))
+    second = staticmethod(np.cos)
+
+
+class Shear(_DistortMode):
+    key, title_key = "shear", "menu.distort.shear"
+    params = (Slider("amount", "distort.amount", -100, 100, 50, spatial=True),)
+
+    def _map(self, X, Y, p, ctx, w, h):
+        X -= p["amount"] * np.sin(Y / h * np.pi)
+        return X, Y
+
+
+class Polar(_DistortMode):
+    key, title_key = "polar", "menu.distort.polar"
+    identity_at_zero = False
+    params = (Choice("direction", None, (("distort.polar.r2p", 0), ("distort.polar.p2r", 1))),)
+
+    def _map(self, X, Y, p, ctx, w, h):
         rmax = max(1.0, math.hypot(w, h) / 2.0)
-        
-        if self.mode in ("twirl", "pinch", "spherize", "zigzag"):
-            dx = X_out - cx
-            dy = Y_out - cy
-            r = np.hypot(dx, dy)
-            theta = np.arctan2(dy, dx)
-        
-        if self.mode == "twirl":
-            angle = np.radians(amount)
-            mask = r < rmax
-            theta_src = theta.copy()
-            theta_src[mask] = theta[mask] - angle * ((rmax - r[mask]) / rmax)
-            X_out[mask] = cx + r[mask] * np.cos(theta_src[mask])
-            Y_out[mask] = cy + r[mask] * np.sin(theta_src[mask])
-        elif self.mode in ("pinch", "spherize"):
-            a = amount / 100.0
-            if self.mode == "spherize": a = -a
-            mask = r < rmax
-            r_src = r.copy()
-            r_src[mask] = rmax * np.power(np.maximum(r[mask], 1e-5) / rmax, 1.0 - a)
-            X_out[mask] = cx + r_src[mask] * np.cos(theta[mask])
-            Y_out[mask] = cy + r_src[mask] * np.sin(theta[mask])
-        elif self.mode == "ripple":
-            X_out += amount * np.sin(2 * np.pi * Y_out / max(1, p2))
-            Y_out += amount * np.sin(2 * np.pi * X_out / max(1, p2))
-        elif self.mode == "wave":
-            X_out += amount * np.sin(2 * np.pi * Y_out / max(1, p2))
-            Y_out += amount * np.cos(2 * np.pi * X_out / max(1, p2))
-        elif self.mode == "zigzag":
-            r_src = r - amount * np.sin(max(1, p2) * 2 * np.pi * r / rmax)
-            X_out = cx + r_src * np.cos(theta)
-            Y_out = cy + r_src * np.sin(theta)
-        elif self.mode == "shear":
-            X_out -= amount * np.sin(Y_out / h * np.pi)
-        elif self.mode == "polar":
-            if self.mode_combo.currentIndex() == 0:
-                r_src, theta_src = Y_out * (rmax / h), (X_out / w) * 2 * np.pi - np.pi
-                X_out, Y_out = cx + r_src * np.cos(theta_src), cy + r_src * np.sin(theta_src)
-            else:
-                r_dest, theta_dest = Y_out / h * rmax, (X_out / w) * 2 * np.pi - np.pi
-                X_out, Y_out = cx + r_dest * np.cos(theta_dest), cy + r_dest * np.sin(theta_dest)
-        elif self.mode == "displace" and self.disp_arr is not None:
-            dh, dw = self.disp_arr.shape[:2]
-            m_Y, m_X = np.clip((Y_out / h * dh).astype(np.int32), 0, dh - 1), np.clip((X_out / w * dw).astype(np.int32), 0, dw - 1)
-            d_color = self.disp_arr[m_Y, m_X]
-            X_out -= ((d_color[..., 2].astype(np.float32) - 128.0) / 128.0) * amount
-            Y_out -= ((d_color[..., 1].astype(np.float32) - 128.0) / 128.0) * p2
+        if p["direction"] == 0:
+            r, theta = Y * (rmax / h), (X / w) * 2 * np.pi - np.pi
+        else:
+            r, theta = Y / h * rmax, (X / w) * 2 * np.pi - np.pi
+        return ctx.cx + r * np.cos(theta), ctx.cy + r * np.sin(theta)
 
-        X_idx = np.clip(np.round(X_out).astype(np.int32), 0, w - 1)
-        Y_idx = np.clip(np.round(Y_out).astype(np.int32), 0, h - 1)
-        res_arr = self.orig_arr[Y_idx, X_idx]
-        
-        out_of_bounds = (X_out < 0) | (X_out >= w) | (Y_out < 0) | (Y_out >= h)
-        if np.any(out_of_bounds): res_arr[out_of_bounds] = 0
-            
-        self.preview_img = QImage(res_arr.data, w, h, w*4, QImage.Format.Format_ARGB32_Premultiplied).copy()
-        self.canvas.update()
 
-    def accept(self):
-        from ui.preview_canvas_base import run_full_res_commit
-        if run_full_res_commit(self, self._apply_effect, scale_attrs=("cx", "cy")):
-            self.layer.image = self.preview_img
-            super().accept()
+class Displace(_DistortMode):
+    key, title_key = "displace", "menu.distort.displace"
+    identity_at_zero = False
+    params = (Slider("amount", "distort.amount", -200, 200, 20, spatial=True),
+              Slider("vertical", "distort.param2", -200, 200, 20, spatial=True),
+              ImageFile("map", "distort.load_map"))
+
+    def _map(self, X, Y, p, ctx, w, h):
+        disp = p["map"]
+        if disp is None:
+            return X, Y
+        dh, dw = disp.shape[:2]
+        mY = np.clip((Y / h * dh).astype(np.int32), 0, dh - 1)
+        mX = np.clip((X / w * dw).astype(np.int32), 0, dw - 1)
+        d = disp[mY, mX]
+        X = X - ((d[..., 2].astype(np.float32) - 128.0) / 128.0) * p["amount"]
+        Y = Y - ((d[..., 1].astype(np.float32) - 128.0) / 128.0) * p["vertical"]
+        return X, Y
+
+
+class DistortDialog(FilterGalleryDialog):
+    GALLERY_TITLE_KEY = "menu.distort"
+    CENTER_HIT_RADIUS = 30
+    MODES = {m.key: m for m in (Displace, Pinch, Polar, Ripple, Shear, Spherize, Twirl, Wave, ZigZag)}

@@ -96,23 +96,24 @@ class FilterActionsMixin:
         LensBlurDialog(layer, self._canvas_refresh, self).exec()
 
     # ── Galleries (Blur/Specific/Render/Sharpen/Stylize/Other/Pixelate/Noise/Distort) ──
+    # All ui/filter_gallery.py dialogs: one flow, the history step named
+    # after the filter itself.
 
     @require_document
-    def _open_blur_gallery(self, mode: str):
+    def _run_filter_gallery(self, dialog_cls, mode: str):
         layer = pixel_layer_for_edit(self)
         if layer is None:
             return
-
-        pre_state = self._make_history_state(tr("menu.blur_gallery") + f" ({mode})", modified_index=self._document.active_layer_index)
-
-        from ui.blur_gallery_dialog import BlurGalleryDialog
-        dlg = BlurGalleryDialog(layer, mode, self._canvas_refresh, self)
-        if dlg.exec():
+        title = tr(dialog_cls.MODES[mode].title_key).replace('…', '')
+        pre_state = self._make_history_state(title, modified_index=self._document.active_layer_index)
+        if dialog_cls(layer, mode, self._canvas_refresh, self).exec():
             self._history.push(pre_state)
-            self._canvas_refresh()
             self._refresh_layers()
-        else:
-            self._canvas_refresh()
+        self._canvas_refresh()
+
+    def _open_blur_gallery(self, mode: str):
+        from ui.blur_gallery_dialog import BlurGalleryDialog
+        self._run_filter_gallery(BlurGalleryDialog, mode)
 
     def _blur_field(self): self._open_blur_gallery("field")
     def _blur_iris(self): self._open_blur_gallery("iris")
@@ -120,143 +121,34 @@ class FilterActionsMixin:
     def _blur_path(self): self._open_blur_gallery("path")
     def _blur_spin(self): self._open_blur_gallery("spin")
 
-    @require_document
     def _open_specific_filter(self, mode: str):
-        layer = pixel_layer_for_edit(self)
-        if layer is None:
-            return
-
-        pre_state = self._make_history_state(tr(f"menu.filter.{mode}").replace('…', ''), modified_index=self._document.active_layer_index)
-
         from ui.specific_filters_dialog import SpecificFiltersDialog
-        dlg = SpecificFiltersDialog(layer, mode, self._canvas_refresh, self)
-        if dlg.exec():
-            self._history.push(pre_state)
-            self._canvas_refresh()
-            self._refresh_layers()
-        else:
-            self._canvas_refresh()
+        self._run_filter_gallery(SpecificFiltersDialog, mode)
 
-    @require_document
     def _open_render(self, mode: str):
-        layer = pixel_layer_for_edit(self)
-        if layer is None:
-            return
-
-        pre_state = self._make_history_state(tr(f"menu.render.{mode}").replace('…', ''), modified_index=self._document.active_layer_index)
-
         from ui.render_dialog import RenderDialog
-        dlg = RenderDialog(layer, mode, self._canvas_refresh, self)
-        if dlg.exec():
-            self._history.push(pre_state)
-            self._canvas_refresh()
-            self._refresh_layers()
-        else:
-            self._canvas_refresh()
+        self._run_filter_gallery(RenderDialog, mode)
 
-    @require_document
     def _open_sharpen(self, mode: str):
-        layer = pixel_layer_for_edit(self)
-        if layer is None:
-            return
-
-        pre_state = self._make_history_state(tr(f"menu.sharpen.{mode}").replace('…', ''), modified_index=self._document.active_layer_index)
-
         from ui.sharpen_dialog import SharpenDialog
-        dlg = SharpenDialog(layer, mode, self._canvas_refresh, self)
-        if dlg.exec():
-            self._history.push(pre_state)
-            self._canvas_refresh()
-            self._refresh_layers()
-        else:
-            self._canvas_refresh()
+        self._run_filter_gallery(SharpenDialog, mode)
 
-    @require_document
     def _open_stylize(self, mode: str):
-        layer = pixel_layer_for_edit(self)
-        if layer is None:
-            return
-
-        pre_state = self._make_history_state(tr(f"menu.stylize.{mode}").replace('…', ''), modified_index=self._document.active_layer_index)
-
         from ui.stylize_dialog import StylizeDialog
-        dlg = StylizeDialog(layer, mode, self._canvas_refresh, self)
-        if dlg.exec():
-            self._history.push(pre_state)
-            self._canvas_refresh()
-            self._refresh_layers()
-        else:
-            self._canvas_refresh()
+        self._run_filter_gallery(StylizeDialog, mode)
 
-    @require_document
     def _open_other(self, mode: str):
-        layer = pixel_layer_for_edit(self)
-        if layer is None:
-            return
-
-        pre_state = self._make_history_state(tr(f"menu.other.{mode}").replace('…', ''), modified_index=self._document.active_layer_index)
-
         from ui.other_filters_dialog import OtherFiltersDialog
-        dlg = OtherFiltersDialog(layer, mode, self._canvas_refresh, self)
-        if dlg.exec():
-            self._history.push(pre_state)
-            self._canvas_refresh()
-            self._refresh_layers()
-        else:
-            self._canvas_refresh()
+        self._run_filter_gallery(OtherFiltersDialog, mode)
 
-    @require_document
     def _open_pixelate(self, mode: str):
-        layer = pixel_layer_for_edit(self)
-        if layer is None:
-            return
-
-        pre_state = self._make_history_state(tr(f"menu.pixelate.{mode}").replace('…', ''), modified_index=self._document.active_layer_index)
-
         from ui.pixelate_dialog import PixelateDialog
-        dlg = PixelateDialog(layer, mode, self._canvas_refresh, self)
-        if dlg.exec():
-            self._history.push(pre_state)
-            self._canvas_refresh()
-            self._refresh_layers()
-        else:
-            self._canvas_refresh()
+        self._run_filter_gallery(PixelateDialog, mode)
 
-    @require_document
     def _open_noise(self, mode: str):
-        layer = pixel_layer_for_edit(self)
-        if layer is None:
-            return
-
-        desc_key = "menu.noise.add"
-        if mode == "despeckle": desc_key = "menu.noise.despeckle"
-        elif mode == "dust_scratches": desc_key = "menu.noise.dust"
-        elif mode == "median": desc_key = "menu.noise.median"
-        elif mode == "reduce_noise": desc_key = "menu.noise.reduce"
-
-        pre_state = self._make_history_state(tr(desc_key).replace('…', ''), modified_index=self._document.active_layer_index)
-
         from ui.noise_dialog import NoiseDialog
-        if NoiseDialog(layer, mode, self._canvas_refresh, self).exec():
-            self._history.push(pre_state)
-            self._canvas_refresh()
-            self._refresh_layers()
-        else:
-            self._canvas_refresh()
+        self._run_filter_gallery(NoiseDialog, mode)
 
-    @require_document
     def _open_distort(self, mode: str):
-        layer = pixel_layer_for_edit(self)
-        if layer is None:
-            return
-
-        pre_state = self._make_history_state(tr(f"menu.distort.{mode}"), modified_index=self._document.active_layer_index)
-
         from ui.distort_dialog import DistortDialog
-        dlg = DistortDialog(layer, mode, self._canvas_refresh, self)
-        if dlg.exec():
-            self._history.push(pre_state)
-            self._canvas_refresh()
-            self._refresh_layers()
-        else:
-            self._canvas_refresh()
+        self._run_filter_gallery(DistortDialog, mode)

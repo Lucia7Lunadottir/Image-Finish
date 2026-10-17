@@ -1,207 +1,106 @@
+"""Filter > Noise gallery (see ui/filter_gallery.py)."""
 import numpy as np
-import math
-from PyQt6.QtWidgets import (QDialog, QVBoxLayout, QHBoxLayout, QLabel,
-                             QComboBox, QPushButton, QDialogButtonBox, QWidget, QCheckBox)
-from PyQt6.QtCore import Qt, QPointF, QTimer
-from PyQt6.QtGui import QImage
 
-from core.locale import tr
-from ui.adjustments_dialog import _JumpSlider
-from ui.preview_canvas_base import PreviewCanvasBase
 from tools.tool_utils import fast_box_blur_np
-
-from ui import theme
-
-
-class NoiseCanvas(PreviewCanvasBase):
-    pass
+from ui.filter_gallery import Check, Choice, FilterGalleryDialog, FilterMode, Slider
 
 
-class NoiseDialog(QDialog):
-    def __init__(self, layer, mode, canvas_refresh, parent=None):
-        super().__init__(parent)
-        self.layer = layer
-        self.mode = mode
-        self.canvas_refresh = canvas_refresh
-        
-        mode_keys = {
-            "add_noise": "menu.noise.add",
-            "despeckle": "menu.noise.despeckle",
-            "dust_scratches": "menu.noise.dust",
-            "median": "menu.noise.median",
-            "reduce_noise": "menu.noise.reduce"
-        }
-        title = tr(mode_keys.get(mode, "menu.noise")).replace('…', '')
-        self.setWindowTitle(f"{tr('menu.noise')} - {title}")
-        self.setWindowFlags(self.windowFlags() | Qt.WindowType.WindowMaximizeButtonHint | Qt.WindowType.WindowMinimizeButtonHint)
-        self.resize(1000, 700)
-        
-        from ui.preview_canvas_base import init_live_preview_arrays
-        init_live_preview_arrays(self, layer)
+class AddNoise(FilterMode):
+    key, title_key = "add_noise", "menu.noise.add"
+    params = (Slider("amount", "noise.amount", 1, 400, 12),
+              Choice("distribution", "noise.distribution", (("noise.uniform", 0), ("noise.gaussian", 1))),
+              Check("mono", "noise.monochromatic"))
 
-        self._timer = QTimer(self)
-        self._timer.setSingleShot(True)
-        self._timer.setInterval(60)
-        self._timer.timeout.connect(self._apply_effect)
+    def apply(self, src, p, ctx):
+        res = src.copy()
+        h, w = src.shape[:2]
+        amt = p["amount"] / 100.0
+        shape = (h, w, 1) if p["mono"] else (h, w, 3)
+        if p["distribution"] == 1:
+            noise = np.random.normal(0, amt * 127, shape)
+        else:
+            noise = np.random.uniform(-amt * 255, amt * 255, shape)
+        res[..., :3] = np.clip(src[..., :3].astype(np.float32) + noise, 0, 255).astype(np.uint8)
+        return res
 
-        self._build_ui()
-        self._apply_effect()
 
-    def _build_ui(self):
-        root = QHBoxLayout(self)
-        root.setContentsMargins(0,0,0,0); root.setSpacing(0)
-        
-        self.canvas = NoiseCanvas(self)
-        w, h = self.orig_img.width(), self.orig_img.height()
-        scale = min(700 / max(1, w), 600 / max(1, h))
-        self.canvas.zoom = scale
-        self.canvas._pan = QPointF(50, 50)
-        root.addWidget(self.canvas, 1)
-        
-        props = QWidget()
-        props.setFixedWidth(280)
-        theme.apply_style(props, lambda: f"background: {theme.BASE}; border-left: 1px solid {theme.SURFACE0};")
-        pl = QVBoxLayout(props)
-        pl.setContentsMargins(15, 15, 15, 15); pl.setSpacing(15)
-        
-        def add_slider(name):
-            lbl = QLabel(name)
-            pl.addWidget(lbl)
-            sl = _JumpSlider(Qt.Orientation.Horizontal)
-            sl.valueChanged.connect(self._trigger_update)
-            pl.addWidget(sl)
-            return sl, lbl
-            
-        self.amount_sl, self.amt_lbl = add_slider(tr("noise.amount"))
-        self.radius_sl, self.rad_lbl = add_slider(tr("noise.radius"))
-        self.threshold_sl, self.thr_lbl = add_slider(tr("noise.threshold"))
-        self.strength_sl, self.str_lbl = add_slider(tr("noise.strength"))
-        self.preserve_sl, self.prs_lbl = add_slider(tr("noise.preserve"))
-        self.color_sl, self.col_lbl = add_slider(tr("noise.color"))
-        
-        self.dist_lbl = QLabel(tr("noise.distribution"))
-        self.dist_combo = QComboBox()
-        self.dist_combo.addItem(tr("noise.uniform"), 0)
-        self.dist_combo.addItem(tr("noise.gaussian"), 1)
-        self.dist_combo.currentIndexChanged.connect(self._trigger_update)
-        pl.addWidget(self.dist_lbl)
-        pl.addWidget(self.dist_combo)
-        
-        self.mono_cb = QCheckBox(tr("noise.monochromatic"))
-        self.mono_cb.toggled.connect(self._trigger_update)
-        pl.addWidget(self.mono_cb)
+class Despeckle(FilterMode):
+    key, title_key = "despeckle", "menu.noise.despeckle"
 
-        for wg in [self.amount_sl, self.amt_lbl, self.radius_sl, self.rad_lbl, 
-                   self.threshold_sl, self.thr_lbl, self.strength_sl, self.str_lbl,
-                   self.preserve_sl, self.prs_lbl, self.color_sl, self.col_lbl,
-                   self.dist_lbl, self.dist_combo, self.mono_cb]:
-            wg.hide()
+    def apply(self, src, p, ctx):
+        # scipy.ndimage.median_filter instead of stacking all 9 shifted
+        # copies of the image (was a (h, w, 3, 9) allocation — tens of GB
+        # and a multi-minute hang on 8K-16K images; verified pixel-identical
+        # to the old stack+np.median approach at mode='nearest' == 'edge' padding).
+        from scipy.ndimage import median_filter
+        res = src.copy()
+        res[..., :3] = median_filter(src[..., :3], size=(3, 3, 1), mode='nearest')
+        return res
 
-        if self.mode == "add_noise":
-            self.amount_sl.setRange(1, 400); self.amount_sl.setValue(12)
-            self.amount_sl.show(); self.amt_lbl.show()
-            self.dist_lbl.show(); self.dist_combo.show(); self.mono_cb.show()
-        elif self.mode == "dust_scratches":
-            self.radius_sl.setRange(1, 50); self.radius_sl.setValue(1)
-            self.radius_sl.show(); self.rad_lbl.show()
-            self.threshold_sl.setRange(0, 255); self.threshold_sl.setValue(0)
-            self.threshold_sl.show(); self.thr_lbl.show()
-        elif self.mode == "median":
-            self.radius_sl.setRange(1, 50); self.radius_sl.setValue(1)
-            self.radius_sl.show(); self.rad_lbl.show()
-        elif self.mode == "reduce_noise":
-            self.strength_sl.setRange(1, 10); self.strength_sl.setValue(5)
-            self.strength_sl.show(); self.str_lbl.show()
-            self.preserve_sl.setRange(0, 100); self.preserve_sl.setValue(50)
-            self.preserve_sl.show(); self.prs_lbl.show()
-            self.color_sl.setRange(0, 100); self.color_sl.setValue(50)
-            self.color_sl.show(); self.col_lbl.show()
-        elif self.mode == "despeckle":
-            from core.locale import current as locale_current
-            msg = "Этот фильтр не имеет\nнастраиваемых параметров." if locale_current() == "ru" else "This filter has no\nadjustable parameters."
-            no_param_lbl = QLabel(msg)
-            theme.apply_style(no_param_lbl, lambda: f"color: {theme.SUBTEXT}; font-size: 12px; font-style: italic;")
-            pl.addWidget(no_param_lbl)
 
-        pl.addStretch()
-        btns = QDialogButtonBox(QDialogButtonBox.StandardButton.Ok | QDialogButtonBox.StandardButton.Cancel)
-        btns.accepted.connect(self.accept); btns.rejected.connect(self.reject)
-        pl.addWidget(btns)
-        root.addWidget(props)
+class Median(FilterMode):
+    key, title_key = "median", "menu.noise.median"
+    params = (Slider("radius", "noise.radius", 1, 50, 1, spatial=True),)
 
-    def _trigger_update(self):
-        self._timer.start()
+    def _threshold(self, p):
+        return 0
 
-    def _apply_effect(self):
-        res_arr = self.orig_arr.copy()
-        h, w = res_arr.shape[:2]
-        
-        if self.mode == "add_noise":
-            amt = self.amount_sl.value() / 100.0
-            is_gauss = self.dist_combo.currentIndex() == 1
-            is_mono = self.mono_cb.isChecked()
-            
-            shape = (h, w, 1) if is_mono else (h, w, 3)
-            if is_gauss: noise = np.random.normal(0, amt * 127, shape)
-            else: noise = np.random.uniform(-amt * 255, amt * 255, shape)
-                
-            res_arr[..., :3] = np.clip(self.orig_arr[..., :3].astype(np.float32) + noise, 0, 255).astype(np.uint8)
-            
-        elif self.mode == "despeckle":
-            # scipy.ndimage.median_filter instead of stacking all 9 shifted
-            # copies of the image (was a (h, w, 3, 9) allocation — tens of GB
-            # and a multi-minute hang on 8K-16K images; verified pixel-identical
-            # to the old stack+np.median approach at mode='nearest' == 'edge' padding).
-            from scipy.ndimage import median_filter
-            res_arr[..., :3] = median_filter(self.orig_arr[..., :3], size=(3, 3, 1), mode='nearest')
+    def apply(self, src, p, ctx):
+        from scipy.ndimage import median_filter
+        res = src.copy()
+        current = src[..., :3].copy()
+        # Repeated 3x3 passes emulate a wide median without the cost of one.
+        for _ in range(min(p["radius"], 10)):
+            current = median_filter(current, size=(3, 3, 1), mode='nearest')
+        thresh = self._threshold(p)
+        if thresh > 0:
+            diff = np.abs(src[..., :3].astype(np.int16) - current.astype(np.int16))
+            mask = np.max(diff, axis=-1, keepdims=True) > thresh
+            res[..., :3] = np.where(mask, current, src[..., :3])
+        else:
+            res[..., :3] = current
+        return res
 
-        elif self.mode in ("dust_scratches", "median"):
-            from scipy.ndimage import median_filter
-            r = self.radius_sl.value()
-            thresh = self.threshold_sl.value() if self.mode == "dust_scratches" else 0
 
-            current = self.orig_arr[..., :3].copy()
-            iters = min(r, 10) # Limit pass count (emulate wide median without FPS drop)
-            for _ in range(iters):
-                current = median_filter(current, size=(3, 3, 1), mode='nearest')
-                
-            if thresh > 0:
-                diff = np.abs(self.orig_arr[..., :3].astype(np.int16) - current.astype(np.int16))
-                mask = np.max(diff, axis=-1, keepdims=True) > thresh
-                res_arr[..., :3] = np.where(mask, current, self.orig_arr[..., :3])
-            else:
-                res_arr[..., :3] = current
-                
-        elif self.mode == "reduce_noise":
-            st = self.strength_sl.value()
-            pr = self.preserve_sl.value() / 100.0
-            cn = self.color_sl.value() / 100.0
-            
-            blurred = fast_box_blur_np(self.orig_arr, st * 2)
-            
-            if cn > 0:
-                luma = self.orig_arr[..., :3].mean(axis=-1, keepdims=True)
-                chroma = self.orig_arr[..., :3].astype(np.float32) - luma
-                chroma_blur_arr = np.clip(chroma + 128, 0, 255).astype(np.uint8)
-                chroma_blur_arr = np.concatenate([chroma_blur_arr, np.zeros((h,w,1), dtype=np.uint8)], axis=-1)
-                chroma_blurred = fast_box_blur_np(chroma_blur_arr, st * 3)[..., :3].astype(np.float32) - 128
-                chroma = chroma * (1 - cn) + chroma_blurred * cn
-                base = np.clip(luma + chroma, 0, 255).astype(np.uint8)
-            else:
-                base = self.orig_arr[..., :3].copy()
-                
-            diff = np.abs(base.astype(np.float32) - blurred[..., :3].astype(np.float32)).mean(axis=-1, keepdims=True)
-            edge_thresh = 5 + pr * 45
-            weight = np.clip(1.0 - (diff / edge_thresh), 0.0, 1.0)
-            
-            final = base.astype(np.float32) * (1 - weight) + blurred[..., :3].astype(np.float32) * weight
-            res_arr[..., :3] = final.astype(np.uint8)
-            
-        self.preview_img = QImage(res_arr.data, w, h, w*4, QImage.Format.Format_ARGB32_Premultiplied).copy()
-        self.canvas.update()
+class DustScratches(Median):
+    key, title_key = "dust_scratches", "menu.noise.dust"
+    params = (Slider("radius", "noise.radius", 1, 50, 1, spatial=True),
+              Slider("threshold", "noise.threshold", 0, 255, 0))
 
-    def accept(self):
-        from ui.preview_canvas_base import run_full_res_commit
-        if run_full_res_commit(self, self._apply_effect):
-            self.layer.image = self.preview_img
-            super().accept()
+    def _threshold(self, p):
+        return p["threshold"]
+
+
+class ReduceNoise(FilterMode):
+    key, title_key = "reduce_noise", "menu.noise.reduce"
+    params = (Slider("strength", "noise.strength", 1, 10, 5, spatial=True),
+              Slider("preserve", "noise.preserve", 0, 100, 50),
+              Slider("color", "noise.color", 0, 100, 50))
+
+    def apply(self, src, p, ctx):
+        res = src.copy()
+        h, w = src.shape[:2]
+        st = p["strength"]
+        pr = p["preserve"] / 100.0
+        cn = p["color"] / 100.0
+        blurred = fast_box_blur_np(src, st * 2)
+        if cn > 0:
+            luma = src[..., :3].mean(axis=-1, keepdims=True)
+            chroma = src[..., :3].astype(np.float32) - luma
+            chroma_arr = np.clip(chroma + 128, 0, 255).astype(np.uint8)
+            chroma_arr = np.concatenate([chroma_arr, np.zeros((h, w, 1), dtype=np.uint8)], axis=-1)
+            chroma_blurred = fast_box_blur_np(chroma_arr, st * 3)[..., :3].astype(np.float32) - 128
+            chroma = chroma * (1 - cn) + chroma_blurred * cn
+            base = np.clip(luma + chroma, 0, 255).astype(np.uint8)
+        else:
+            base = src[..., :3].copy()
+        diff = np.abs(base.astype(np.float32) - blurred[..., :3].astype(np.float32)).mean(axis=-1, keepdims=True)
+        weight = np.clip(1.0 - (diff / (5 + pr * 45)), 0.0, 1.0)
+        final = base.astype(np.float32) * (1 - weight) + blurred[..., :3].astype(np.float32) * weight
+        res[..., :3] = final.astype(np.uint8)
+        return res
+
+
+class NoiseDialog(FilterGalleryDialog):
+    GALLERY_TITLE_KEY = "menu.noise"
+    MODES = {m.key: m for m in (AddNoise, Despeckle, DustScratches, Median, ReduceNoise)}

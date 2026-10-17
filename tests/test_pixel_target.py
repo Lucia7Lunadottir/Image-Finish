@@ -39,7 +39,7 @@ def test_adjustment_layer_is_refused_without_an_undo_step(main_window, mocked_di
     doc, layer = _doc_with(w, AdjustmentLayer, adjustment_data={"type": "invert"})
     before = len(w._history._undo_stack)
     fn = getattr(w, command)
-    fn("add") if command == "_open_noise" else fn()
+    fn("add_noise") if command == "_open_noise" else fn()
     assert len(w._history._undo_stack) == before
     assert doc.layers[doc.active_layer_index] is layer
     assert w._status.currentMessage()

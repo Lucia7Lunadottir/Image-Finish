@@ -1,15 +1,9 @@
+"""Filter > Stylize gallery (see ui/filter_gallery.py)."""
 import numpy as np
-from PyQt6.QtWidgets import (QDialog, QVBoxLayout, QHBoxLayout, QLabel, 
-                             QComboBox, QPushButton, QDialogButtonBox, QWidget)
-from PyQt6.QtCore import Qt, QPointF, QTimer
-from PyQt6.QtGui import QImage, QColor
 
-from core.locale import tr
-from ui.adjustments_dialog import _JumpSlider
-from ui.preview_canvas_base import PreviewCanvasBase
 from tools.tool_utils import fast_box_blur_np
+from ui.filter_gallery import Choice, FilterGalleryDialog, FilterMode, Slider
 
-from ui import theme
 
 def apply_kuwahara(arr, r):
     """Powerful Kuwahara mathematical filter using integral images."""
@@ -48,271 +42,183 @@ def apply_kuwahara(arr, r):
     for c in range(3): res[..., c] = means_stack[Y, X, c, min_idx]
     return res
 
-class StylizeCanvas(PreviewCanvasBase):
-    pass
+
+def _shift_clamped(gray, dx, dy):
+    """gray shifted by (-dx, -dy), edge rows/columns kept from gray."""
+    shifted = np.roll(np.roll(gray, -dy, axis=0), -dx, axis=1)
+    if dy > 0: shifted[-dy:, :] = gray[-dy:, :]
+    elif dy < 0: shifted[:-dy, :] = gray[:-dy, :]
+    if dx > 0: shifted[:, -dx:] = gray[:, -dx:]
+    elif dx < 0: shifted[:, :-dx] = gray[:, :-dx]
+    return shifted
 
 
-class StylizeDialog(QDialog):
-    def __init__(self, layer, mode, canvas_refresh, parent=None):
-        super().__init__(parent)
-        self.layer = layer
-        self.mode = mode
-        self.canvas_refresh = canvas_refresh
-        
-        title = tr(f"menu.stylize.{mode}").replace('…', '')
-        self.setWindowTitle(f"{tr('menu.stylize')} - {title}")
-        self.setWindowFlags(self.windowFlags() | Qt.WindowType.WindowMaximizeButtonHint | Qt.WindowType.WindowMinimizeButtonHint)
-        self.resize(1000, 700)
-        
-        from ui.preview_canvas_base import init_live_preview_arrays
-        init_live_preview_arrays(self, layer)
+class Emboss(FilterMode):
+    key, title_key = "emboss", "menu.stylize.emboss"
+    params = (Slider("angle", "stylize.angle", -180, 180, 135),
+              Slider("height", "stylize.height", 1, 10, 3, spatial=True),
+              Slider("amount", "stylize.amount", 1, 500, 100))
 
-        self._timer = QTimer(self)
-        self._timer.setSingleShot(True)
-        self._timer.setInterval(60)
-        self._timer.timeout.connect(self._apply_effect)
+    def apply(self, src, p, ctx):
+        res = src.copy()
+        a = np.radians(p["angle"])
+        dx, dy = int(np.round(np.cos(a) * p["height"])), int(np.round(np.sin(a) * p["height"]))
+        arr_f = src[..., :3].astype(np.float32)
+        gray = 0.299 * arr_f[..., 2] + 0.587 * arr_f[..., 1] + 0.114 * arr_f[..., 0]
+        out = 128 + (_shift_clamped(gray, dx, dy) - gray) * (p["amount"] / 100.0)
+        res[..., 0] = res[..., 1] = res[..., 2] = np.clip(out, 0, 255).astype(np.uint8)
+        return res
 
-        self._build_ui()
-        self._apply_effect()
 
-    def _build_ui(self):
-        root = QHBoxLayout(self)
-        root.setContentsMargins(0,0,0,0); root.setSpacing(0)
-        
-        self.canvas = StylizeCanvas(self)
-        w, h = self.orig_img.width(), self.orig_img.height()
-        scale = min(700 / max(1, w), 600 / max(1, h))
-        self.canvas.zoom = scale
-        self.canvas._pan = QPointF(50, 50)
-        root.addWidget(self.canvas, 1)
-        
-        props = QWidget()
-        props.setFixedWidth(280)
-        theme.apply_style(props, lambda: f"background: {theme.BASE}; border-left: 1px solid {theme.SURFACE0};")
-        pl = QVBoxLayout(props)
-        pl.setContentsMargins(15, 15, 15, 15); pl.setSpacing(15)
-        
-        def add_slider(name):
-            lbl = QLabel(name)
-            pl.addWidget(lbl)
-            sl = _JumpSlider(Qt.Orientation.Horizontal)
-            sl.valueChanged.connect(self._trigger_update)
-            pl.addWidget(sl)
-            return sl, lbl
-            
-        self.sl1, self.lbl1 = add_slider("Param1")
-        self.sl2, self.lbl2 = add_slider("Param2")
-        self.sl3, self.lbl3 = add_slider("Param3")
-        self.sl4, self.lbl4 = add_slider("Param4")
-        self.sl5, self.lbl5 = add_slider("Param5")
-        self.sl6, self.lbl6 = add_slider("Param6")
-        
-        self.cb1_lbl = QLabel("Combo1")
-        self.cb1 = QComboBox(); self.cb1.currentIndexChanged.connect(self._trigger_update)
-        pl.addWidget(self.cb1_lbl); pl.addWidget(self.cb1)
-        
-        self.cb2_lbl = QLabel("Combo2")
-        self.cb2 = QComboBox(); self.cb2.currentIndexChanged.connect(self._trigger_update)
-        pl.addWidget(self.cb2_lbl); pl.addWidget(self.cb2)
+class Extrude(FilterMode):
+    key, title_key = "extrude", "menu.stylize.extrude"
+    params = (Slider("size", "stylize.size", 2, 255, 30, spatial=True),
+              Slider("depth", "stylize.depth", 1, 255, 30, spatial=True))
 
-        for wg in [self.sl1, self.lbl1, self.sl2, self.lbl2, self.sl3, self.lbl3, 
-                   self.sl4, self.lbl4, self.sl5, self.lbl5, self.sl6, self.lbl6,
-                   self.cb1, self.cb1_lbl, self.cb2, self.cb2_lbl]:
-            wg.hide()
+    def apply(self, src, p, ctx):
+        res = src.copy()
+        h, w = src.shape[:2]
+        size, depth = p["size"], p["depth"]
+        Y, X = np.ogrid[:h, :w]
+        grid_Y, grid_X = Y // size, X // size
+        depths = np.random.RandomState(42).randint(1, depth + 1, (h // size + 1, w // size + 1))
+        block_depths = depths[grid_Y, grid_X]
+        cy = np.clip(grid_Y * size + size // 2, 0, h - 1)
+        cx = np.clip(grid_X * size + size // 2, 0, w - 1)
+        block_colors = src[cy, cx, :3]
+        inner_y, inner_x = Y % size, X % size
+        shade = np.ones((h, w, 3), dtype=np.float32)
+        border = np.clip(block_depths // 2, 1, size // 2)
+        shade[inner_y < border] = 1.3
+        shade[inner_x < border] = 1.1
+        shade[inner_y > (size - border)] = 0.7
+        shade[inner_x > (size - border)] = 0.5
+        res[..., :3] = np.clip(block_colors * shade, 0, 255).astype(np.uint8)
+        return res
 
-        if self.mode == "emboss":
-            self.lbl1.setText(tr("stylize.angle")); self.sl1.setRange(-180, 180); self.sl1.setValue(135)
-            self.lbl2.setText(tr("stylize.height")); self.sl2.setRange(1, 10); self.sl2.setValue(3)
-            self.lbl3.setText(tr("stylize.amount")); self.sl3.setRange(1, 500); self.sl3.setValue(100)
-            for w in [self.sl1, self.lbl1, self.sl2, self.lbl2, self.sl3, self.lbl3]: w.show()
-        elif self.mode == "extrude":
-            self.lbl1.setText(tr("stylize.size")); self.sl1.setRange(2, 255); self.sl1.setValue(30)
-            self.lbl2.setText(tr("stylize.depth")); self.sl2.setRange(1, 255); self.sl2.setValue(30)
-            for w in [self.sl1, self.lbl1, self.sl2, self.lbl2]: w.show()
-        elif self.mode == "find_edges":
-            from core.locale import current as locale_current
-            msg = "Этот фильтр не имеет\nнастраиваемых параметров." if locale_current() == "ru" else "This filter has no\nadjustable parameters."
-            no_param_lbl = QLabel(msg)
-            theme.apply_style(no_param_lbl, lambda: f"color: {theme.SUBTEXT}; font-size: 12px; font-style: italic;")
-            pl.addWidget(no_param_lbl)
-        elif self.mode == "oil_paint":
-            self.lbl1.setText(tr("stylize.stylization")); self.sl1.setRange(1, 10); self.sl1.setValue(5)
-            self.lbl2.setText(tr("stylize.cleanliness")); self.sl2.setRange(0, 10); self.sl2.setValue(3)
-            self.lbl3.setText(tr("stylize.scale"));       self.sl3.setRange(1, 10); self.sl3.setValue(5)
-            self.lbl4.setText(tr("stylize.bristle"));     self.sl4.setRange(0, 10); self.sl4.setValue(5)
-            self.lbl5.setText(tr("stylize.angle"));       self.sl5.setRange(-180, 180); self.sl5.setValue(90)
-            self.lbl6.setText(tr("stylize.shine"));       self.sl6.setRange(0, 100); self.sl6.setValue(25)
-            for w in [self.sl1, self.lbl1, self.sl2, self.lbl2, self.sl3, self.lbl3,
-                      self.sl4, self.lbl4, self.sl5, self.lbl5, self.sl6, self.lbl6]: w.show()
-        elif self.mode == "solarize":
-            self.lbl1.setText(tr("adj.threshold.threshold")); self.sl1.setRange(0, 255); self.sl1.setValue(128)
-            for w in [self.sl1, self.lbl1]: w.show()
-        elif self.mode == "tiles":
-            self.lbl1.setText(tr("stylize.tiles_num")); self.sl1.setRange(10, 99); self.sl1.setValue(10)
-            self.lbl2.setText(tr("stylize.offset")); self.sl2.setRange(1, 90); self.sl2.setValue(10)
-            for w in [self.sl1, self.lbl1, self.sl2, self.lbl2]: w.show()
-        elif self.mode == "trace_contour":
-            self.lbl1.setText(tr("stylize.level")); self.sl1.setRange(0, 255); self.sl1.setValue(128)
-            self.cb1_lbl.setText(tr("stylize.edge")); self.cb1.addItems([tr("stylize.lower"), tr("stylize.upper")])
-            for w in [self.sl1, self.lbl1, self.cb1, self.cb1_lbl]: w.show()
-        elif self.mode == "wind":
-            self.cb1_lbl.setText(tr("stylize.method")); self.cb1.addItems([tr("stylize.wind.wind"), tr("stylize.wind.blast"), tr("stylize.wind.stagger")])
-            self.cb2_lbl.setText(tr("stylize.direction")); self.cb2.addItems([tr("stylize.right"), tr("stylize.left")])
-            for w in [self.cb1, self.cb1_lbl, self.cb2, self.cb2_lbl]: w.show()
 
-        pl.addStretch()
-        btns = QDialogButtonBox(QDialogButtonBox.StandardButton.Ok | QDialogButtonBox.StandardButton.Cancel)
-        btns.accepted.connect(self.accept); btns.rejected.connect(self.reject)
-        pl.addWidget(btns)
-        root.addWidget(props)
+class FindEdges(FilterMode):
+    key, title_key = "find_edges", "menu.stylize.find_edges"
 
-    def _trigger_update(self):
-        self._timer.start()
+    def apply(self, src, p, ctx):
+        res = src.copy()
+        arr_f = src[..., :3].astype(np.int16)
+        gx = np.abs(np.roll(arr_f, -1, axis=1) - np.roll(arr_f, 1, axis=1))
+        gy = np.abs(np.roll(arr_f, -1, axis=0) - np.roll(arr_f, 1, axis=0))
+        res[..., :3] = 255 - np.clip(gx + gy, 0, 255).astype(np.uint8)
+        return res
 
-    def _apply_effect(self):
-        res_arr = self.orig_arr.copy()
-        h, w = res_arr.shape[:2]
-        
-        if self.mode == "emboss":
-            angle, height, amount = self.sl1.value(), self.sl2.value(), self.sl3.value()
-            a = np.radians(angle)
-            dx, dy = int(np.round(np.cos(a) * height)), int(np.round(np.sin(a) * height))
-            
-            arr_f = self.orig_arr[..., :3].astype(np.float32)
-            gray = 0.299 * arr_f[..., 2] + 0.587 * arr_f[..., 1] + 0.114 * arr_f[..., 0]
-            
-            shifted = np.roll(np.roll(gray, -dy, axis=0), -dx, axis=1)
-            if dy > 0: shifted[-dy:, :] = gray[-dy:, :]
-            elif dy < 0: shifted[:-dy, :] = gray[:-dy, :]
-            if dx > 0: shifted[:, -dx:] = gray[:, -dx:]
-            elif dx < 0: shifted[:, :-dx] = gray[:, :-dx]
-            
-            grad = shifted - gray
-            res = 128 + grad * (amount / 100.0)
-            res_arr[..., 0] = res_arr[..., 1] = res_arr[..., 2] = np.clip(res, 0, 255).astype(np.uint8)
-            
-        elif self.mode == "extrude":
-            size, depth = self.sl1.value(), self.sl2.value()
-            Y, X = np.ogrid[:h, :w]
-            grid_Y, grid_X = Y // size, X // size
-            
-            np.random.seed(42)
-            depths = np.random.randint(1, depth + 1, (h // size + 1, w // size + 1))
-            block_depths = depths[grid_Y, grid_X]
-            
-            cy = np.clip(grid_Y * size + size // 2, 0, h - 1)
-            cx = np.clip(grid_X * size + size // 2, 0, w - 1)
-            block_colors = self.orig_arr[cy, cx, :3]
-            
-            inner_y, inner_x = Y % size, X % size
-            shade = np.ones((h, w, 3), dtype=np.float32)
-            border_size = np.clip(block_depths // 2, 1, size // 2)
-            
-            shade[inner_y < border_size] = 1.3
-            shade[inner_x < border_size] = 1.1
-            shade[inner_y > (size - border_size)] = 0.7
-            shade[inner_x > (size - border_size)] = 0.5
-            
-            res_arr[..., :3] = np.clip(block_colors * shade, 0, 255).astype(np.uint8)
-            
-        elif self.mode == "find_edges":
-            arr_f = self.orig_arr[..., :3].astype(np.int16)
-            gx = np.abs(np.roll(arr_f, -1, axis=1) - np.roll(arr_f, 1, axis=1))
-            gy = np.abs(np.roll(arr_f, -1, axis=0) - np.roll(arr_f, 1, axis=0))
-            res_arr[..., :3] = 255 - np.clip(gx + gy, 0, 255).astype(np.uint8)
-            
-        elif self.mode == "oil_paint":
-            stylization = self.sl1.value()
-            cleanliness = self.sl2.value()
-            scale = self.sl3.value()
-            bristle = self.sl4.value()
-            angle = self.sl5.value()
-            shine = self.sl6.value()
-            
-            base = self.orig_arr[..., :3].copy()
-            if cleanliness > 0: base = fast_box_blur_np(base, cleanliness)
-                
-            base = base.astype(np.float32)
-            if stylization > 0:
-                base = apply_kuwahara(base, stylization)
-                if cleanliness > 5:
-                    base = apply_kuwahara(base, stylization // 2)
-                    
-            if shine > 0:
-                gray = 0.299 * base[..., 2] + 0.587 * base[..., 1] + 0.114 * base[..., 0]
-                smooth_radius = 10 - bristle
-                if smooth_radius > 0:
-                    gray_3d = np.repeat(gray[..., np.newaxis], 3, axis=2).astype(np.uint8)
-                    gray = fast_box_blur_np(gray_3d, smooth_radius)[..., 0].astype(np.float32)
-                    
-                a = np.radians(angle)
-                dx, dy = int(np.round(np.cos(a) * scale)), int(np.round(np.sin(a) * scale))
-                if dx == 0 and dy == 0: dx = 1
-                
-                shifted = np.roll(np.roll(gray, -dy, axis=0), -dx, axis=1)
-                if dy > 0: shifted[-dy:, :] = gray[-dy:, :]
-                elif dy < 0: shifted[:-dy, :] = gray[:-dy, :]
-                if dx > 0: shifted[:, -dx:] = gray[:, -dx:]
-                elif dx < 0: shifted[:, :-dx] = gray[:, :-dx]
-                
-                bump = (gray - shifted) * (shine / 100.0) * 1.5
-                base = np.clip(base + bump[..., np.newaxis], 0, 255)
-                
-            res_arr[..., :3] = base.astype(np.uint8)
-            
-        elif self.mode == "solarize":
-            arr_c = self.orig_arr[..., :3]
-            res_arr[..., :3] = np.where(arr_c > self.sl1.value(), 255 - arr_c, arr_c)
-            
-        elif self.mode == "tiles":
-            size = max(2, w // self.sl1.value())
-            offset_pct = self.sl2.value()
-            Y, X = np.ogrid[:h, :w]
-            grid_Y, grid_X = Y // size, X // size
-            
-            np.random.seed(42)
-            shift_y = np.random.randint(-size * offset_pct // 100, size * offset_pct // 100 + 1, (h // size + 1, w // size + 1))
-            shift_x = np.random.randint(-size * offset_pct // 100, size * offset_pct // 100 + 1, (h // size + 1, w // size + 1))
-            
-            src_Y = np.clip(Y + shift_y[grid_Y, grid_X], 0, h - 1)
-            src_X = np.clip(X + shift_x[grid_Y, grid_X], 0, w - 1)
-            
-            gap = max(1, size // 10)
-            is_gap = ((Y % size) < gap) | ((X % size) < gap)
-            
-            bg = getattr(self.parent()._canvas, "bg_color", QColor(255, 255, 255)) if hasattr(self.parent(), "_canvas") else QColor(255, 255, 255)
-            bg_arr = np.array([bg.blue(), bg.green(), bg.red()], dtype=np.uint8)
-            res_arr[..., :3] = np.where(is_gap[..., np.newaxis], bg_arr, self.orig_arr[src_Y, src_X, :3])
-            
-        elif self.mode == "trace_contour":
-            arr_c = self.orig_arr[..., :3]
-            mask = arr_c <= self.sl1.value() if self.cb1.currentIndex() == 0 else arr_c >= self.sl1.value()
-            edges = (mask ^ np.roll(mask, 1, axis=0)) | (mask ^ np.roll(mask, 1, axis=1))
-            res_arr[..., :3] = np.where(edges, arr_c, 255)
-            
-        elif self.mode == "wind":
-            method, direction = self.cb1.currentIndex(), self.cb2.currentIndex()
-            f_arr = self.orig_arr[..., :3].copy()
-            np.random.seed(42)
-            
-            prob = 0.05 if method == 0 else 0.15 if method == 1 else 0.1
-            length = 20 if method == 0 else 40 if method == 1 else 10
-            
-            for i in range(1, length):
-                mask = (np.random.rand(h, w, 1) < prob)
-                if direction == 0:
-                    shifted = np.roll(f_arr, i, axis=1); shifted[:, :i] = f_arr[:, :i]
-                else:
-                    shifted = np.roll(f_arr, -i, axis=1); shifted[:, -i:] = f_arr[:, -i:]
-                f_arr = np.where(mask, shifted, f_arr)
-                
-            res_arr[..., :3] = f_arr
-            
-        self.preview_img = QImage(res_arr.data, w, h, w*4, QImage.Format.Format_ARGB32_Premultiplied).copy()
-        self.canvas.update()
 
-    def accept(self):
-        from ui.preview_canvas_base import run_full_res_commit
-        if run_full_res_commit(self, self._apply_effect):
-            self.layer.image = self.preview_img
-            super().accept()
+class OilPaint(FilterMode):
+    key, title_key = "oil_paint", "menu.stylize.oil_paint"
+    params = (Slider("stylization", "stylize.stylization", 1, 10, 5, spatial=True),
+              Slider("cleanliness", "stylize.cleanliness", 0, 10, 3, spatial=True),
+              Slider("scale", "stylize.scale", 1, 10, 5, spatial=True),
+              Slider("bristle", "stylize.bristle", 0, 10, 5),
+              Slider("angle", "stylize.angle", -180, 180, 90),
+              Slider("shine", "stylize.shine", 0, 100, 25))
+
+    def apply(self, src, p, ctx):
+        res = src.copy()
+        stylization, cleanliness, scale = p["stylization"], p["cleanliness"], p["scale"]
+        base = src[..., :3].copy()
+        if cleanliness > 0:
+            base = fast_box_blur_np(base, cleanliness)
+        base = base.astype(np.float32)
+        if stylization > 0:
+            base = apply_kuwahara(base, stylization)
+            if cleanliness > 5:
+                base = apply_kuwahara(base, stylization // 2)
+        if p["shine"] > 0:
+            gray = 0.299 * base[..., 2] + 0.587 * base[..., 1] + 0.114 * base[..., 0]
+            smooth_radius = 10 - p["bristle"]
+            if smooth_radius > 0:
+                gray_3d = np.repeat(gray[..., np.newaxis], 3, axis=2).astype(np.uint8)
+                gray = fast_box_blur_np(gray_3d, smooth_radius)[..., 0].astype(np.float32)
+            a = np.radians(p["angle"])
+            dx, dy = int(np.round(np.cos(a) * scale)), int(np.round(np.sin(a) * scale))
+            if dx == 0 and dy == 0:
+                dx = 1
+            bump = (gray - _shift_clamped(gray, dx, dy)) * (p["shine"] / 100.0) * 1.5
+            base = np.clip(base + bump[..., np.newaxis], 0, 255)
+        res[..., :3] = base.astype(np.uint8)
+        return res
+
+
+class Solarize(FilterMode):
+    key, title_key = "solarize", "menu.stylize.solarize"
+    params = (Slider("threshold", "adj.threshold.threshold", 0, 255, 128),)
+
+    def apply(self, src, p, ctx):
+        res = src.copy()
+        c = src[..., :3]
+        res[..., :3] = np.where(c > p["threshold"], 255 - c, c)
+        return res
+
+
+class Tiles(FilterMode):
+    key, title_key = "tiles", "menu.stylize.tiles"
+    params = (Slider("count", "stylize.tiles_num", 10, 99, 10),
+              Slider("offset", "stylize.offset", 1, 90, 10))
+
+    def apply(self, src, p, ctx):
+        res = src.copy()
+        h, w = src.shape[:2]
+        size = max(2, w // p["count"])
+        pct = p["offset"]
+        Y, X = np.ogrid[:h, :w]
+        grid_Y, grid_X = Y // size, X // size
+        rng = np.random.RandomState(42)
+        lo, hi = -size * pct // 100, size * pct // 100 + 1      # floor of the negative bound
+        shift_y = rng.randint(lo, hi, (h // size + 1, w // size + 1))
+        shift_x = rng.randint(lo, hi, (h // size + 1, w // size + 1))
+        src_Y = np.clip(Y + shift_y[grid_Y, grid_X], 0, h - 1)
+        src_X = np.clip(X + shift_x[grid_Y, grid_X], 0, w - 1)
+        gap = max(1, size // 10)
+        is_gap = ((Y % size) < gap) | ((X % size) < gap)
+        res[..., :3] = np.where(is_gap[..., np.newaxis], ctx.bgr(ctx.bg), src[src_Y, src_X, :3])
+        return res
+
+
+class TraceContour(FilterMode):
+    key, title_key = "trace_contour", "menu.stylize.trace_contour"
+    params = (Slider("level", "stylize.level", 0, 255, 128),
+              Choice("edge", "stylize.edge", (("stylize.lower", 0), ("stylize.upper", 1))))
+
+    def apply(self, src, p, ctx):
+        res = src.copy()
+        c = src[..., :3]
+        mask = c <= p["level"] if p["edge"] == 0 else c >= p["level"]
+        edges = (mask ^ np.roll(mask, 1, axis=0)) | (mask ^ np.roll(mask, 1, axis=1))
+        res[..., :3] = np.where(edges, c, 255)
+        return res
+
+
+class Wind(FilterMode):
+    key, title_key = "wind", "menu.stylize.wind"
+    params = (Choice("method", "stylize.method", (("stylize.wind.wind", 0), ("stylize.wind.blast", 1),
+                                                  ("stylize.wind.stagger", 2))),
+              Choice("direction", "stylize.direction", (("stylize.right", 0), ("stylize.left", 1))))
+
+    def apply(self, src, p, ctx):
+        res = src.copy()
+        h, w = src.shape[:2]
+        method = p["method"]
+        f = src[..., :3].copy()
+        rng = np.random.RandomState(42)
+        prob = 0.05 if method == 0 else 0.15 if method == 1 else 0.1
+        length = 20 if method == 0 else 40 if method == 1 else 10
+        for i in range(1, length):
+            mask = rng.rand(h, w, 1) < prob
+            if p["direction"] == 0:
+                shifted = np.roll(f, i, axis=1); shifted[:, :i] = f[:, :i]
+            else:
+                shifted = np.roll(f, -i, axis=1); shifted[:, -i:] = f[:, -i:]
+            f = np.where(mask, shifted, f)
+        res[..., :3] = f
+        return res
+
+
+class StylizeDialog(FilterGalleryDialog):
+    GALLERY_TITLE_KEY = "menu.stylize"
+    MODES = {m.key: m for m in (Emboss, Extrude, FindEdges, OilPaint, Solarize, Tiles, TraceContour, Wind)}

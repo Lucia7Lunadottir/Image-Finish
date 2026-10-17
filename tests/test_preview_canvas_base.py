@@ -122,9 +122,9 @@ def test_no_preview_image_paints_without_crashing(qapp):
 
 
 def test_bare_subclass_mouse_events_return_none_to_qt(qapp):
-    """Regression: PixelateCanvas/NoiseCanvas/StylizeCanvas/SharpenCanvas/
-    OtherFiltersCanvas are `class X(PreviewCanvasBase): pass` — no Python
-    override sits between Qt's dispatch and PreviewCanvasBase's own
+    """Regression: the filter-gallery canvases (once bare `class
+    X(PreviewCanvasBase): pass` per dialog, now ui.filter_gallery.
+    GalleryCanvas and Liquify's canvas) — no Python override sits between Qt's dispatch and PreviewCanvasBase's own
     mousePressEvent/mouseMoveEvent. Those are void in C++; if the method
     Qt actually calls returns non-None, PyQt6 raises "TypeError: invalid
     result from X.mouseMoveEvent()" the moment a real mouse event arrives
@@ -132,15 +132,26 @@ def test_bare_subclass_mouse_events_return_none_to_qt(qapp):
     through the same dispatch path Qt itself uses, unlike calling
     mousePressEvent directly from Python — that's why this needs
     .event(), not a direct method call, to actually catch the bug."""
-    from ui.noise_dialog import NoiseCanvas
-    from ui.stylize_dialog import StylizeCanvas
-    from ui.sharpen_dialog import SharpenCanvas
-    from ui.pixelate_dialog import PixelateCanvas
-    from ui.other_filters_dialog import OtherFiltersCanvas
+    from core.layer import RasterLayer
+    from ui.noise_dialog import NoiseDialog
+    from ui.stylize_dialog import StylizeDialog
+    from ui.sharpen_dialog import SharpenDialog
+    from ui.pixelate_dialog import PixelateDialog
+    from ui.other_filters_dialog import OtherFiltersDialog
+    from ui.distort_dialog import DistortDialog
+    from ui.render_dialog import RenderDialog
+    from ui.blur_gallery_dialog import BlurGalleryDialog
+    from ui.specific_filters_dialog import SpecificFiltersDialog
 
-    for cls in (PreviewCanvasBase, NoiseCanvas, StylizeCanvas, SharpenCanvas,
-                PixelateCanvas, OtherFiltersCanvas):
-        canvas = cls(_dialog_stub())
+    canvases = [PreviewCanvasBase(_dialog_stub())]
+    for cls, mode in ((NoiseDialog, "median"), (StylizeDialog, "solarize"), (SharpenDialog, "unsharp"),
+                      (PixelateDialog, "crystallize"), (OtherFiltersDialog, "high_pass"),
+                      (DistortDialog, "twirl"), (RenderDialog, "lighting"), (BlurGalleryDialog, "iris"),
+                      (SpecificFiltersDialog, "liquify")):
+        layer = RasterLayer("r", 40, 30)
+        layer.image.fill(QColor(120, 80, 40, 255))
+        canvases.append(cls(layer, mode, lambda: None).canvas)
+    for canvas in canvases:
         canvas.resize(100, 100)
         _press(canvas, (10, 10), button=Qt.MouseButton.MiddleButton)
         _move(canvas, (20, 30), buttons=Qt.MouseButton.MiddleButton)
