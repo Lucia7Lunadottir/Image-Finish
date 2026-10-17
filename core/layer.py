@@ -184,7 +184,7 @@ class Layer:
             _composite_active_stroke(img_to_draw, stroke_img, active_stroke, self.offset)
 
         current_offset = self.offset
-        if getattr(self, "layer_styles", None):
+        if self.has_active_styles:
             from core.layer_styles import apply_layer_styles
             # Styles (shadows, glows, bevel) are expensive; reuse the
             # rendered result until the source pixels or the style settings
@@ -425,6 +425,14 @@ class Layer:
     @property
     def is_container(self) -> bool:
         return self._is_container
+
+    @property
+    def has_active_styles(self) -> bool:
+        """Is any layer style switched on? Disabled effects keep their
+        settings in `layer_styles` (as in Photoshop) but must not send the
+        layer down the slower raster/styles render path."""
+        return any(isinstance(v, dict) and v.get("enabled")
+                   for v in (getattr(self, "layer_styles", None) or {}).values())
 
     def content_rect(self) -> QRectF:
         """Document-space bounds of the visible pixels (empty if none);
@@ -670,7 +678,7 @@ class LiveRenderedLayer(Layer):
         stays sharp in a zoomed view instead of being a magnified
         document-resolution bitmap. Gradient/pattern overlays span the
         layer's full content frame even when only part of it is rendered."""
-        styles = getattr(self, "layer_styles", None) or None
+        styles = self.layer_styles if self.has_active_styles else None
         scale = math.sqrt(abs(to_device.determinant())) or 1.0
         frame = to_device.mapRect(self.content_bounds())
         reach = 0

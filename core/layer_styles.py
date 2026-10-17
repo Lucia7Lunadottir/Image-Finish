@@ -92,6 +92,33 @@ def layer_styles_padding(styles: dict) -> int:
     return int(math.ceil(pad)) + 4
 
 
+def _blend_overlay(img: QImage, brush: QBrush, blend_mode: str, opacity: float) -> QImage:
+    """An overlay style (colour / gradient / pattern) the way Photoshop
+    applies it: the overlay's colour is blended into the layer's colour with
+    `blend_mode` at `opacity` %, and the layer keeps its own transparency.
+
+    QPainter alone can't express that — its blend modes also produce alpha
+    where the layer is transparent, and clipping to the layer (SourceAtop,
+    which the old code used) replaced the chosen mode with plain Normal. So:
+    blend onto an opaque copy of the layer's colours, then put the layer's
+    alpha back."""
+    from core.pixel_buffer import qimage_argb_view
+    w = img.width()
+    straight = img.convertToFormat(QImage.Format.Format_ARGB32)
+    view = qimage_argb_view(straight, writable=True)[:, :w]
+    alpha = view[..., 3].copy()
+    view[..., 3] = 255                       # opaque: straight == premultiplied
+    opaque = straight.convertToFormat(QImage.Format.Format_ARGB32_Premultiplied)
+    p = QPainter(opaque)
+    p.setCompositionMode(_get_comp_mode(blend_mode))
+    p.setOpacity(max(0.0, min(1.0, opacity / 100.0)))
+    p.fillRect(opaque.rect(), brush)
+    p.end()
+    out = opaque.convertToFormat(QImage.Format.Format_ARGB32)
+    qimage_argb_view(out, writable=True)[:, :w, 3] = alpha
+    return out.convertToFormat(QImage.Format.Format_ARGB32_Premultiplied)
+
+
 def apply_layer_styles(img: QImage, styles: dict, frame: QRectF | None = None) -> tuple[QImage, QPoint]:
     """`frame` (in `img` coordinates) is the layer's full extent for the
     overlays that are laid out over it (gradient, pattern) — by default the
@@ -111,21 +138,23 @@ def apply_layer_styles(img: QImage, styles: dict, frame: QRectF | None = None) -
     painter = QPainter(result)
     painter.setRenderHint(QPainter.RenderHint.Antialiasing)
     
+    # Overlays, bottom to top as in Photoshop: pattern, gradient, colour.
     base_img = img.copy()
-    bp = QPainter(base_img)
-    
-    co = styles.get("color_overlay")
-    if co and co.get("enabled"):
-        bp.setCompositionMode(_get_comp_mode(co.get("blend_mode", "SourceOver")))
-        c = QColor(co.get("color", QColor(255,0,0)))
-        c.setAlphaF(co.get("opacity", 100) / 100.0)
-        bp.setCompositionMode(QPainter.CompositionMode.CompositionMode_SourceAtop)
-        bp.fillRect(base_img.rect(), c)
-        
+    po = styles.get("pattern_overlay")
+    if po and po.get("enabled"):
+        path = po.get("pattern", "")
+        pixmap = QPixmap(path) if path and os.path.exists(path) else QPixmap()
+        if not pixmap.isNull():
+            b = QBrush(pixmap)
+            t = QTransform()
+            t.scale(po.get("scale", 100) / 100.0, po.get("scale", 100) / 100.0)
+            if frame is not None:   # the pattern is anchored to the layer, not to this image
+                t = t * QTransform.fromTranslate(frame.x(), frame.y())
+            b.setTransform(t)
+            base_img = _blend_overlay(base_img, b, po.get("blend_mode", "SourceOver"), po.get("opacity", 100))
+
     go = styles.get("gradient_overlay")
     if go and go.get("enabled"):
-        bp.setCompositionMode(QPainter.CompositionMode.CompositionMode_SourceAtop)
-        
         # Same gradient model as fills/shapes/the Gradient tool. The
         # style's angle is stored math-style (counter-clockwise, y up);
         # Gradient angles are screen-clockwise, hence the sign flip.
@@ -136,29 +165,14 @@ def apply_layer_styles(img: QImage, styles: dict, frame: QRectF | None = None) -
                                        angle=-float(go.get("angle", 90)),
                                        scale=float(go.get("scale", 100)),
                                        reverse=bool(go.get("reverse", False)))
-        grad_brush = g.brush(frame if frame is not None else QRectF(0, 0, w, h), 0.0, QTransform(),
-                             base_img.rect())
+        brush = g.brush(frame if frame is not None else QRectF(0, 0, w, h), 0.0, QTransform(),
+                        base_img.rect())
+        base_img = _blend_overlay(base_img, brush, go.get("blend_mode", "SourceOver"), go.get("opacity", 100))
 
-        bp.setOpacity(go.get("opacity", 100) / 100.0)
-        bp.fillRect(base_img.rect(), grad_brush)
-        
-    po = styles.get("pattern_overlay")
-    if po and po.get("enabled"):
-        bp.setCompositionMode(_get_comp_mode(po.get("blend_mode", "SourceOver")))
-        path = po.get("pattern", "")
-        if path and os.path.exists(path):
-            pixmap = QPixmap(path)
-            if not pixmap.isNull():
-                scale = po.get("scale", 100) / 100.0
-                b = QBrush(pixmap)
-                t = QTransform()
-                t.scale(scale, scale)
-                if frame is not None:   # the pattern is anchored to the layer, not to this image
-                    t = t * QTransform.fromTranslate(frame.x(), frame.y())
-                b.setTransform(t)
-                bp.setOpacity(po.get("opacity", 100) / 100.0)
-                bp.fillRect(base_img.rect(), b)
-    bp.end()
+    co = styles.get("color_overlay")
+    if co and co.get("enabled"):
+        base_img = _blend_overlay(base_img, QBrush(QColor(co.get("color", QColor(255, 0, 0)))),
+                                  co.get("blend_mode", "SourceOver"), co.get("opacity", 100))
 
     from core.pixel_buffer import qimage_argb_view
     arr = qimage_argb_view(img, writable=False)[:, :w]

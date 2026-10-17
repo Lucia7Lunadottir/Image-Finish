@@ -1,7 +1,8 @@
 from PyQt6.QtWidgets import (QVBoxLayout, QHBoxLayout, QLabel, QListWidget, QStackedWidget,
                              QCheckBox, QPushButton, QSpinBox, QComboBox, QWidget, QDialogButtonBox, QListWidgetItem, QFormLayout, QDial)
-from PyQt6.QtCore import Qt, QTimer
-from PyQt6.QtGui import QColor, QIcon
+from PyQt6.QtCore import Qt, QTimer, QEvent
+from PyQt6.QtGui import QColor, QIcon, QKeySequence
+from PyQt6.QtWidgets import QApplication
 from ui.gradient_editor import GradientPreviewWidget, GradientEditorDialog
 from core.locale import tr
 from ui.base_dialog import BaseDialog
@@ -20,6 +21,7 @@ def _slider_spin(lo: int, hi: int, val: int):
     sp.setFixedWidth(68)
     sl.valueChanged.connect(sp.setValue)
     sp.valueChanged.connect(sl.setValue)
+    sp.partner = sl          # kept in sync when values are loaded silently
     return sl, sp
 
 class LayerStyleDialog(BaseDialog):
@@ -39,9 +41,25 @@ class LayerStyleDialog(BaseDialog):
         self._timer.setInterval(100)
         self._timer.timeout.connect(self._apply_preview)
         
+        # Undo inside the dialog (Ctrl+Z / Ctrl+Shift+Z), like Photoshop's
+        # Layer Style: one step per burst of edits (a slider drag is one).
+        self._undo_stack: list = []
+        self._redo_stack: list = []
+        self._edit_open = False
+        self._edit_burst = QTimer(self)
+        self._edit_burst.setSingleShot(True)
+        self._edit_burst.setInterval(500)
+        self._edit_burst.timeout.connect(lambda: setattr(self, "_edit_open", False))
+
         self.effects_names = {}
         self._build_ui()
         self._load_data()
+        # The full state (every effect, defaults included) is the baseline,
+        # so undoing back to it also resets controls the saved styles lacked.
+        self._read_data()
+        # An application-wide filter: a focused spin box would otherwise eat
+        # Ctrl+Z as "undo my typing" before any dialog shortcut sees it.
+        QApplication.instance().installEventFilter(self)
         
     def _build_ui(self):
         root = QHBoxLayout(self)
@@ -138,6 +156,7 @@ class LayerStyleDialog(BaseDialog):
             sp.setFixedWidth(68)
             dial.valueChanged.connect(sp.setValue)
             sp.valueChanged.connect(dial.setValue)
+            sp.partner = dial
             w = QWidget(); h = QHBoxLayout(w); h.setContentsMargins(0,0,0,0)
             h.addWidget(dial); h.addWidget(sp)
             form.addRow(name, w)
@@ -265,7 +284,13 @@ class LayerStyleDialog(BaseDialog):
             for prop, widget in inputs.items():
                 if prop in state:
                     widget.blockSignals(True)
-                    if isinstance(widget, QSpinBox): widget.setValue(state[prop])
+                    if isinstance(widget, QSpinBox):
+                        widget.setValue(state[prop])
+                        partner = getattr(widget, "partner", None)
+                        if partner is not None:      # the slider/dial next to it
+                            partner.blockSignals(True)
+                            partner.setValue(widget.value())
+                            partner.blockSignals(False)
                     elif isinstance(widget, QCheckBox): widget.setChecked(bool(state[prop]))
                     elif hasattr(widget, "set_color"): widget.set_color(state[prop])
                     elif isinstance(widget, QComboBox):
@@ -277,8 +302,52 @@ class LayerStyleDialog(BaseDialog):
         self.list_widget.blockSignals(False)
 
     def _trigger(self, *args):
+        import copy
+        before = copy.deepcopy(self.current_styles)
         self._read_data()
+        if self.current_styles != before:
+            if not self._edit_open:
+                self._undo_stack.append(before)
+                self._redo_stack.clear()
+                self._edit_open = True
+            self._edit_burst.start()
         self._timer.start()
+
+    # ── undo / redo inside the dialog ─────────────────────────────────────
+    def undo(self):
+        self._step(self._undo_stack, self._redo_stack)
+
+    def redo(self):
+        self._step(self._redo_stack, self._undo_stack)
+
+    def _step(self, source: list, target: list):
+        import copy
+        if not source:
+            return
+        self._edit_open = False
+        target.append(copy.deepcopy(self.current_styles))
+        self.current_styles = source.pop()
+        self._load_data()
+        self._timer.stop()
+        self._apply_preview()
+
+    def eventFilter(self, obj, event):
+        if event.type() in (QEvent.Type.ShortcutOverride, QEvent.Type.KeyPress) and self.isActiveWindow():
+            if event.matches(QKeySequence.StandardKey.Undo):
+                if event.type() == QEvent.Type.KeyPress:
+                    self.undo()
+                event.accept()
+                return True
+            if event.matches(QKeySequence.StandardKey.Redo):
+                if event.type() == QEvent.Type.KeyPress:
+                    self.redo()
+                event.accept()
+                return True
+        return super().eventFilter(obj, event)
+
+    def done(self, result):
+        QApplication.instance().removeEventFilter(self)
+        super().done(result)
 
     def _apply_preview(self):
         self.layer.layer_styles = self.current_styles

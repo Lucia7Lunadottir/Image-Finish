@@ -124,7 +124,7 @@ class BrushTool(BaseTool):
         layer = self._stroke_layer
         if self._stroke_dirty_rect is None or layer is None:
             return None
-        if getattr(layer, "layer_styles", None):
+        if layer.has_active_styles:
             return None
         return QRect(self._stroke_dirty_rect)
 

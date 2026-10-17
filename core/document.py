@@ -242,7 +242,7 @@ class Document:
                 return False
             if getattr(layer, "clipping", False):
                 return False
-            if getattr(layer, "layer_styles", None):
+            if layer.has_active_styles:
                 return False
         return True
 
@@ -310,7 +310,7 @@ class Document:
                     and not getattr(l, "mask", None)
                     and not getattr(l, "vector_mask", None)
                     and not getattr(l, "clipping", False)
-                    and not getattr(l, "layer_styles", None)
+                    and not l.has_active_styles
                     and getattr(self, "quick_mask_layer", None) is None
                     and l.offset.x() == 0 and l.offset.y() == 0
                     and l.image.width() == self.width and l.image.height() == self.height):

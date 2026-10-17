@@ -749,9 +749,14 @@ class MainWindow(QMainWindow,
         if layer is None or layer.is_container:
             return
         from ui.layer_style_dialog import LayerStyleDialog
+        # Snapshot *before* the dialog: it previews on the layer itself, so
+        # a snapshot taken after OK held the new styles and Undo restored
+        # exactly what was already there.
+        pre_state = self._make_history_state(tr("history.layer_styles"),
+                                             modified_index=self._document.layers.index(layer))
         dlg = LayerStyleDialog(layer, self._canvas_refresh, self)
         if dlg.exec():
-            self._push_history(tr("history.layer_styles"))
+            self._history.push(pre_state)
             self._refresh_layers()
         else:
             dlg.reject()

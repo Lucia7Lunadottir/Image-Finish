@@ -280,7 +280,7 @@ class LayerItem(QWidget):
             alpha_lock_lbl.setFixedWidth(18)
             lo.addWidget(alpha_lock_lbl)
             
-        if getattr(layer, "layer_styles", None):
+        if layer.has_active_styles:
             fx_lbl = QLabel("fx")
             theme.apply_style(fx_lbl, lambda: f"color: {theme.SUBTEXT}; font-weight: bold; font-style: italic; font-size: 12px;")
             fx_lbl.setFixedWidth(16)
