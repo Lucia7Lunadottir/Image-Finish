@@ -1,5 +1,5 @@
 from PyQt6.QtCore import QPoint, QPointF, Qt, QRectF
-from PyQt6.QtGui import QPainter, QPen, QColor, QImage
+from PyQt6.QtGui import QPen, QColor, QImage
 from tools.base_tool import BaseTool
 
 class FrameTool(BaseTool):

@@ -6,7 +6,7 @@ Imported by effect_tools, fill_tool, advanced_erasers, etc.
 """
 
 from PyQt6.QtGui import QImage, QPainter, QColor, QPainterPath
-from PyQt6.QtCore import QRect, QPoint
+from PyQt6.QtCore import QRect
 
 try:
     import numpy as np

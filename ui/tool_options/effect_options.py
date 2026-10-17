@@ -1,5 +1,4 @@
-from PyQt6.QtWidgets import (QWidget, QHBoxLayout, QLabel,
-                             QSpinBox, QComboBox)
+from PyQt6.QtWidgets import QSpinBox, QComboBox
 from PyQt6.QtCore import Qt
 from .base_options import BaseOptions
 from core.locale import tr

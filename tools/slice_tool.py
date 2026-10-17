@@ -1,5 +1,5 @@
-from PyQt6.QtCore import QPoint, Qt, QRect
-from PyQt6.QtGui import QPainter, QPen, QColor
+from PyQt6.QtCore import Qt, QRect
+from PyQt6.QtGui import QPen, QColor
 from tools.base_tool import BaseTool
 
 class SliceTool(BaseTool):

@@ -1,6 +1,6 @@
 import math
 from PyQt6.QtCore import QPoint, QPointF, QRect, QRectF, Qt
-from PyQt6.QtGui import QColor, QPainter, QImage, QPainterPath, QTransform, QPen, QPolygonF
+from PyQt6.QtGui import QColor, QPainter, QImage, QTransform, QPen, QPolygonF
 from tools.base_tool import BaseTool
 from core.document import Document
 

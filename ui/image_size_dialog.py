@@ -1,8 +1,5 @@
-from PyQt6.QtWidgets import (
-    QDialog, QVBoxLayout, QHBoxLayout, QFormLayout,
-    QLabel, QSpinBox, QComboBox, QCheckBox,
-    QDialogButtonBox, QFrame,
-)
+from PyQt6.QtWidgets import (QVBoxLayout, QHBoxLayout, QFormLayout, QLabel, QSpinBox, QComboBox,
+    QCheckBox, QDialogButtonBox, QFrame)
 from PyQt6.QtCore import Qt
 from core.locale import tr
 from ui.base_dialog import BaseDialog

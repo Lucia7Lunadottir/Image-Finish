@@ -1,5 +1,5 @@
 from PyQt6.QtWidgets import (QWidget, QVBoxLayout, QComboBox)
-from PyQt6.QtCore import Qt, QRunnable, QThreadPool, QObject, pyqtSignal
+from PyQt6.QtCore import QRunnable, QThreadPool, QObject, pyqtSignal
 from PyQt6.QtGui import QColor, QPainter, QPen, QImage
 
 from core.locale import tr

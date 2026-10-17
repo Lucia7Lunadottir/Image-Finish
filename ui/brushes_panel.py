@@ -4,7 +4,7 @@ from glob import glob
 from PyQt6.QtWidgets import (QWidget, QVBoxLayout, QScrollArea, QGridLayout,
                              QLabel)
 from PyQt6.QtCore import Qt, pyqtSignal
-from PyQt6.QtGui import (QPixmap, QPainter, QBrush, QColor, QPen)
+from PyQt6.QtGui import QPixmap, QPainter, QBrush, QColor
 
 from core.locale import tr
 

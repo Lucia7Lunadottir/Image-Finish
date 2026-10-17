@@ -1,4 +1,4 @@
-from PyQt6.QtWidgets import (QWidget, QHBoxLayout, QLabel, QPushButton)
+from PyQt6.QtWidgets import QPushButton
 from .base_options import BaseOptions
 from core.locale import tr
 

@@ -1,4 +1,3 @@
-from PyQt6.QtWidgets import (QWidget, QHBoxLayout, QLabel)
 from .base_options import BaseOptions
 
 

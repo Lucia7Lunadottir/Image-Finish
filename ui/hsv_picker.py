@@ -11,14 +11,11 @@ Contains:
                        mode toggle (square/wheel), eyedropper, and recent colors
 """
 
-from PyQt6.QtWidgets import (QDialog, QVBoxLayout, QHBoxLayout, QLabel,
-                             QLineEdit, QSpinBox, QPushButton, QWidget,
-                             QDialogButtonBox, QSizePolicy, QApplication,
-                             QStackedWidget, QGridLayout, QFrame)
+from PyQt6.QtWidgets import (QDialog, QVBoxLayout, QHBoxLayout, QLabel, QLineEdit, QSpinBox,
+    QPushButton, QWidget, QDialogButtonBox, QSizePolicy, QApplication, QStackedWidget, QFrame)
 from PyQt6.QtCore    import Qt, QPoint, QPointF, QRect, pyqtSignal, QSize
-from PyQt6.QtGui     import (QPainter, QColor, QLinearGradient, QConicalGradient,
-                             QRadialGradient, QImage, QPixmap, QPen, QBrush,
-                             QPainterPath, QScreen, QCursor)
+from PyQt6.QtGui import (QPainter, QColor, QLinearGradient, QConicalGradient, QPixmap, QPen,
+    QBrush, QPainterPath)
 import math
 
 from ui import theme

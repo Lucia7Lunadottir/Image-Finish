@@ -1,7 +1,6 @@
-from PyQt6.QtWidgets import QSpinBox, QHBoxLayout, QLabel
+from PyQt6.QtWidgets import QSpinBox
 from PyQt6.QtCore import Qt
 from .base_options import BaseOptions
-from core.locale import tr
 from ui.adjustments_dialog import _JumpSlider
 
 class PatchOptions(BaseOptions):

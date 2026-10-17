@@ -4,7 +4,7 @@ from PyQt6.QtWidgets import (QWidget, QVBoxLayout, QHBoxLayout, QLabel,
                              QScrollArea, QGridLayout, QLineEdit,
                              QFontComboBox, QSizePolicy, QFrame)
 from PyQt6.QtCore import Qt, pyqtSignal, QTimer
-from PyQt6.QtGui import QFont, QColor, QCursor
+from PyQt6.QtGui import QFont, QCursor
 
 from core.locale import tr
 
@@ -59,11 +59,7 @@ class _GlyphCell(QLabel):
         self.setCursor(QCursor(Qt.CursorShape.PointingHandCursor))
 
         cp = ord(char)
-        name = ""
-        try:
-            name = unicodedata.name(char, "")
-        except Exception:
-            pass
+        name = unicodedata.name(char, "")
         self.setToolTip(f"U+{cp:04X}  {name}")
 
     def mousePressEvent(self, ev):
@@ -185,11 +181,7 @@ class GlyphsPanel(QWidget):
 
     def _on_cell_clicked(self, char: str):
         cp = ord(char)
-        name = ""
-        try:
-            name = unicodedata.name(char, "")
-        except Exception:
-            pass
+        name = unicodedata.name(char, "")
 
         # Update preview
         f = QFont(self._current_font_family if self._current_font_family else "")
@@ -206,16 +198,8 @@ class GlyphsPanel(QWidget):
     def _get_chars(self) -> list[str]:
         ftext = self._filter_text
         if not ftext:
-            result = []
-            for cp in _DEFAULT_RANGES:
-                try:
-                    ch = chr(cp)
-                    unicodedata.category(ch)  # ensure valid
-                    if unicodedata.category(ch) not in ("Cc", "Cs"):
-                        result.append(ch)
-                except Exception:
-                    pass
-            return result
+            return [chr(cp) for cp in _DEFAULT_RANGES
+                    if unicodedata.category(chr(cp)) not in ("Cc", "Cs")]
 
         # Search mode
         result = []
@@ -225,29 +209,22 @@ class GlyphsPanel(QWidget):
         if upper.startswith("U+"):
             hex_part = upper[2:]
             try:
-                cp = int(hex_part, 16)
-                ch = chr(cp)
-                if unicodedata.category(ch) not in ("Cc", "Cs"):
-                    result.append(ch)
-                    return result
-            except Exception:
-                pass
+                ch = chr(int(hex_part, 16))
+            except (ValueError, OverflowError):     # not hex / beyond U+10FFFF
+                ch = None
+            if ch is not None and unicodedata.category(ch) not in ("Cc", "Cs"):
+                return [ch]
 
         # Search by name substring (search first 65536 codepoints for speed)
         search_upper = ftext.upper()
         for cp in range(0x0020, 0x10000):
-            try:
-                ch = chr(cp)
-                cat = unicodedata.category(ch)
-                if cat in ("Cc", "Cs"):
-                    continue
-                name = unicodedata.name(ch, "")
-                if search_upper in name:
-                    result.append(ch)
-                    if len(result) >= 256:
-                        break
-            except Exception:
-                pass
+            ch = chr(cp)
+            if unicodedata.category(ch) in ("Cc", "Cs"):
+                continue
+            if search_upper in unicodedata.name(ch, ""):
+                result.append(ch)
+                if len(result) >= 256:
+                    break
         return result
 
     def _rebuild_grid(self):

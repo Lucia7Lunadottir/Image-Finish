@@ -1,7 +1,6 @@
-import math
 import numpy as np
 from PyQt6.QtCore import QPoint, Qt
-from PyQt6.QtGui import QColor, qRed, qGreen, qBlue, qAlpha, QImage
+from PyQt6.QtGui import qRed, qGreen, qBlue, qAlpha
 from tools.base_tool import BaseTool
 
 

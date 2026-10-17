@@ -12,7 +12,7 @@ import math
 import traceback
 
 from PyQt6.QtWidgets import QWidget, QDialog, QProgressDialog
-from PyQt6.QtCore import Qt, QPointF, QRect, QObject, QRunnable, QThreadPool, pyqtSignal
+from PyQt6.QtCore import Qt, QPointF, QObject, QRunnable, QThreadPool, pyqtSignal
 from PyQt6.QtGui import QImage, QPainter, QColor, QPixmap, QBrush
 
 from core.app_logging import get_logger

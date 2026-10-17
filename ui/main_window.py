@@ -1,7 +1,7 @@
 from PyQt6.QtWidgets import (QMainWindow, QWidget, QHBoxLayout, QVBoxLayout,
                              QMenu, QStatusBar, QFileDialog, QMessageBox, QTabWidget,
                              QStackedWidget)
-from PyQt6.QtCore import Qt, QRectF, QRect, QPoint, QPointF
+from PyQt6.QtCore import Qt, QRectF, QPoint, QPointF
 from PyQt6.QtGui import QAction, QColor, QPainterPath
 
 from ui.canvas_widget       import CanvasWidget
@@ -20,7 +20,6 @@ from ui.actions.shape_actions      import ShapeActionsMixin
 from ui.actions.text_actions       import TextActionsMixin
 
 from core.app_logging import get_logger
-from core.document import Document
 from core.history  import HistoryState
 from core.locale   import tr, available_languages, load as locale_load, current as locale_current
 

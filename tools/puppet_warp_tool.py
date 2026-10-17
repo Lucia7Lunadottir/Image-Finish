@@ -1,7 +1,7 @@
 import math
 import numpy as np
 from PyQt6.QtCore import QPoint, QPointF, QRect, QRectF, Qt
-from PyQt6.QtGui import QColor, QPainter, QImage, QPainterPath, QTransform, QPen, QPolygonF
+from PyQt6.QtGui import QColor, QPainter, QImage, QPen
 from tools.base_tool import BaseTool
 from core.document import Document
 from tools.warp_tool import WarpTool

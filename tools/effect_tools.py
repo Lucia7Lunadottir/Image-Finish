@@ -17,15 +17,11 @@ Architecture:
   regardless of brush_hardness (these tools have no hardness slider).
 """
 
-from PyQt6.QtGui import QPainter, QColor, QImage
+from PyQt6.QtGui import QPainter, QColor
 from PyQt6.QtCore import QPoint, QRect
 from tools.base_tool import BaseTool
-from tools.tool_utils import (
-    _HAS_NUMPY,
-    _clamp_rect, _qimage_to_np, _np_to_qimage,
-    _circle_mask, _soft_circle_mask, _brush_mask,
-    _box_blur_rgb, _box_blur_np, _sharpen_np, _apply_qt_blur,
-)
+from tools.tool_utils import (_HAS_NUMPY, _clamp_rect, _qimage_to_np, _np_to_qimage,
+    _soft_circle_mask, _brush_mask, _box_blur_rgb, _box_blur_np, _sharpen_np, _apply_qt_blur)
 
 if _HAS_NUMPY:
     import numpy as np

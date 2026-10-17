@@ -1,8 +1,6 @@
-from PyQt6.QtWidgets import (QWidget, QVBoxLayout, QHBoxLayout, QLabel,
-                             QScrollArea, QFrame, QGridLayout, QSpinBox,
-                             QPushButton, QSizePolicy)
+from PyQt6.QtWidgets import (QWidget, QVBoxLayout, QHBoxLayout, QLabel, QScrollArea, QFrame,
+    QGridLayout, QSpinBox, QPushButton)
 from PyQt6.QtCore import Qt, pyqtSignal, QPoint
-from PyQt6.QtGui import QFont, QPainter, QColor, QPixmap, QIcon
 from core.locale import tr
 
 from ui import theme

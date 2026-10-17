@@ -8,7 +8,7 @@ Usage:
     btn.setIconSize(QSize(22, 22))
 """
 
-from PyQt6.QtCore import Qt, QByteArray, QSize
+from PyQt6.QtCore import Qt, QByteArray
 from PyQt6.QtGui import QIcon, QPixmap, QPainter
 
 try:
@@ -111,7 +111,7 @@ _ICONS: dict[str, bytes] = {
     "Lasso": _s(
         '<path d="M12 5 C7 4 3 8 4 13 C5 18 9 20 13 19 '
         'C17 18 20 15 19 11 C18 7 15 4 12 5" stroke-dasharray="3,2"/>',
-        f'<circle cx="12" cy="5" r="1.5" fill="white" stroke="none"/>',
+        '<circle cx="12" cy="5" r="1.5" fill="white" stroke="none"/>',
     ),
 
     "PolygonalLasso": _s(
@@ -267,7 +267,7 @@ _ICONS: dict[str, bytes] = {
 
     "Brush": _raw(
         # Brush tip (filled teardrop)
-        f'<path d="M6 21 C6 21 8 18 11 14 L18 7 C19 5 21 5 21 7 '
+        '<path d="M6 21 C6 21 8 18 11 14 L18 7 C19 5 21 5 21 7 '
         f'C21 9 19 10 18 11 L11 18 C8 20 6 21 6 21 Z" {_WF}/>',
         # Bristle tip at bottom
         f'<path d="M6 21 C5 22 4 23 5 23 C6 23 7 22 6 21" {_WF}/>',
@@ -279,12 +279,12 @@ _ICONS: dict[str, bytes] = {
         # Tip
         f'<path d="M5 19 L7 21 L4 22 Z" {_WF}/>',
         # Eraser band
-        f'<line x1="17" y1="7" x2="19" y2="9" stroke="gray" stroke-width="1.5"/>',
+        '<line x1="17" y1="7" x2="19" y2="9" stroke="gray" stroke-width="1.5"/>',
     ),
 
     "ColorReplacement": _raw(
         # Brush stroke
-        f'<path d="M6 20 C6 20 9 17 12 13 L19 6 C21 4 23 6 21 8 '
+        '<path d="M6 20 C6 20 9 17 12 13 L19 6 C21 4 23 6 21 8 '
         f'L14 15 C11 18 7 20 6 20 Z" {_WF}/>',
         # Swap arrows (color replacement indicator)
         f'<path d="M4 5 Q4 3 6 3 Q8 3 8 5 Q8 7 6 7" {_WS}/>',
@@ -312,7 +312,7 @@ _ICONS: dict[str, bytes] = {
 
     "Eraser": _raw(
         # Classic PS eraser — angled rectangle, two-tone
-        f'<path d="M21 19 L9 19 L3 13 C2 12 2 10 3 9 L12 4 '
+        '<path d="M21 19 L9 19 L3 13 C2 12 2 10 3 9 L12 4 '
         f'C13 3 15 4 16 5 L22 16 C23 18 22 19 21 19 Z" {_WS}/>',
         # Middle dividing line
         f'<line x1="9" y1="19" x2="15" y2="10" {_W}/>',
@@ -327,7 +327,7 @@ _ICONS: dict[str, bytes] = {
     ),
 
     "MagicEraser": _raw(
-        f'<rect x="3" y="13" width="9" height="8" rx="1" '
+        '<rect x="3" y="13" width="9" height="8" rx="1" '
         f'transform="rotate(-20 7.5 17)" {_WS}/>',
         f'<circle cx="17" cy="7" r="1.5" {_WF}/>',
         f'<circle cx="20" cy="10" r="1.2" {_WF}/>',
@@ -341,7 +341,7 @@ _ICONS: dict[str, bytes] = {
         # Bucket body
         f'<path d="M6 3 L14 11 L10 15 C8 17 6 16 6 14 Z" {_WF}/>',
         # Bucket spout
-        f'<path d="M14 11 L16 13 C18 15 18 18 18 19 C18 22 15 22 15 22 '
+        '<path d="M14 11 L16 13 C18 15 18 18 18 19 C18 22 15 22 15 22 '
         f'C15 22 12 22 12 19 C12 17 14 15 14 11" {_WS}/>',
         # Handle
         f'<line x1="16" y1="3" x2="20" y2="1" {_W}/>',
@@ -354,7 +354,7 @@ _ICONS: dict[str, bytes] = {
         '<stop offset="1" stop-color="white" stop-opacity="0.05"/>'
         '</linearGradient>'
         '</defs>'
-        f'<rect x="3" y="7" width="18" height="10" rx="1.5" fill="url(#tig)"/>',
+        '<rect x="3" y="7" width="18" height="10" rx="1.5" fill="url(#tig)"/>',
         f'<rect x="3" y="7" width="18" height="10" rx="1.5" {_WS}/>',
     ),
 
@@ -362,7 +362,7 @@ _ICONS: dict[str, bytes] = {
 
     "Blur": _raw(
         # Water-drop / teardrop shape
-        f'<path d="M12 4 C12 4 5 12 5 16 C5 20 8 22 12 22 '
+        '<path d="M12 4 C12 4 5 12 5 16 C5 20 8 22 12 22 '
         f'C16 22 19 20 19 16 C19 12 12 4 12 4 Z" {_WS}/>',
         # Inner highlight (softness indicator)
         f'<path d="M9 16 C9 14 10 13 11 13" {_WS}/>',
@@ -390,19 +390,19 @@ _ICONS: dict[str, bytes] = {
 
     "Burn": _raw(
         # Classic burn tool — cupped / pinched arc
-        f'<path d="M6 22 C3 17 4 12 8 10 C12 8 16 10 18 14 '
+        '<path d="M6 22 C3 17 4 12 8 10 C12 8 16 10 18 14 '
         f'C20 18 19 22 16 22" {_WS}/>',
         f'<line x1="6" y1="22" x2="16" y2="22" {_W}/>',
-        f'<path d="M12 10 C10 7 11 5 12 4 C13 6 14 5 15 4 '
+        '<path d="M12 10 C10 7 11 5 12 4 C13 6 14 5 15 4 '
         f'C14 7 12 10 12 10 Z" {_WF}/>',
     ),
 
     "Sponge": _raw(
         # Rounded sponge cloud shape
-        f'<path d="M8 6 C6 4 4 5 4 7 C4 9 5 10 7 11 '
-        f'C5 12 4 14 5 16 C6 18 8 19 10 18 '
-        f'C11 20 13 21 15 20 C17 21 19 19 19 17 '
-        f'C21 16 21 14 20 12 C22 11 22 9 21 7 '
+        '<path d="M8 6 C6 4 4 5 4 7 C4 9 5 10 7 11 '
+        'C5 12 4 14 5 16 C6 18 8 19 10 18 '
+        'C11 20 13 21 15 20 C17 21 19 19 19 17 '
+        'C21 16 21 14 20 12 C22 11 22 9 21 7 '
         f'C20 5 18 5 16 6 C15 4 13 3 12 4 C11 3 9 4 8 6 Z" {_WS}/>',
     ),
 
@@ -410,12 +410,12 @@ _ICONS: dict[str, bytes] = {
 
     "Pen": _raw(
         # Pen nib + handle
-        f'<path d="M4 20 L11 13 L16 7 C17 5 19 5 20 6 '
+        '<path d="M4 20 L11 13 L16 7 C17 5 19 5 20 6 '
         f'C21 7 19 9 18 10 L12 15 Z" {_WF}/>',
         # Nib tip (small triangle)
         f'<path d="M4 20 L7 22 L4 24 Z" {_WF}/>',
         # Nib fold line
-        f'<line x1="11" y1="13" x2="14" y2="10" stroke="black" stroke-width="0.8"/>',
+        '<line x1="11" y1="13" x2="14" y2="10" stroke="black" stroke-width="0.8"/>',
     ),
 
     "FreeformPen": _s(
@@ -481,16 +481,16 @@ _ICONS: dict[str, bytes] = {
         '<text x="12" y="19" font-size="17" font-family="Georgia,Times New Roman,serif" '
         'font-weight="bold" fill="none" stroke="white" stroke-width="0.7" '
         'text-anchor="middle">T</text>',
-        f'<rect x="3" y="3" width="18" height="18" rx="1" fill="none" '
-        f'stroke="white" stroke-width="1" stroke-dasharray="3,2"/>',
+        '<rect x="3" y="3" width="18" height="18" rx="1" fill="none" '
+        'stroke="white" stroke-width="1" stroke-dasharray="3,2"/>',
     ),
 
     "TextVMask": _raw(
         '<text x="12" y="19" font-size="17" font-family="Georgia,Times New Roman,serif" '
         'font-weight="bold" fill="none" stroke="white" stroke-width="0.7" '
         'text-anchor="middle" transform="rotate(-90 12 12)">T</text>',
-        f'<rect x="3" y="3" width="18" height="18" rx="1" fill="none" '
-        f'stroke="white" stroke-width="1" stroke-dasharray="3,2"/>',
+        '<rect x="3" y="3" width="18" height="18" rx="1" fill="none" '
+        'stroke="white" stroke-width="1" stroke-dasharray="3,2"/>',
     ),
 
     # ── Shapes ────────────────────────────────────────────────────────────────
