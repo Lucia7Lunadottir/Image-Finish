@@ -983,163 +983,190 @@ class CanvasWidget(QOpenGLWidget):
         ev.ignore()
 
     def mousePressEvent(self, ev):
-        """Handles mouse press with error isolation for tool initialization."""
+        """A press goes to the first handler that takes it: guides, panning,
+        the view tools, the brush-symmetry centre — or else the active tool
+        (a stroke). Errors are isolated so a failing tool can't kill input."""
         if not self.document:
             return
-
         try:
-            if getattr(self, "show_rulers", False):
-                R = 20
-                pos = ev.position()
-                if pos.x() < R and pos.y() > R:
-                    self._dragging_guide = ('v', self.to_doc(pos).x(), None)
-                    self.setCursor(Qt.CursorShape.SplitHCursor)
-                    return
-                elif pos.y() < R and pos.x() > R:
-                    self._dragging_guide = ('h', self.to_doc(pos).y(), None)
-                    self.setCursor(Qt.CursorShape.SplitVCursor)
-                    return
-
-            if getattr(self.active_tool, "name", "") == "Move" and not self._space:
-                doc_pos = self.to_doc(ev.position())
-                snap = 5 / max(0.01, self.zoom)
-                hit_v, hit_h = None, None
-                if getattr(self.document, "show_guides", False):
-                    for i, gx in enumerate(getattr(self.document, "guides_v", [])):
-                        if abs(gx - doc_pos.x()) < snap: hit_v = (i, gx)
-                    for i, gy in enumerate(getattr(self.document, "guides_h", [])):
-                        if abs(gy - doc_pos.y()) < snap: hit_h = (i, gy)
-                if hit_v:
-                    self._dragging_guide = ('v', hit_v[1], hit_v[0])
-                    if hasattr(self.document, "guides_v"): self.document.guides_v.pop(hit_v[0])
-                    self.setCursor(Qt.CursorShape.SplitHCursor)
-                    self.update()
-                    return
-                elif hit_h:
-                    self._dragging_guide = ('h', hit_h[1], hit_h[0])
-                    if hasattr(self.document, "guides_h"): self.document.guides_h.pop(hit_h[0])
-                    self.setCursor(Qt.CursorShape.SplitVCursor)
-                    self.update()
-                    return
-
-            mods = ev.modifiers()
-            self.tool_opts["_shift"] = bool(mods & Qt.KeyboardModifier.ShiftModifier)
-            self.tool_opts["_ctrl"]  = bool(mods & Qt.KeyboardModifier.ControlModifier)
-            self.tool_opts["_alt"]   = bool(mods & Qt.KeyboardModifier.AltModifier)
-            self.tool_opts["_zoom"]  = self.zoom
-
-            is_pan = (ev.button() == Qt.MouseButton.MiddleButton or (self._space and ev.button() == Qt.MouseButton.LeftButton))
-            if is_pan:
-                self._panning = True
-                self._pan_last = ev.position()
-                self.setCursor(Qt.CursorShape.ClosedHandCursor)
+            if self._press_guides(ev):
                 return
-
-            if hasattr(ev, "device") and ev.device().type() == QInputDevice.DeviceType.Mouse:
-                self.tool_opts["_pressure"] = 1.0
-
-            if ev.button() == Qt.MouseButton.LeftButton:
-                if isinstance(self.active_tool, HandTool):
-                    self._panning = True
-                    self._pan_last = ev.position()
-                    self.setCursor(Qt.CursorShape.ClosedHandCursor)
-                    return
-                if isinstance(self.active_tool, ZoomTool):
-                    alt = bool(ev.modifiers() & Qt.KeyboardModifier.AltModifier)
-                    self._apply_zoom(1 / 1.25 if alt else 1.25, ev.position())
-                    return
-                if isinstance(self.active_tool, RotateViewTool):
-                    self._rotating = True
-                    cx = self.width()  / 2
-                    cy = self.height() / 2
-                    self._rotate_last_angle = math.degrees(math.atan2(ev.position().y() - cy, ev.position().x() - cx))
-                    self.setCursor(Qt.CursorShape.ClosedHandCursor)
-                    return
-
+            self._store_press_modifiers(ev)
+            if self._press_pan_or_view_tool(ev):
+                return
             if ev.button() == Qt.MouseButton.LeftButton and self.active_tool:
-                tool_name = getattr(self.active_tool, "name", "")
-                layer = self.document.get_active_layer() if self.document else None
-                
-                op = getattr(self.active_tool, "PIXEL_OP", None)
-                win = self.window()
-                if layer is not None and op is not None and hasattr(win, "_rasterize_layer"):
-                    from ui.actions.pixel_target import pixel_layer_for_edit
-                    # A rasterize prompt (or refusal) ends this press: the
-                    # stroke starts with the next click, on the new layer.
-                    if pixel_layer_for_edit(win, op) is not layer:
-                        return
-
-                if self.active_tool.BRUSH_CURSOR:
-                    mirror_x = bool(self.tool_opts.get("brush_mirror_x", False))
-                    mirror_y = bool(self.tool_opts.get("brush_mirror_y", False))
-                    if mirror_x or mirror_y:
-                        doc_pos = self.to_doc(ev.position())
-                        ctrl_pressed = bool(ev.modifiers() & Qt.KeyboardModifier.ControlModifier)
-                        
-                        if ctrl_pressed:
-                            self._dragging_sym_center = True
-                            new_cx = max(0.0, min(1.0, doc_pos.x() / max(1, self.document.width)))
-                            new_cy = max(0.0, min(1.0, doc_pos.y() / max(1, self.document.height)))
-                            self.tool_opts["brush_mirror_cx"] = new_cx
-                            self.tool_opts["brush_mirror_cy"] = new_cy
-                            self.tool_state_changed.emit({"brush_mirror_cx": new_cx, "brush_mirror_cy": new_cy})
-                            self.update()
-                            return
-
-                        sym_x = self.document.width * float(self.tool_opts.get("brush_mirror_cx", 0.5))
-                        sym_y = self.document.height * float(self.tool_opts.get("brush_mirror_cy", 0.5))
-                        if math.hypot(doc_pos.x() - sym_x, doc_pos.y() - sym_y) <= 15 / max(0.01, self.zoom):
-                            self._dragging_sym_center = True
-                            return
-
-                self._stroke_in_progress = True
-
-                if self.active_tool.needs_history_push():
-                    from core.history import HistoryState, clone_work_path
-                    from ui.toolbar import ToolBar
-                    self._pre_stroke_state = HistoryState(
-                        description=ToolBar.tool_title(tool_name),
-                        layers_snapshot=self.document.snapshot_layers(),
-                        active_layer_index=self.document.active_layer_index,
-                        doc_width=self.document.width,
-                        doc_height=self.document.height,
-                        selection_snapshot=QPainterPath(self.document.selection) if self.document.selection else None,
-                        work_path_snapshot=clone_work_path(getattr(self.document, "work_path", None)),
-                        alpha_channels_snapshot=list(getattr(self.document, "alpha_channels", [])),
-                        color_mode_snapshot=getattr(self.document, "color_mode", "RGB"),
-                        bit_depth_snapshot=getattr(self.document, "bit_depth", 8)
-                    )
-                old_layer_idx = self.document.active_layer_index if self.document else -1
-                doc_pos = self.to_doc(ev.position())
-
-                if getattr(self.active_tool, "needs_background_composite", False):
-                    self._start_effect_stroke()
-
-                # Safe tool press handler
-                try:
-                    self.active_tool.on_press(doc_pos, self.document, self.fg_color, self.bg_color, self.tool_opts)
-                except Exception as tool_ex:
-                    logger.exception("Tool %s failed in on_press", tool_name)
-                    if hasattr(self.window(), "_status"):
-                        from ui.toolbar import ToolBar
-                        self.window()._status.showMessage(tr("err.tool_failed", tool=ToolBar.tool_title(tool_name)), 4000)
-                    self._stroke_in_progress = False
-                    self._pre_stroke_state = None
-
-                self._cache_dirty = True
-                self._check_marching_ants()
-                self.update()
-
-                if getattr(self.active_tool, "needs_immediate_commit", False) and self._stroke_in_progress:
-                    self._stroke_in_progress = False
-                    self.document_changed.emit()
-                elif self.document and self.document.active_layer_index != old_layer_idx:
-                    self.document_changed.emit()
-
+                if not self._press_active_tool(ev):
+                    return
             self._emit_tool_state()
-        except Exception as global_ex:
+        except Exception:
             logger.exception("Critical mouse press error")
             self._stroke_in_progress = False
+
+    def _press_guides(self, ev) -> bool:
+        """Drag a new guide out of a ruler, or (Move tool) pick up an existing one."""
+        if getattr(self, "show_rulers", False):
+            R = 20
+            pos = ev.position()
+            if pos.x() < R and pos.y() > R:
+                self._dragging_guide = ('v', self.to_doc(pos).x(), None)
+                self.setCursor(Qt.CursorShape.SplitHCursor)
+                return True
+            if pos.y() < R and pos.x() > R:
+                self._dragging_guide = ('h', self.to_doc(pos).y(), None)
+                self.setCursor(Qt.CursorShape.SplitVCursor)
+                return True
+
+        if getattr(self.active_tool, "name", "") != "Move" or self._space:
+            return False
+        doc_pos = self.to_doc(ev.position())
+        snap = 5 / max(0.01, self.zoom)
+        hit_v = hit_h = None
+        if getattr(self.document, "show_guides", False):
+            for i, gx in enumerate(getattr(self.document, "guides_v", [])):
+                if abs(gx - doc_pos.x()) < snap: hit_v = (i, gx)
+            for i, gy in enumerate(getattr(self.document, "guides_h", [])):
+                if abs(gy - doc_pos.y()) < snap: hit_h = (i, gy)
+        if hit_v:
+            self._dragging_guide = ('v', hit_v[1], hit_v[0])
+            if hasattr(self.document, "guides_v"): self.document.guides_v.pop(hit_v[0])
+            self.setCursor(Qt.CursorShape.SplitHCursor)
+        elif hit_h:
+            self._dragging_guide = ('h', hit_h[1], hit_h[0])
+            if hasattr(self.document, "guides_h"): self.document.guides_h.pop(hit_h[0])
+            self.setCursor(Qt.CursorShape.SplitVCursor)
+        else:
+            return False
+        self.update()
+        return True
+
+    def _store_press_modifiers(self, ev):
+        mods = ev.modifiers()
+        self.tool_opts["_shift"] = bool(mods & Qt.KeyboardModifier.ShiftModifier)
+        self.tool_opts["_ctrl"]  = bool(mods & Qt.KeyboardModifier.ControlModifier)
+        self.tool_opts["_alt"]   = bool(mods & Qt.KeyboardModifier.AltModifier)
+        self.tool_opts["_zoom"]  = self.zoom
+
+    def _press_pan_or_view_tool(self, ev) -> bool:
+        """Middle button / Space+left pans; Hand, Zoom and Rotate View act
+        on the view instead of the document."""
+        if ev.button() == Qt.MouseButton.MiddleButton or (self._space and ev.button() == Qt.MouseButton.LeftButton):
+            self._start_pan(ev)
+            return True
+        if hasattr(ev, "device") and ev.device().type() == QInputDevice.DeviceType.Mouse:
+            self.tool_opts["_pressure"] = 1.0
+        if ev.button() != Qt.MouseButton.LeftButton:
+            return False
+        if isinstance(self.active_tool, HandTool):
+            self._start_pan(ev)
+            return True
+        if isinstance(self.active_tool, ZoomTool):
+            alt = bool(ev.modifiers() & Qt.KeyboardModifier.AltModifier)
+            self._apply_zoom(1 / 1.25 if alt else 1.25, ev.position())
+            return True
+        if isinstance(self.active_tool, RotateViewTool):
+            self._rotating = True
+            cx, cy = self.width() / 2, self.height() / 2
+            self._rotate_last_angle = math.degrees(math.atan2(ev.position().y() - cy, ev.position().x() - cx))
+            self.setCursor(Qt.CursorShape.ClosedHandCursor)
+            return True
+        return False
+
+    def _start_pan(self, ev):
+        self._panning = True
+        self._pan_last = ev.position()
+        self.setCursor(Qt.CursorShape.ClosedHandCursor)
+
+    def _press_symmetry_center(self, ev) -> bool:
+        """Brush symmetry: Ctrl+click moves the mirror centre, a click on it
+        starts dragging it. True if the press was that."""
+        mirror_x = bool(self.tool_opts.get("brush_mirror_x", False))
+        mirror_y = bool(self.tool_opts.get("brush_mirror_y", False))
+        if not (mirror_x or mirror_y):
+            return False
+        doc_pos = self.to_doc(ev.position())
+        if ev.modifiers() & Qt.KeyboardModifier.ControlModifier:
+            self._dragging_sym_center = True
+            new_cx = max(0.0, min(1.0, doc_pos.x() / max(1, self.document.width)))
+            new_cy = max(0.0, min(1.0, doc_pos.y() / max(1, self.document.height)))
+            self.tool_opts["brush_mirror_cx"] = new_cx
+            self.tool_opts["brush_mirror_cy"] = new_cy
+            self.tool_state_changed.emit({"brush_mirror_cx": new_cx, "brush_mirror_cy": new_cy})
+            self.update()
+            return True
+        sym_x = self.document.width * float(self.tool_opts.get("brush_mirror_cx", 0.5))
+        sym_y = self.document.height * float(self.tool_opts.get("brush_mirror_cy", 0.5))
+        if math.hypot(doc_pos.x() - sym_x, doc_pos.y() - sym_y) <= 15 / max(0.01, self.zoom):
+            self._dragging_sym_center = True
+            return True
+        return False
+
+    def _press_active_tool(self, ev) -> bool:
+        """Start a stroke with the active tool: pixel gate, undo snapshot,
+        the tool's own on_press. False if the press ended before the tool
+        (rasterize prompt / refusal, brush-symmetry centre)."""
+        tool = self.active_tool
+        tool_name = getattr(tool, "name", "")
+        layer = self.document.get_active_layer()
+
+        op = getattr(tool, "PIXEL_OP", None)
+        win = self.window()
+        if layer is not None and op is not None and hasattr(win, "_rasterize_layer"):
+            from ui.actions.pixel_target import pixel_layer_for_edit
+            # A rasterize prompt (or refusal) ends this press: the stroke
+            # starts with the next click, on the new layer.
+            if pixel_layer_for_edit(win, op) is not layer:
+                return False
+
+        if tool.BRUSH_CURSOR and self._press_symmetry_center(ev):
+            return False
+
+        self._stroke_in_progress = True
+        if tool.needs_history_push():
+            self._pre_stroke_state = self._history_state_for(tool_name)
+        old_layer_idx = self.document.active_layer_index
+        doc_pos = self.to_doc(ev.position())
+
+        if getattr(tool, "needs_background_composite", False):
+            self._start_effect_stroke()
+
+        try:
+            tool.on_press(doc_pos, self.document, self.fg_color, self.bg_color, self.tool_opts)
+        except Exception:
+            logger.exception("Tool %s failed in on_press", tool_name)
+            if hasattr(win, "_status"):
+                from ui.toolbar import ToolBar
+                win._status.showMessage(tr("err.tool_failed", tool=ToolBar.tool_title(tool_name)), 4000)
+            self._stroke_in_progress = False
+            self._pre_stroke_state = None
+
+        self._cache_dirty = True
+        self._check_marching_ants()
+        self.update()
+
+        if getattr(tool, "needs_immediate_commit", False) and self._stroke_in_progress:
+            self._stroke_in_progress = False
+            self.document_changed.emit()
+        elif self.document.active_layer_index != old_layer_idx:
+            self.document_changed.emit()
+        return True
+
+    def _history_state_for(self, tool_name: str):
+        """Undo snapshot taken before a stroke (pixels are shared
+        copy-on-write, see Document.snapshot_layers)."""
+        from core.history import HistoryState, clone_work_path
+        from ui.toolbar import ToolBar
+        doc = self.document
+        return HistoryState(
+            description=ToolBar.tool_title(tool_name),
+            layers_snapshot=doc.snapshot_layers(),
+            active_layer_index=doc.active_layer_index,
+            doc_width=doc.width,
+            doc_height=doc.height,
+            selection_snapshot=QPainterPath(doc.selection) if doc.selection else None,
+            work_path_snapshot=clone_work_path(getattr(doc, "work_path", None)),
+            alpha_channels_snapshot=list(getattr(doc, "alpha_channels", [])),
+            color_mode_snapshot=getattr(doc, "color_mode", "RGB"),
+            bit_depth_snapshot=getattr(doc, "bit_depth", 8))
 
     def mouseMoveEvent(self, ev):
         """Handles mouse move for brush strokes and deformations."""
