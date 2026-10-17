@@ -9,7 +9,7 @@ ui/gradient_editor.py. `merged_stops()` flattens it to the plain
 import math
 from dataclasses import dataclass, field, replace
 
-from PyQt6.QtCore import QPointF, QRectF, Qt
+from PyQt6.QtCore import QPointF, QRectF
 from PyQt6.QtGui import (QBrush, QColor, QConicalGradient, QGradient, QImage,
                          QLinearGradient, QRadialGradient, QTransform)
 

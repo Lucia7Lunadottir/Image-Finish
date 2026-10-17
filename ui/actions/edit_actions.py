@@ -205,47 +205,23 @@ class EditActionsMixin:
         import numpy as np
         if not np.any(mask):
             return
-        h, w = mask.shape
-        import ctypes
-        from PyQt6.QtGui import QImage, QRegion, QBitmap, QPainterPath
-        mask_img = QImage(w, h, QImage.Format.Format_RGBA8888)
-        mask_img.fill(0)
-        m_ptr = mask_img.bits()
-        m_buf = (ctypes.c_uint8 * mask_img.sizeInBytes()).from_address(int(m_ptr))
-        m_arr = np.ndarray((h, mask_img.bytesPerLine() // 4, 4), dtype=np.uint8, buffer=m_buf)
-        m_arr[:, :w, :][mask, 3] = 255
-        
-        path = QPainterPath()
-        path.addRegion(QRegion(QBitmap.fromImage(mask_img.createAlphaMask())))
-        path = path.simplified()
-        path.translate(offset.x(), offset.y())
-        
-        from core.history import HistoryState, clone_work_path
-        pre_state = HistoryState(
-            description=desc,
-            layers_snapshot=self._document.snapshot_layers(),
-            active_layer_index=self._document.active_layer_index,
-            doc_width=self._document.width,
-            doc_height=self._document.height,
-            selection_snapshot=QPainterPath(self._document.selection) if self._document.selection else None,
-            work_path_snapshot=clone_work_path(getattr(self._document, "work_path", None)),
-            alpha_channels_snapshot=list(getattr(self._document, "alpha_channels", [])),
-            color_mode_snapshot=getattr(self._document, "color_mode", "RGB"),
-            bit_depth_snapshot=getattr(self._document, "bit_depth", 8)
-        )
-        self._document.selection = path
-        self._history.push(pre_state)
+        from core.pixel_buffer import mask_to_path
+        self._push_history(desc)
+        self._document.selection = mask_to_path(mask, offset)
         self._canvas_refresh()
+
+    @staticmethod
+    def _layer_pixels(layer):
+        """Read-only (h, w, 4) BGRA view of a layer's own pixels."""
+        from core.pixel_buffer import qimage_argb_view
+        return qimage_argb_view(layer.image, writable=False)[:, :layer.image.width(), :]
 
     def _select_subject(self):
         layer = self._document and self._document.get_active_layer()
         if not layer or layer.image.isNull(): return
-        img = layer.image
-        w, h = img.width(), img.height()
-        import ctypes, numpy as np
-        ptr = img.constBits()
-        buf = (ctypes.c_uint8 * img.sizeInBytes()).from_address(int(ptr))
-        arr = np.ndarray((h, img.bytesPerLine() // 4, 4), dtype=np.uint8, buffer=buf)[:, :w, :]
+        import numpy as np
+        arr = self._layer_pixels(layer)
+        h, w = arr.shape[:2]
 
         # Heuristic: object in the center, differing from canvas edges
         top = arr[0:max(1, h//20), :, :3].reshape(-1, 3)
@@ -270,12 +246,9 @@ class EditActionsMixin:
     def _select_sky(self):
         layer = self._document and self._document.get_active_layer()
         if not layer or layer.image.isNull(): return
-        img = layer.image
-        w, h = img.width(), img.height()
-        import ctypes, numpy as np
-        ptr = img.constBits()
-        buf = (ctypes.c_uint8 * img.sizeInBytes()).from_address(int(ptr))
-        arr = np.ndarray((h, img.bytesPerLine() // 4, 4), dtype=np.uint8, buffer=buf)[:, :w, :]
+        import numpy as np
+        arr = self._layer_pixels(layer)
+        h, w = arr.shape[:2]
 
         B, G, R, A = arr[..., 0].astype(np.float32), arr[..., 1].astype(np.float32), arr[..., 2].astype(np.float32), arr[..., 3]
 
@@ -295,12 +268,9 @@ class EditActionsMixin:
     def _focus_area(self):
         layer = self._document and self._document.get_active_layer()
         if not layer or layer.image.isNull(): return
-        img = layer.image
-        w, h = img.width(), img.height()
-        import ctypes, numpy as np
-        ptr = img.constBits()
-        buf = (ctypes.c_uint8 * img.sizeInBytes()).from_address(int(ptr))
-        arr = np.ndarray((h, img.bytesPerLine() // 4, 4), dtype=np.uint8, buffer=buf)[:, :w, :]
+        import numpy as np
+        arr = self._layer_pixels(layer)
+        h, w = arr.shape[:2]
 
         gray = 0.299 * arr[..., 2] + 0.587 * arr[..., 1] + 0.114 * arr[..., 0]
         dy, dx = np.gradient(gray)
@@ -325,43 +295,18 @@ class EditActionsMixin:
             out_mode, mask_arr = dlg.get_result()
             self._push_history(tr("history.select_and_mask"))
             
-            import numpy as np
-            import ctypes
-            from PyQt6.QtGui import QImage, QRegion, QBitmap, QPainterPath, QPainter
-            h, w = mask_arr.shape
-            m_img = QImage(w, h, QImage.Format.Format_RGBA8888)
-            m_img.fill(0)
-            m_ptr = m_img.bits()
-            m_buf = (ctypes.c_uint8 * m_img.sizeInBytes()).from_address(int(m_ptr))
-            np.ndarray((h, w, 4), dtype=np.uint8, buffer=m_buf)[mask_arr > 0.5, 3] = 255
-            
+            from core.pixel_buffer import mask_to_path, gray_mask_image
             if out_mode == "selection":
-                path = QPainterPath()
-                path.addRegion(QRegion(QBitmap.fromImage(m_img.createAlphaMask())))
-                path.translate(layer.offset.x(), layer.offset.y())
-                self._document.selection = path.simplified()
+                self._document.selection = mask_to_path(mask_arr, layer.offset)
             elif out_mode == "mask":
-                mask_out = QImage(w, h, QImage.Format.Format_ARGB32_Premultiplied)
-                mask_out.fill(QColor(255,255,255))
-                out_ptr = mask_out.bits()
-                out_buf = (ctypes.c_uint8 * mask_out.sizeInBytes()).from_address(int(out_ptr))
-                out_arr = np.ndarray((h, mask_out.bytesPerLine() // 4, 4), dtype=np.uint8, buffer=out_buf)
-                v = (mask_arr * 255).astype(np.uint8)
-                out_arr[..., 0] = out_arr[..., 1] = out_arr[..., 2] = v
-                layer.mask = mask_out
+                layer.mask = gray_mask_image(mask_arr)
                 layer.mask_enabled = True
             else:
                 # layer or layer_mask
                 nl = layer.copy()
                 nl.name = layer.name + " (masked)"
                 if out_mode == "layer_mask":
-                    mask_out = QImage(w, h, QImage.Format.Format_ARGB32_Premultiplied)
-                    out_ptr = mask_out.bits()
-                    out_buf = (ctypes.c_uint8 * mask_out.sizeInBytes()).from_address(int(out_ptr))
-                    out_arr = np.ndarray((h, mask_out.bytesPerLine() // 4, 4), dtype=np.uint8, buffer=out_buf)
-                    v = (mask_arr * 255).astype(np.uint8)
-                    out_arr[..., 0] = out_arr[..., 1] = out_arr[..., 2] = v
-                    nl.mask = mask_out
+                    nl.mask = gray_mask_image(mask_arr)
                 layer.visible = False
                 self._document.layers.insert(self._document.active_layer_index + 1, nl)
                 self._document.active_layer_index += 1
@@ -373,8 +318,8 @@ class EditActionsMixin:
             return
             
         from PyQt6.QtWidgets import QInputDialog
-        from PyQt6.QtGui import QPainterPathStroker, QPainterPath, QRegion, QBitmap, QImage, QPainter, QColor
-        from PyQt6.QtCore import Qt, QRectF
+        from PyQt6.QtGui import QPainterPathStroker, QPainter
+        from PyQt6.QtCore import Qt
         import numpy as np
         
         val, ok = QInputDialog.getInt(self, tr(f"menu.modify.{mode}").replace("…", ""), tr("opts.radius"), 10, 1, 200, 1)
@@ -414,17 +359,8 @@ class EditActionsMixin:
             w, h = br.width(), br.height()
             if w <= 0 or h <= 0: return
             
-            img = QImage(w, h, QImage.Format.Format_Grayscale8)
-            img.fill(0)
-            p = QPainter(img)
-            p.translate(-br.topLeft())
-            p.fillPath(path, QColor(255))
-            p.end()
-            
-            import ctypes
-            ptr = img.constBits()
-            buf = (ctypes.c_uint8 * img.sizeInBytes()).from_address(int(ptr))
-            arr = np.ndarray((h, img.bytesPerLine()), dtype=np.uint8, buffer=buf)[:, :w]
+            from core.pixel_buffer import path_mask
+            arr = path_mask(path, w, h, br.topLeft())
             
             arr_3d = arr[..., np.newaxis]
             from tools.effect_tools import _box_blur_np
@@ -442,11 +378,8 @@ class EditActionsMixin:
                     
                 qm_img = self._document.quick_mask_layer.image
                 p = QPainter(qm_img)
-                rgb_arr = np.empty((h, w, 4), dtype=np.uint8)
-                rgb_arr[..., 0] = rgb_arr[..., 1] = rgb_arr[..., 2] = blurred
-                rgb_arr[..., 3] = 255
-                blur_qimg = QImage(w, h, QImage.Format.Format_ARGB32_Premultiplied)
-                ctypes.memmove(int(blur_qimg.bits()), np.ascontiguousarray(rgb_arr).ctypes.data, blur_qimg.sizeInBytes())
+                from core.pixel_buffer import gray_mask_image
+                blur_qimg = gray_mask_image(blurred.astype(np.float32) / 255.0)
                 p.setCompositionMode(QPainter.CompositionMode.CompositionMode_Source)
                 p.drawImage(br.topLeft(), blur_qimg)
                 p.end()

@@ -2,7 +2,7 @@ import numpy as np
 from PyQt6.QtWidgets import (QDialog, QVBoxLayout, QHBoxLayout, QLabel, 
                              QPushButton, QDialogButtonBox, QSpinBox)
 from PyQt6.QtCore import Qt
-from PyQt6.QtGui import QColor, QImage, QBitmap, QRegion, QPainterPath, QPixmap
+from PyQt6.QtGui import QColor, QImage, QPixmap
 from core.locale import tr
 from ui.adjustments_dialog import _JumpSlider
 
@@ -107,16 +107,8 @@ class ColorRangeDialog(QDialog):
     def accept(self):
         # Heavy conversion to QPainterPath happens ONLY when OK is pressed
         if self._final_mask is not None:
-            h, w = self._final_mask.shape
-            mask_img = QImage(w, h, QImage.Format.Format_RGBA8888)
-            mask_img.fill(0)
-            from core.pixel_buffer import qimage_argb_view
-            qimage_argb_view(mask_img, writable=True)[:, :w, :][self._final_mask, 3] = 255
-            
-            path = QPainterPath()
-            path.addRegion(QRegion(QBitmap.fromImage(mask_img.createAlphaMask())))
-            
-            self.document.selection = path.simplified()
+            from core.pixel_buffer import mask_to_path
+            self.document.selection = mask_to_path(self._final_mask)
             self.update_cb()
             
         super().accept()

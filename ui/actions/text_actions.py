@@ -1,4 +1,3 @@
-from PyQt6.QtGui import QColor
 
 from core.locale import tr
 from core.text_model import CHAR_OPTION_KEYS, EFFECT_OPTION_KEYS, PARAGRAPH_OPTION_KEYS, _coerce

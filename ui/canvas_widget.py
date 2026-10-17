@@ -1,5 +1,4 @@
 import math
-import traceback
 
 from core.app_logging import get_logger
 from ui import theme
@@ -7,9 +6,9 @@ from ui import theme
 logger = get_logger("canvas")
 
 from PyQt6.QtOpenGLWidgets import QOpenGLWidget
-from PyQt6.QtCore import Qt, QPoint, QPointF, QRect, QRectF, QSize, QTimer, pyqtSignal
+from PyQt6.QtCore import Qt, QPoint, QPointF, QRect, QSize, QTimer, pyqtSignal
 from PyQt6.QtGui import (QPainter, QColor, QPixmap, QBrush, QPen, QImage, QCursor, QInputDevice,
-                         QRadialGradient, QPainterPath, QPolygon, QPolygonF, QBitmap, QRegion, QTransform)
+                         QRadialGradient, QPainterPath, QBitmap, QRegion, QTransform)
 
 from tools.other_tools import (SelectTool, CropTool, ShapesTool,
                                HandTool, ZoomTool, RotateViewTool, GradientTool, PerspectiveCropTool)
@@ -690,14 +689,8 @@ class CanvasWidget(QOpenGLWidget):
                     idx = int(current_ch.split("_")[1])
                     if hasattr(self.document, "alpha_channels") and 0 <= idx < len(self.document.alpha_channels):
                         alpha_path = self.document.alpha_channels[idx]["path"]
-                        mask_img = QImage(w, h, QImage.Format.Format_Grayscale8)
-                        mask_img.fill(0)
-                        p = QPainter(mask_img)
-                        p.fillPath(alpha_path, QColor(255))
-                        p.end()
-                        m_ptr = mask_img.constBits()
-                        m_buf = (ctypes.c_uint8 * mask_img.sizeInBytes()).from_address(int(m_ptr))
-                        gray_u8 = np.ndarray((h, mask_img.bytesPerLine()), dtype=np.uint8, buffer=m_buf)[:, :w].copy()
+                        from core.pixel_buffer import path_mask
+                        gray_u8 = path_mask(alpha_path, w, h)
                     else:
                         gray_u8 = np.zeros((h, w), dtype=np.uint8)
                 else:

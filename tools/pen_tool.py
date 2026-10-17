@@ -1,6 +1,6 @@
 import math
-from PyQt6.QtCore import QPoint, QPointF, QRectF, Qt
-from PyQt6.QtGui import QPainterPath, QColor, QPen, QPainter
+from PyQt6.QtCore import QPointF, QRectF, Qt
+from PyQt6.QtGui import QPainterPath, QColor, QPen
 from tools.base_tool import BaseTool
 
 def _lerp(p1: QPointF, p2: QPointF, t: float) -> QPointF:

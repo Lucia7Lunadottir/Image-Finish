@@ -3,7 +3,6 @@ import math
 import numpy as np
 from PyQt6.QtGui import QImage, QPainter, QColor, QBrush, QPixmap, QTransform
 from PyQt6.QtCore import QPoint, QRectF, Qt
-from core.adjustments.hdr_toning import _gauss_blur
 
 
 def _box_blur_gray(ch: "np.ndarray", r: int) -> "np.ndarray":

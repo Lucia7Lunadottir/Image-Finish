@@ -3,7 +3,6 @@ import glob
 from PyQt6.QtWidgets import (QWidget, QGridLayout, QLabel, QSpinBox, QComboBox,
                              QCheckBox, QToolButton, QMenu, QWidgetAction)
 from PyQt6.QtGui import QColor
-from PyQt6.QtCore import Qt
 from .base_options import BaseOptions
 from core.locale import tr
 from core.adjustments._widgets import _ColorButton

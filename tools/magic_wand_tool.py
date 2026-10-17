@@ -1,8 +1,7 @@
 import numpy as np
-import traceback
 from PyQt6.QtCore import QPoint, Qt, QRect, QRectF
-from PyQt6.QtGui import QImage, QBitmap, QRegion, QPainterPath
-from tools.base_tool import BaseTool, AbstractAsyncTool
+from PyQt6.QtGui import QImage, QPainterPath
+from tools.base_tool import AbstractAsyncTool
 from tools.lasso_tools import LassoMixin
 from core.pixel_buffer import qimage_argb_view
 
@@ -36,21 +35,8 @@ class AbstractSelectionTool(AbstractAsyncTool, LassoMixin):
 
     def _convert_mask_to_path(self, mask: np.ndarray, layer_offset: QPoint) -> QPainterPath:
         """Converts a NumPy pixel matrix into an optimized QPainterPath vector contour."""
-        h, w = mask.shape
-        mask_img = QImage(w, h, QImage.Format.Format_RGBA8888)
-        mask_img.fill(0)
-
-        mask_arr = qimage_argb_view(mask_img, writable=True)
-        mask_arr[:, :w, 3][mask] = 255
-
-        bitmap = QBitmap.fromImage(mask_img.createAlphaMask())
-        region = QRegion(bitmap)
-        path = QPainterPath()
-        path.addRegion(region)
-        
-        path = path.simplified()
-        path.translate(layer_offset.x(), layer_offset.y())
-        return path
+        from core.pixel_buffer import mask_to_path
+        return mask_to_path(mask, layer_offset)
 
     def cursor(self):
         return Qt.CursorShape.CrossCursor

@@ -72,19 +72,9 @@ class PatchTool(BaseTool, LassoMixin):
 
         dx, dy = self._drag_offset.x(), self._drag_offset.y()
         
-        mask_img = QImage(w, h, QImage.Format.Format_Grayscale8)
-        mask_img.fill(0)
-        mp = QPainter(mask_img)
-        mp.fillPath(self._sel_path, QColor(255))
-        mp.end()
-
-        import ctypes
-        from core.pixel_buffer import qimage_argb_view
+        from core.pixel_buffer import qimage_argb_view, path_mask
         arr = qimage_argb_view(self._layer_backup, writable=False)[:, :w, :].copy()
-
-        m_arr = np.empty((h, mask_img.bytesPerLine()), dtype=np.uint8)
-        ctypes.memmove(m_arr.ctypes.data, int(mask_img.constBits()), mask_img.sizeInBytes())
-        m_arr = m_arr[:, :w].copy()
+        m_arr = path_mask(self._sel_path, w, h)
 
         y_idx, x_idx = np.where(m_arr > 0)
         if len(y_idx) == 0: return
@@ -216,20 +206,8 @@ class SpotHealingTool(BaseTool):
         layer = self._target_layer
         w, h = layer.width(), layer.height()
         
-        mask_img = QImage(w, h, QImage.Format.Format_Grayscale8)
-        mask_img.fill(0)
-        p = QPainter(mask_img)
-        p.setRenderHint(QPainter.RenderHint.Antialiasing)
-        p.setPen(QPen(QColor(255), self._current_size, Qt.PenStyle.SolidLine, Qt.PenCapStyle.RoundCap, Qt.PenJoinStyle.RoundJoin))
-        poly = QPolygonF([QPointF(pt - layer.offset) for pt in self._pts])
-        p.drawPolyline(poly)
-        p.end()
-
-        import ctypes
-        from core.pixel_buffer import qimage_argb_view
-        m_arr = np.empty((h, mask_img.bytesPerLine()), dtype=np.uint8)
-        ctypes.memmove(m_arr.ctypes.data, int(mask_img.constBits()), mask_img.sizeInBytes())
-        m_arr = m_arr[:, :w].copy()
+        from core.pixel_buffer import qimage_argb_view, stroke_mask
+        m_arr = stroke_mask(self._pts, self._current_size, w, h, layer.offset)
         y_idx, x_idx = np.where(m_arr > 0)
         if len(y_idx) == 0:
             self._pts = []
@@ -438,20 +416,8 @@ class HealingBrushTool(BaseTool):
         layer = self._target_layer
         w, h = layer.width(), layer.height()
         
-        mask_img = QImage(w, h, QImage.Format.Format_Grayscale8)
-        mask_img.fill(0)
-        p = QPainter(mask_img)
-        p.setRenderHint(QPainter.RenderHint.Antialiasing)
-        p.setPen(QPen(QColor(255), self._current_size, Qt.PenStyle.SolidLine, Qt.PenCapStyle.RoundCap, Qt.PenJoinStyle.RoundJoin))
-        poly = QPolygonF([QPointF(pt - layer.offset) for pt in self._pts])
-        p.drawPolyline(poly)
-        p.end()
-
-        import ctypes
-        from core.pixel_buffer import qimage_argb_view
-        m_arr = np.empty((h, mask_img.bytesPerLine()), dtype=np.uint8)
-        ctypes.memmove(m_arr.ctypes.data, int(mask_img.constBits()), mask_img.sizeInBytes())
-        m_arr = m_arr[:, :w].copy()
+        from core.pixel_buffer import qimage_argb_view, stroke_mask
+        m_arr = stroke_mask(self._pts, self._current_size, w, h, layer.offset)
         y_idx, x_idx = np.where(m_arr > 0)
         if len(y_idx) == 0:
             self._reset_stroke()
@@ -527,7 +493,7 @@ class HealingBrushTool(BaseTool):
         mask_img.fill(0)
         p = QPainter(mask_img)
         p.setRenderHint(QPainter.RenderHint.Antialiasing)
-        p.setPen(QPen(QColor(255), self._current_size, Qt.PenStyle.SolidLine, Qt.PenCapStyle.RoundCap, Qt.PenJoinStyle.RoundJoin))
+        p.setPen(QPen(QColor(255, 255, 255), self._current_size, Qt.PenStyle.SolidLine, Qt.PenCapStyle.RoundCap, Qt.PenJoinStyle.RoundJoin))
         poly = QPolygonF([QPointF(pt - layer.offset) for pt in self._pts])
         p.drawPolyline(poly)
         p.end()

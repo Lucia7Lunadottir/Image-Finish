@@ -1,15 +1,13 @@
 from PyQt6.QtWidgets import (QMainWindow, QWidget, QHBoxLayout, QVBoxLayout,
-                             QMenu, QStatusBar, QFileDialog, QMessageBox, QSplitter, QTabWidget,
+                             QMenu, QStatusBar, QFileDialog, QMessageBox, QTabWidget,
                              QStackedWidget)
-from PyQt6.QtCore import Qt, QRectF, QRect, QPoint, QPointF, QSettings
-from PyQt6.QtGui import QAction, QKeySequence, QColor, QPainterPath, QPainter, QBrush
+from PyQt6.QtCore import Qt, QRectF, QRect, QPoint, QPointF
+from PyQt6.QtGui import QAction, QColor, QPainterPath
 
 from ui.canvas_widget       import CanvasWidget
 from ui.document_controller import DocumentController, require_document
 from ui.toolbar          import ToolBar
 from ui.tool_options_bar import ToolOptionsBar
-from ui.layers_panel     import LayersPanel
-from ui.color_panel      import ColorPanel
 
 from ui.actions.file_actions       import FileActionsMixin
 from ui.actions.edit_actions       import EditActionsMixin
@@ -23,7 +21,7 @@ from ui.actions.text_actions       import TextActionsMixin
 
 from core.app_logging import get_logger
 from core.document import Document
-from core.history  import HistoryManager, HistoryState
+from core.history  import HistoryState
 from core.locale   import tr, available_languages, load as locale_load, current as locale_current
 
 logger = get_logger("main_window")
@@ -650,8 +648,6 @@ class MainWindow(QMainWindow,
         for t_name in ["Move", "Warp", "PuppetWarp", "PerspectiveWarp"]:
             tool = self._tools.get(t_name)
             if tool and getattr(tool, "is_transforming", False):
-                from core.history import HistoryState, clone_work_path
-                
                 # Temporarily restore original layer and selection state for a clean snapshot
                 layer = self._document.get_active_layer()
                 tmp_img, tmp_off, tmp_sel = None, None, None
@@ -1102,7 +1098,6 @@ class MainWindow(QMainWindow,
         layer = self._document.get_active_layer()
         if not layer or layer.image.isNull(): return
         
-        from core.history import HistoryState, clone_work_path
         pre_state = self._make_history_state(tr("history.apply_image"), modified_index=self._document.active_layer_index)
         
         from ui.calculations_dialog import ApplyImageDialog
@@ -1408,14 +1403,11 @@ class MainWindow(QMainWindow,
     def _toggle_quick_mask(self):
         if not self._document: return
         
-        from core.history import HistoryState, clone_work_path
         pre_state = self._make_history_state(tr("history.quick_mask"))
         
         if getattr(self._document, "quick_mask_layer", None) is not None:
             # Exit Quick Mask mode
             qm = self._document.quick_mask_layer.image
-            import numpy as np
-            from PyQt6.QtGui import QImage, QRegion, QBitmap
             from core.pixel_buffer import qimage_argb_view
 
             arr = qimage_argb_view(qm, writable=True)[:, :self._document.width, :]
@@ -1423,14 +1415,8 @@ class MainWindow(QMainWindow,
             gray = 0.299*arr[..., 2] + 0.587*arr[..., 1] + 0.114*arr[..., 0]
             mask_val = (255 - gray) * (arr[..., 3] / 255.0)
             
-            sel_alpha = np.zeros((qm.height(), self._document.width, 4), dtype=np.uint8)
-            sel_alpha[mask_val < 128, 3] = 255
-            
-            sel_img = QImage(sel_alpha.data, self._document.width, qm.height(), self._document.width*4, QImage.Format.Format_RGBA8888)
-            path = QPainterPath()
-            path.addRegion(QRegion(QBitmap.fromImage(sel_img.createAlphaMask())))
-            
-            self._document.selection = path.simplified()
+            from core.pixel_buffer import mask_to_path
+            self._document.selection = mask_to_path(mask_val < 128)
             self._document.quick_mask_layer = None
             
             if hasattr(self, "_qm_old_fg"):

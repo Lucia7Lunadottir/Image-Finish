@@ -1,6 +1,5 @@
 from PyQt6.QtWidgets import QMessageBox
-from PyQt6.QtGui import QPainter, QColor, QImage
-from PyQt6.QtCore import Qt
+from PyQt6.QtGui import QPainter, QColor
 from core.locale import tr
 from ui.document_controller import require_document
 

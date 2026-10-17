@@ -1,4 +1,4 @@
-from dataclasses import dataclass, field
+from dataclasses import dataclass
 from core.layer import Layer
 from PyQt6.QtGui import QPainterPath
 from PyQt6.QtCore import QPointF

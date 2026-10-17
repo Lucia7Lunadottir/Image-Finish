@@ -1,13 +1,9 @@
-import math
 import numpy as np
-import ctypes
 
-from PyQt6.QtWidgets import (QDialog, QVBoxLayout, QHBoxLayout, QLabel, 
-                             QSpinBox, QComboBox, QPushButton, 
-                             QDialogButtonBox, QWidget, QScrollArea, QFrame)
-from PyQt6.QtCore import Qt, QPoint, QPointF, QRect, QRectF, QTimer
-from PyQt6.QtGui import (QImage, QPainter, QColor, QPen,
-                         QPainterPath, QRegion, QBitmap, QCursor)
+from PyQt6.QtWidgets import (QDialog, QVBoxLayout, QHBoxLayout, QLabel, QComboBox, QPushButton, 
+                             QDialogButtonBox, QWidget)
+from PyQt6.QtCore import Qt, QPoint, QPointF, QRect, QTimer
+from PyQt6.QtGui import (QImage, QColor, QPen)
 
 from core.locale import tr
 from core.adjustments.hdr_toning import _box_blur_ch
@@ -105,15 +101,8 @@ class SelectAndMaskDialog(QDialog):
         self.base_mask = np.zeros((self.H, self.W), dtype=np.float32)
         sel = document.selection
         if sel and not sel.isEmpty():
-            m_img = QImage(self.W, self.H, QImage.Format.Format_Grayscale8)
-            m_img.fill(0)
-            p = QPainter(m_img)
-            p.translate(-self.layer.offset.x(), -self.layer.offset.y())
-            p.fillPath(sel, QColor(255))
-            p.end()
-            m_ptr = m_img.constBits()
-            m_buf = (ctypes.c_uint8 * m_img.sizeInBytes()).from_address(int(m_ptr))
-            self.base_mask = np.ndarray((self.H, m_img.bytesPerLine()), dtype=np.uint8, buffer=m_buf)[:, :self.W].astype(np.float32) / 255.0
+            from core.pixel_buffer import path_mask
+            self.base_mask = path_mask(sel, self.W, self.H, self.layer.offset).astype(np.float32) / 255.0
             
         self.display_mask = self.base_mask.copy()
         self.preview_img = QImage(self.W, self.H, QImage.Format.Format_ARGB32_Premultiplied)

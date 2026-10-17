@@ -11,7 +11,7 @@ either and `result_stops()` still returns that flat form.
 """
 import json
 
-from PyQt6.QtCore import Qt, pyqtSignal, QRect, QRectF, QPoint, QPointF, QSize, QSettings
+from PyQt6.QtCore import Qt, pyqtSignal, QRect, QPointF, QSize, QSettings
 from PyQt6.QtGui import (QColor, QPainter, QLinearGradient, QBrush, QPen, QPolygonF,
                          QPixmap, QIcon)
 from PyQt6.QtWidgets import (QDialog, QVBoxLayout, QHBoxLayout, QGridLayout, QLabel,

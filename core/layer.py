@@ -126,10 +126,11 @@ class Layer:
         `GroupLayer` and `ArtboardLayer` override this wholesale; they don't
         fit the "draw pixels" shape at all.
         """
-        from core.document import (
-            _get_composition_mode, _ensure_owned_copy, _qimage_argb_view,
-            _shift_pixels_edge, _composite_active_stroke,
-        )
+        from core.blend_modes import composition_mode as _get_composition_mode
+        from core.pixel_buffer import (ensure_owned_copy as _ensure_owned_copy,
+                                       qimage_argb_view as _qimage_argb_view,
+                                       shift_pixels_edge as _shift_pixels_edge)
+        from core.document import _composite_active_stroke
         import numpy as np
 
         document = ctx.document
@@ -545,7 +546,7 @@ class LiveRenderedLayer(Layer):
         placed at self.offset) times the clipping base's alpha, or None
         when neither applies."""
         import numpy as np
-        from core.document import _qimage_argb_view
+        from core.pixel_buffer import qimage_argb_view as _qimage_argb_view
         cov = None
         if self._has_pixel_mask():
             cov = np.zeros((document.height, document.width), dtype=np.float32)
@@ -608,7 +609,7 @@ class LiveRenderedLayer(Layer):
             top_left = top_left + delta
             offset_style = styles.get("offset", {})
             if offset_style.get("enabled") and (offset_style.get("dx_pct") or offset_style.get("dy_pct")):
-                from core.document import _qimage_argb_view, _shift_pixels_edge
+                from core.pixel_buffer import qimage_argb_view as _qimage_argb_view, shift_pixels_edge as _shift_pixels_edge
                 w, h = img.width(), img.height()
                 arr = _qimage_argb_view(img, writable=False)
                 shifted = _shift_pixels_edge(arr, w, h, int(w * offset_style.get("dx_pct", 0) / 100.0),
@@ -624,7 +625,8 @@ class LiveRenderedLayer(Layer):
         and text (and their layer styles) sharp at any zoom. Rendered into
         a temporary first so opacity and blend mode apply to the layer as a
         whole, exactly like a pixel layer."""
-        from core.document import _get_composition_mode, _qimage_argb_view
+        from core.blend_modes import composition_mode as _get_composition_mode
+        from core.pixel_buffer import qimage_argb_view as _qimage_argb_view
         import numpy as np
         painter = ctx.painter
         document = ctx.document
@@ -1051,7 +1053,8 @@ class AdjustmentLayer(Layer):
         numpy access to `ctx.result`'s buffer, which needs the painter torn
         down first (a QImage can't be both painted-into and bits()-mutated
         at once) and rebuilt afterward."""
-        from core.document import _apply_layer_adjustment, _qimage_argb_view
+        from core.document import _apply_layer_adjustment
+        from core.pixel_buffer import qimage_argb_view as _qimage_argb_view
         import numpy as np
 
         document = ctx.document
@@ -1137,7 +1140,7 @@ def _resample_coverage(frac, view_transform, width: int, height: int, smooth: bo
     viewport through `view_transform` (Document.render_view), the same way
     pixel layers are magnified there."""
     import numpy as np
-    from core.document import _qimage_argb_view
+    from core.pixel_buffer import qimage_argb_view as _qimage_argb_view
     h, w = frac.shape
     src = QImage(w, h, QImage.Format.Format_ARGB32_Premultiplied)
     src.fill(0)
@@ -1298,7 +1301,7 @@ class FrameLayer(Layer):
         self.frame_data = d.get("frame_data")
 
     def render_into(self, ctx, layer_artboard_rect, is_clipping, next_clipping):
-        from core.document import _get_composition_mode
+        from core.blend_modes import composition_mode as _get_composition_mode
         painter = ctx.painter
         img_to_draw = self.image
         is_empty = (img_to_draw.width() <= 1 and img_to_draw.height() <= 1)

@@ -1,4 +1,3 @@
-from PyQt6.QtGui import QColor
 from PyQt6.QtCore import Qt
 from tools.base_tool import BaseTool
 

@@ -1,17 +1,14 @@
-from PyQt6.QtGui import QImage, QPainter, QColor, QPainterPath, qAlpha, QPolygonF, QTransform
+from PyQt6.QtGui import QImage, QPainter, QColor, QPainterPath, QPolygonF, QTransform
 from PyQt6.QtCore import Qt, QRect, QRectF, QPoint, QPointF
 from .layer import Layer, RasterLayer
 from .render_context import CompositeContext
 from core.pixel_buffer import qimage_argb_view as _qimage_argb_view
-from core.pixel_buffer import ensure_owned_copy as _ensure_owned_copy
-from core.pixel_buffer import shift_pixels_edge as _shift_pixels_edge
 
 from core.app_logging import get_logger
 
 logger = get_logger("document")
 
 
-from core.blend_modes import composition_mode as _get_composition_mode  # noqa: E402  (kept name: imported by core/layer.py)
 
 def _apply_layer_adjustment(image: QImage, layer) -> QImage:
     d = layer.adjustment_data or {}
@@ -96,7 +93,7 @@ def _apply_layer_adjustment(image: QImage, layer) -> QImage:
         elif t == "hdr_toning":
             from core.adjustments.hdr_toning import apply_hdr_toning
             return apply_hdr_toning(image, int(get_v(["radius", "rad"], 10)), float(get_v(["strength", "str"], 0.5)), float(get_v(["gamma"], 1.0)), float(get_v(["detail", "det"], 1.0)))
-    except Exception as e:
+    except Exception:
         logger.exception("Error applying adjustment layer %r", t)
     return image
 
@@ -185,9 +182,6 @@ class Document:
             active = self.layers[self.active_layer_index]
             if getattr(active, "layer_type", "raster") in ("artboard", "group"):
                 parent_id = getattr(active, "layer_id", None)
-                if index is not None and index == self.active_layer_index + 1:
-                    # Insert INSIDE the group (at the group's position, shifting the group itself up)
-                    insert_idx = self.active_layer_index
             else:
                 parent_id = getattr(active, "parent_id", None)
 

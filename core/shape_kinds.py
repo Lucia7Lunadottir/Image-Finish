@@ -11,7 +11,7 @@ stroke alignment possible at all: they all need the geometry as data.
 import math
 from dataclasses import dataclass
 
-from PyQt6.QtCore import QPoint, QPointF, QRect, QRectF
+from PyQt6.QtCore import QPoint, QPointF, QRectF
 from PyQt6.QtGui import QPolygon, QPolygonF, QPainterPath, QTransform
 
 from core.app_logging import get_logger

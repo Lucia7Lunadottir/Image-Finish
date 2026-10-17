@@ -5,7 +5,7 @@ and returns. All functions call painter.save()/restore() internally."""
 
 import math
 
-from PyQt6.QtCore import Qt, QPoint, QPointF, QRect, QRectF
+from PyQt6.QtCore import Qt, QPoint, QPointF, QRectF
 from PyQt6.QtGui import (QPainter, QColor, QPen, QBrush, QPainterPath,
                          QPolygonF, QTransform)
 

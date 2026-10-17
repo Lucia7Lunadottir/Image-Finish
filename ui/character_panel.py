@@ -1,6 +1,6 @@
 from PyQt6.QtWidgets import (QWidget, QVBoxLayout, QHBoxLayout, QLabel,
                              QPushButton, QSpinBox, QDoubleSpinBox, QSlider,
-                             QFrame, QFontComboBox, QColorDialog, QSizePolicy)
+                             QFrame, QFontComboBox, QSizePolicy)
 from PyQt6.QtCore import Qt, pyqtSignal
 from PyQt6.QtGui import QColor, QFont, QPixmap, QPainter
 from core.locale import tr

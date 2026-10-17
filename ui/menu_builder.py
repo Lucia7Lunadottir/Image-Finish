@@ -5,11 +5,8 @@ provides the slots and the small _act/_menu registration helpers.
 Extracted verbatim from MainWindow._build_menu_bar.
 """
 
-from PyQt6.QtGui import QAction, QKeySequence, QColor, QPainter, QBrush
-from PyQt6.QtCore import Qt, QRectF, QPoint, QPointF
-from PyQt6.QtWidgets import QMenu
+from PyQt6.QtGui import QKeySequence
 
-from core.locale import tr
 
 
 def build_menu_bar(win) -> None:

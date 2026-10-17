@@ -1,7 +1,6 @@
 from PyQt6.QtWidgets import (QDialog, QVBoxLayout, QHBoxLayout, QLabel,
                              QComboBox, QPushButton, QDialogButtonBox, QWidget)
 from PyQt6.QtGui import QColor, QPixmap, QIcon
-from PyQt6.QtCore import Qt
 from core.locale import tr
 
 

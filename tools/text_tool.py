@@ -1,4 +1,4 @@
-from PyQt6.QtCore import Qt, QPoint, QPointF, QRectF
+from PyQt6.QtCore import Qt, QPointF, QRectF
 from PyQt6.QtGui import (QColor, QPainter, QImage, QPainterPath, QPen as _QPen, QPixmap,
                          QFont, QFontMetricsF)
 from PyQt6.QtWidgets import (QDialog, QVBoxLayout, QPlainTextEdit,
@@ -6,7 +6,7 @@ from PyQt6.QtWidgets import (QDialog, QVBoxLayout, QPlainTextEdit,
 from tools.base_tool import BaseTool
 from core.locale import tr
 from core.text_model import TextData
-from core.text_engine import (layout_device, layout_text, paint_text, qfont, text_transform,
+from core.text_engine import (layout_device, paint_text, qfont, text_transform,
                               text_outline_in_document, PT_TO_PX)
 
 

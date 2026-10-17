@@ -1,5 +1,5 @@
 import numpy as np
-from PyQt6.QtGui import QImage, QColor, QPainter
+from PyQt6.QtGui import QImage, QColor
 from PyQt6.QtCore import QPoint
 from tools.base_tool import BaseTool
 
@@ -72,19 +72,9 @@ class FillTool(BaseTool):
 
         # If there is a selection, apply it quickly via QPainter
         if selection:
-            sel_img = QImage(w, h, QImage.Format.Format_Grayscale8)
-            sel_img.fill(0)
-            p = QPainter(sel_img)
-            p.translate(-offset)
-            p.fillPath(selection, QColor(255))
-            p.end()
-            
-            s_ptr = sel_img.constBits()
-            s_buf = (ctypes.c_uint8 * sel_img.sizeInBytes()).from_address(int(s_ptr))
-            sel_arr = np.ndarray((h, sel_img.bytesPerLine()), dtype=np.uint8, buffer=s_buf)
-            sel_arr = sel_arr[:, :w]
-            
-            color_mask &= (sel_arr > 0)
+            from core.pixel_buffer import path_mask
+            sel_arr = path_mask(selection, w, h, offset)
+            color_mask &= sel_arr > 0
 
         if not color_mask[y, x]:
             return

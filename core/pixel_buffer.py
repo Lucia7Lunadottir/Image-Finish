@@ -61,3 +61,94 @@ def shift_pixels_edge(arr: np.ndarray, w: int, h: int, dx: int, dy: int, edge_mo
     if y1_src < y2_src and x1_src < x2_src:
         res[y1_dst:y2_dst, x1_dst:x2_dst] = arr[y1_src:y2_src, x1_src:x2_src]
     return res
+
+
+def gray8_array(img: QImage) -> np.ndarray:
+    """Independent `(height, width)` uint8 copy of a Format_Grayscale8 image
+    (row padding stripped)."""
+    ptr = img.constBits()
+    ptr.setsize(img.sizeInBytes())
+    return np.frombuffer(ptr, dtype=np.uint8).reshape(img.height(), img.bytesPerLine())[:, :img.width()].copy()
+
+
+def coverage_mask(width: int, height: int, paint, antialias: bool = False) -> np.ndarray:
+    """`(height, width)` uint8 coverage mask: 255 where `paint(painter)`
+    draws, 0 elsewhere, antialiased in between.
+
+    The one place that turns geometry into a numpy mask. `paint` should
+    use `MASK_WHITE` — careful with `QColor(255)`: that's the *RGB integer*
+    0x0000FF (blue), which lands on a grayscale image as 39, not 255. Five
+    separate copies of this helper had exactly that bug (Modify > Smooth
+    selected nothing, Select and Mask started at 15%, Patch blended at 15%)."""
+    from PyQt6.QtGui import QPainter
+    img = QImage(max(1, width), max(1, height), QImage.Format.Format_Grayscale8)
+    img.fill(0)
+    p = QPainter(img)
+    p.setRenderHint(QPainter.RenderHint.Antialiasing, antialias)
+    paint(p)
+    p.end()
+    return gray8_array(img)
+
+
+def path_mask(path, width: int, height: int, offset=None, antialias: bool = False) -> np.ndarray:
+    """Coverage mask of a filled QPainterPath; `offset` (QPoint/QPointF) is
+    subtracted, i.e. it's the mask's top-left in the path's coordinates."""
+    def _paint(p):
+        if offset is not None:
+            p.translate(-offset.x(), -offset.y())
+        p.fillPath(path, MASK_WHITE)
+    return coverage_mask(width, height, _paint, antialias)
+
+
+def stroke_mask(points, pen_width: float, width: int, height: int, offset=None) -> np.ndarray:
+    """Coverage mask of a round-capped polyline (healing-brush strokes),
+    antialiased; `offset` as in path_mask."""
+    from PyQt6.QtCore import QPointF, Qt
+    from PyQt6.QtGui import QPen, QPolygonF
+
+    def _paint(p):
+        p.setPen(QPen(MASK_WHITE, pen_width, Qt.PenStyle.SolidLine,
+                      Qt.PenCapStyle.RoundCap, Qt.PenJoinStyle.RoundJoin))
+        ox, oy = (offset.x(), offset.y()) if offset is not None else (0, 0)
+        p.drawPolyline(QPolygonF([QPointF(pt.x() - ox, pt.y() - oy) for pt in points]))
+    return coverage_mask(width, height, _paint, antialias=True)
+
+
+from PyQt6.QtGui import QColor as _QColor  # noqa: E402
+MASK_WHITE = _QColor(255, 255, 255)
+
+
+def mask_to_path(mask: np.ndarray, offset=None):
+    """Selection outline of a pixel mask — bool, 0..1 float or 0..255 uint8
+    (non-bool masks are taken at 50%) — as a simplified QPainterPath,
+    shifted by `offset` (the mask's top-left in document coordinates).
+    The one implementation behind Magic Wand, Color Range, Calculations,
+    Select Subject/Sky/Focus Area, Select and Mask and Quick Mask exit."""
+    from PyQt6.QtGui import QBitmap, QPainterPath, QRegion
+    if mask.dtype == bool:
+        on = mask
+    elif np.issubdtype(mask.dtype, np.floating):
+        on = mask >= 0.5
+    else:
+        on = mask >= 128
+    h, w = on.shape
+    img = QImage(max(1, w), max(1, h), QImage.Format.Format_ARGB32)
+    img.fill(0)
+    qimage_argb_view(img, writable=True)[:h, :w, 3][on] = 255
+    path = QPainterPath()
+    path.addRegion(QRegion(QBitmap.fromImage(img.createAlphaMask())))
+    path = path.simplified()
+    if offset is not None:
+        path.translate(offset.x(), offset.y())
+    return path
+
+
+def gray_mask_image(values: np.ndarray) -> QImage:
+    """A layer-mask image from 0..1 coverage values (white = visible)."""
+    h, w = values.shape
+    img = QImage(w, h, QImage.Format.Format_ARGB32_Premultiplied)
+    v = np.clip(values * 255.0 + 0.5, 0, 255).astype(np.uint8)
+    arr = qimage_argb_view(img, writable=True)[:, :w, :]
+    arr[..., 0] = arr[..., 1] = arr[..., 2] = v
+    arr[..., 3] = 255
+    return img

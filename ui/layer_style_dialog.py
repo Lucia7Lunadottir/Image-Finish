@@ -1,4 +1,4 @@
-from PyQt6.QtWidgets import (QDialog, QVBoxLayout, QHBoxLayout, QLabel, QListWidget, QStackedWidget,
+from PyQt6.QtWidgets import (QVBoxLayout, QHBoxLayout, QLabel, QListWidget, QStackedWidget,
                              QCheckBox, QPushButton, QSpinBox, QComboBox, QWidget, QDialogButtonBox, QListWidgetItem, QFormLayout, QDial)
 from PyQt6.QtCore import Qt, QTimer
 from PyQt6.QtGui import QColor, QIcon

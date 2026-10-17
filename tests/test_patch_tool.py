@@ -23,13 +23,20 @@ from core.document import Document
 from tools.patch_tool import PatchTool, SpotHealingTool, RedEyeTool, HealingBrushTool
 
 
-def test_patch_tool_clones_from_dragged_source(qapp):
+def test_patch_tool_transfers_source_texture_matched_to_the_surroundings(qapp):
+    """Patch = heal: the dragged-to source's *texture* replaces the
+    selection, its tone matched to the selection's own boundary. (The
+    previous version of this test passed only because the selection mask
+    was built with QColor(255) — blue, 15% gray — so the patch blended in
+    at 15% and the boundary matching never ran.)"""
     doc = Document(100, 80)
     layer = doc.layers[0]
     layer.image.fill(QColor(0, 0, 0, 0))
     p = QPainter(layer.image)
-    p.fillRect(0, 0, 50, 80, QColor(240, 240, 240, 255))   # clean source (left half)
-    p.fillRect(50, 0, 50, 80, QColor(200, 30, 30, 255))    # blemish (right half)
+    for y in range(80):                                       # striped (textured) source
+        shade = 240 if (y // 2) % 2 == 0 else 160
+        p.fillRect(0, y, 50, 1, QColor(shade, shade, shade, 255))
+    p.fillRect(50, 0, 50, 80, QColor(200, 30, 30, 255))      # flat blemish area
     p.end()
 
     sel = QPainterPath()
@@ -40,20 +47,12 @@ def test_patch_tool_clones_from_dragged_source(qapp):
     opts = {"patch_opacity": 1.0, "patch_diffusion": 5}
     tool.on_press(QPoint(65, 35), doc, QColor(), QColor(), opts)
     assert tool._mode == "drag"
-    tool.on_move(QPoint(15, 35), doc, QColor(), QColor(), opts)  # drag onto the clean source
+    tool.on_move(QPoint(15, 35), doc, QColor(), QColor(), opts)
     tool.on_release(QPoint(15, 35), doc, QColor(), QColor(), opts)
 
-    # Patch Tool brightness-matches the clone to the selection's own boundary
-    # tone (so it blends into surrounding lighting/texture) — for a flat
-    # blemish that pulls the result back toward the blemish's own color, so
-    # don't assert it now looks like the raw source; assert a real change
-    # happened inside the selection and nothing changed outside it.
-    before = (200, 30, 30, 255)
-    c = layer.image.pixelColor(70, 40)
-    assert c.getRgb() != before
-    assert c.green() > before[1]  # still pulled lighter/toward the source
-    assert layer.image.pixelColor(90, 40).getRgb() == before  # outside selection: untouched
-
+    inside = [layer.image.pixelColor(70, y).red() for y in range(36, 44)]
+    assert max(inside) - min(inside) > 30                 # the stripes came across
+    assert layer.image.pixelColor(90, 40).getRgb() == (200, 30, 30, 255)   # outside: untouched
 
 def test_spot_healing_removes_blemish(qapp):
     doc = Document(100, 80)

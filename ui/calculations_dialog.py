@@ -3,7 +3,7 @@ import ctypes
 from PyQt6.QtWidgets import (QDialog, QVBoxLayout, QHBoxLayout, QLabel, 
                              QComboBox, QCheckBox, QDialogButtonBox, QWidget)
 from PyQt6.QtCore import Qt, QTimer, QPoint
-from PyQt6.QtGui import QImage, QPainter, QPainterPath, QRegion, QBitmap, QColor, QPixmap
+from PyQt6.QtGui import QImage, QPainter, QPixmap
 from core.locale import tr
 from ui.adjustments_dialog import _to_argb32, _const_arr, _SliderRow
 
@@ -282,15 +282,8 @@ class CalculationsDialog(QDialog):
         mask_u8 = np.clip(self.result_mask * 255, 0, 255).astype(np.uint8)
         
         if res in ("selection", "channel"):
-            mask_img = QImage(w, h, QImage.Format.Format_RGBA8888)
-            mask_img.fill(0)
-            from core.pixel_buffer import qimage_argb_view
-            m_arr = qimage_argb_view(mask_img, writable=True)
-            m_arr[:, :w, 3] = mask_u8
-            
-            path = QPainterPath()
-            path.addRegion(QRegion(QBitmap.fromImage(mask_img.createAlphaMask())))
-            path = path.simplified()
+            from core.pixel_buffer import mask_to_path
+            path = mask_to_path(mask_u8)
             
             if res == "selection": self.document.selection = path
             else:

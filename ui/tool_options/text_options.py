@@ -1,6 +1,6 @@
-from PyQt6.QtWidgets import (QWidget, QHBoxLayout, QLabel,
+from PyQt6.QtWidgets import (QLabel,
                              QSpinBox, QDoubleSpinBox, QPushButton, QFontComboBox, QFrame)
-from PyQt6.QtCore import Qt, pyqtSignal
+from PyQt6.QtCore import pyqtSignal
 from PyQt6.QtGui import QColor, QFont
 from .base_options import BaseOptions
 from core.locale import tr
