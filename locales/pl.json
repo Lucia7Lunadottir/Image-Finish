@@ -345,7 +345,6 @@
   "err.could_not_open":     "Nie udało się otworzyć:\n{path}",
   "err.could_not_save":     "Nie udało się zapisać:\n{path}",
   "err.text_layer_no_draw": "To jest warstwa tekstowa. Rasteryzuj ją, aby móc rysować.",
-  "err.text_layer_no_transform": "Nie można zmieniać rozmiaru tekstu za pomocą Transformacji. Użyj ustawień czcionki.",
   "err.smart_object_no_draw": "To jest obiekt inteligentny. Rasteryzuj go, aby móc rysować.",
 
   "title.untitled":  "ImageFinish — bez tytułu ({mode})",
@@ -782,9 +781,6 @@
   "adj.photo_filter.preserve":     "Zachowaj jasność",
 
   "adj.gradient_map.title":        "Mapa gradientu",
-  "adj.gradient_map.shadows":      "Cienie:",
-  "adj.gradient_map.highlights":   "Światła:",
-  "adj.gradient_map.swap_tip":     "Zamień cienie i światła",
 
   "adj.shadows_hl.title":          "Cienie / Światła",
   "adj.shadows_hl.shadows":        "Cienie:",

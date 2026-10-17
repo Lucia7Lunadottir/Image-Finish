@@ -561,6 +561,32 @@ class LiveRenderedLayer(Layer):
             cov = clip_alpha.copy() if cov is None else cov * clip_alpha
         return cov
 
+    # ── MoveTool ────────────────────────────────────────────────────
+    # The geometry change is one method (apply_move_geometry); the commit
+    # and the live drag preview both use it, so the preview is exactly
+    # what releasing the mouse will produce.
+    def apply_move_geometry(self, transform: QTransform) -> None:
+        raise NotImplementedError
+
+    def move_preview(self, transform: QTransform) -> "LiveRenderedLayer":
+        """A lightweight copy with `transform` applied — painted by
+        MoveTool's drag preview (ui/overlay_renderers.py)."""
+        clone = self.copy(deep_image=False)
+        clone.apply_move_geometry(transform)
+        return clone
+
+    def _thumbnail_canvas_for_move(self, original_img: QImage) -> None:
+        """Called before re-baking after a move (MoveTool swapped .image for
+        a 1x1 placeholder during the drag)."""
+
+    def move_tool_apply_extra(self, doc, final_transform, original_rect, original_img) -> bool:
+        if not self.has_live_content():
+            return super().move_tool_apply_extra(doc, final_transform, original_rect, original_img)
+        self.apply_move_geometry(final_transform)
+        self._thumbnail_canvas_for_move(original_img)
+        self.rebake_thumbnail()
+        return True
+
     def render_into(self, ctx, layer_artboard_rect, is_clipping, next_clipping):
         if self._live_edit_hidden:
             # A drag (MoveTool, ShapeLayerItem) or the text editor's fast
@@ -813,12 +839,12 @@ class TextLayer(LiveRenderedLayer):
             return super().move_tool_bounds()
         return self.frame_polygon().boundingRect().united(self.content_bounds())
 
-    def move_tool_apply_extra(self, doc, final_transform, original_rect, original_img) -> bool:
+    def apply_move_geometry(self, transform: QTransform) -> None:
         data = self.data()
         if data is None:
-            return True
-        new_pt = final_transform.map(QPointF(data.x, data.y))
-        sx, sy, delta_angle = decompose_transform(final_transform)
+            return
+        new_pt = transform.map(QPointF(data.x, data.y))
+        sx, sy, delta_angle = decompose_transform(transform)
         k = (abs(sx) + abs(sy)) / 2
         if abs(k - 1.0) > 1e-3:
             # Text resizes by font size (uniform-only, see
@@ -827,8 +853,6 @@ class TextLayer(LiveRenderedLayer):
         data.x, data.y = new_pt.x(), new_pt.y()
         data.angle = (data.angle + delta_angle) % 360
         self.set_data(data)
-        self.rebake_thumbnail()
-        return True
 
 
 def paint_path_style(painter: QPainter, path: QPainterPath, path_style: dict) -> None:
@@ -978,56 +1002,30 @@ class VectorLayer(LiveRenderedLayer):
             return self.vector_mask.boundingRect()
         return super().move_tool_bounds()
 
-    def move_tool_apply_extra(self, doc, final_transform, original_rect, original_img) -> bool:
-        """path_style geometry lives entirely in vector_mask (document-space
-        QPainterPath) — self.image is never used to render it (see
-        render_into above), so the generic pixel-rasterizing commit that
-        Layer.move_tool_apply_extra's False would trigger doesn't just
-        degrade this layer to a raster, it does nothing at all: it
-        transforms self.image, which for a path_style layer never held the
-        actual shape to begin with. Transform vector_mask itself instead —
-        same final_transform, same document-space coordinates, no offset
-        math needed, matching render_into's own assumption."""
-        if self.path_style and self.vector_mask is not None and not self.vector_mask.isEmpty():
-            self.vector_mask = final_transform.map(self.vector_mask)
-            # self.image itself is never used for rendering, but the
-            # layers-panel thumbnail reads it directly — give it a normal
-            # canvas-sized image again (not MoveTool's 1x1 placeholder from
-            # on_press) and bake the moved path into it.
-            self.image = QImage(original_img.width(), original_img.height(),
-                                QImage.Format.Format_ARGB32_Premultiplied)
-            self.rebake_thumbnail()
-            return True
+    def apply_move_geometry(self, transform: QTransform) -> None:
+        """A Pen path transforms its document-space vector_mask; a shape
+        recomputes shape_data's rect/angle (a line its two endpoints) so it
+        re-renders crisply at the new size instead of stretching pixels."""
+        if self._is_path_layer():
+            self.vector_mask = transform.map(self.vector_mask)
+            return
+        spec = self.shape_spec()
+        if spec is None:
+            return
+        if spec.kind.is_open:
+            start = transform.map(spec.params.start)
+            end = transform.map(spec.params.end)
+            spec = spec.with_geometry(rect=QRectF(start, end).normalized(), start=start, end=end)
+        else:
+            new_rect, new_angle = transform_shape_rect(spec.params.rect, spec.angle, transform)
+            spec = spec.with_geometry(rect=new_rect, angle=new_angle,
+                                      start=new_rect.topLeft(), end=new_rect.bottomRight())
+        self.shape_data = spec.to_dict(base=self.shape_data)
 
-        if self.shape_data and "rect" in self.shape_data:
-            # ShapesTool primitives (rect/ellipse/star/...) are already
-            # non-destructive against ShapesTool's own ShapeLayerItem handles
-            # (ui/shape_scene_overlay.py — re-bakes shape_data at the new
-            # size on every resize). MoveTool didn't know any of this and
-            # fell through to the generic pixel path below: it transformed
-            # the current *baked bitmap* like a plain raster image — a
-            # visible quality loss (blurry stretched pixels) on every
-            # resize, unlike ShapesTool's own crisp re-bake at the target
-            # size. Recompute shape_data's rect/angle from the transform
-            # instead and re-bake fresh, the same way ShapeLayerItem does.
-            spec = ShapeSpec.from_dict(self.shape_data)
-            if spec.kind.is_open:
-                # A line has no rotation of its own — its endpoints ARE
-                # the geometry, so transform them directly.
-                start = final_transform.map(spec.params.start)
-                end = final_transform.map(spec.params.end)
-                spec = spec.with_geometry(rect=QRectF(start, end).normalized(), start=start, end=end)
-            else:
-                new_rect, new_angle = transform_shape_rect(spec.params.rect, spec.angle, final_transform)
-                spec = spec.with_geometry(rect=new_rect, angle=new_angle,
-                                          start=new_rect.topLeft(), end=new_rect.bottomRight())
-            self.shape_data = spec.to_dict(base=self.shape_data)
-            self.image = QImage(original_img.width(), original_img.height(),
-                                QImage.Format.Format_ARGB32_Premultiplied)
-            self.rebake_thumbnail()
-            return True
-
-        return super().move_tool_apply_extra(doc, final_transform, original_rect, original_img)
+    def _thumbnail_canvas_for_move(self, original_img: QImage) -> None:
+        # The vector bake is document-sized (shape_data depends on offset).
+        self.image = QImage(original_img.width(), original_img.height(),
+                            QImage.Format.Format_ARGB32_Premultiplied)
 
 
 class AdjustmentLayer(Layer):

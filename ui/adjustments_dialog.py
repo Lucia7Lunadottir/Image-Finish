@@ -341,6 +341,11 @@ class _AdjustDialog(BaseDialog):
         self._vbox.addWidget(self._btns)
 
     def _get_auto_data(self):
+        # A dialog that knows its own data (adjustment_data()) is the
+        # source of truth; scraping widget attributes by name is the legacy
+        # fallback (it silently stored wrong keys for Gradient Map).
+        if hasattr(self, "adjustment_data"):
+            return self.adjustment_data()
         d = {}
         for k, v in self.__dict__.items():
             if k == "_lut": d["lut"] = v

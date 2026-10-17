@@ -452,22 +452,11 @@ class MoveTool(BaseTool):
         if not self.is_transforming:
             return None
         layer = self._target_layer
-        if (layer is not None and getattr(layer, "path_style", None)
-                and layer.vector_mask is not None and not layer.vector_mask.isEmpty()):
-            # path_style geometry lives in vector_mask, not self.image (see
-            # VectorLayer.render_into) — self._original_img is a blank
-            # canvas for these layers, so the generic raster preview below
-            # would show nothing at all while dragging. Preview the path
-            # itself, pre-transformed, the same way move_tool_apply_extra
-            # commits it.
-            return ("vector_transform", layer.vector_mask, layer.path_style, self._total_transform)
-        if layer is not None and getattr(layer, "shape_data", None) and "rect" in layer.shape_data:
-            # Same idea as path_style above, for ShapesTool primitives: the
-            # baked bitmap (self._original_img) is what ShapeLayerItem's own
-            # drag never shows either — it redraws procedurally every frame
-            # (see ShapeLayerItem.paint()) so it always stays crisp, not
-            # blurry-stretched. Preview the same way here.
-            return ("shape_transform", layer.shape_data, self._total_transform)
+        if layer is not None and hasattr(layer, "move_preview") and layer.has_live_content():
+            # Shapes, Pen paths and text: preview the layer re-rendered with
+            # the drag applied (the same geometry the commit computes), not
+            # its baked bitmap stretched.
+            return ("live", layer.move_preview(self._total_transform))
         if self._original_img is not None:
             return ("transform", self._original_img, self._original_offset, self._total_transform)
         return None
@@ -624,6 +613,11 @@ class MoveTool(BaseTool):
         if not self.is_transforming: return
         cx, cy = params.get('x', self._bounds.center().x()), params.get('y', self._bounds.center().y())
         w_pct, h_pct = params.get('w', 100.0) / 100.0, params.get('h', 100.0) / 100.0
+        if getattr(self._target_layer, "_move_tool_uniform_scale_only", False):
+            # Text scales by font size: one factor — whichever field the
+            # user actually changed.
+            k = w_pct if abs(w_pct - 1.0) >= abs(h_pct - 1.0) else h_pct
+            w_pct = h_pct = k
         angle = params.get('angle', 0.0)
         
         t = QTransform()

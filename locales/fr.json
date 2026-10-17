@@ -345,7 +345,6 @@
   "err.could_not_open":     "Échec de l'ouverture :\n{path}",
   "err.could_not_save":     "Échec de l'enregistrement :\n{path}",
   "err.text_layer_no_draw": "C'est un calque de texte. Pixelisez-le pour pouvoir dessiner.",
-  "err.text_layer_no_transform": "La taille du texte ne peut être modifiée par Transformation. Utilisez les réglages de police.",
   "err.smart_object_no_draw": "C'est un objet dynamique. Pixelisez-le pour pouvoir dessiner.",
 
   "title.untitled":  "ImageFinish — Sans titre ({mode})",
@@ -782,9 +781,6 @@
   "adj.photo_filter.preserve":     "Conserver la luminosité",
 
   "adj.gradient_map.title":        "Courbe de transfert de dégradé",
-  "adj.gradient_map.shadows":      "Ombres :",
-  "adj.gradient_map.highlights":   "Hautes lumières :",
-  "adj.gradient_map.swap_tip":     "Inverser ombres et hautes lumières",
 
   "adj.shadows_hl.title":          "Tons foncés / Tons clairs",
   "adj.shadows_hl.shadows":        "Tons foncés :",

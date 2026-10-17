@@ -350,7 +350,6 @@
   "err.could_not_open":     "Не удалось открыть:\n{path}",
   "err.could_not_save":     "Не удалось сохранить:\n{path}",
   "err.text_layer_no_draw": "Это текстовый слой. Для рисования растрируйте его.",
-  "err.text_layer_no_transform": "Нельзя изменять размер текста через Transform. Используйте настройки шрифта.",
   "err.smart_object_no_draw": "Это смарт-объект. Растрируйте его для рисования.",
 
   "title.untitled":  "ImageFinish — без названия ({mode})",
@@ -793,9 +792,6 @@
   "adj.photo_filter.preserve":     "Сохранить яркость",
 
   "adj.gradient_map.title":        "Карта градиента",
-  "adj.gradient_map.shadows":      "Тени:",
-  "adj.gradient_map.highlights":   "Блики:",
-  "adj.gradient_map.swap_tip":     "Поменять тени и блики",
 
   "adj.shadows_hl.title":          "Тени / Блики",
   "adj.shadows_hl.shadows":        "Тени:",

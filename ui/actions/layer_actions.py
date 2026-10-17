@@ -163,6 +163,8 @@ class LayerActionsMixin:
             d = {"type": t}
             dlg = dlg_ref[0]
             if not dlg: return d
+            if hasattr(dlg, "adjustment_data"):
+                return dlg.adjustment_data()
             for k, v in dlg.__dict__.items():
                 if k == "_lut": d["lut"] = v
                 elif k == "_curve_points": d["points"] = v
@@ -238,6 +240,10 @@ class LayerActionsMixin:
             dlg._orig_adj_data = copy.deepcopy(layer.adjustment_data) if layer.adjustment_data else {}
             dlg._adj_type = t
 
+            if hasattr(dlg, "load_adjustment_data") and dlg._orig_adj_data:
+                # Re-opening an existing adjustment layer starts from its
+                # saved settings, not the dialog's defaults.
+                dlg.load_adjustment_data(dlg._orig_adj_data)
             layer.adjustment_data = scrape_data()
 
             dlg.accepted.connect(lambda: setattr(layer, "adjustment_data", scrape_data()))

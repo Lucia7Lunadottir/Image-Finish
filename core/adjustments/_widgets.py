@@ -1,8 +1,8 @@
 """Shared UI widgets used by multiple adjustment dialogs."""
 
-from PyQt6.QtWidgets import QHBoxLayout, QLabel, QPushButton, QSizePolicy
+from PyQt6.QtWidgets import QHBoxLayout, QLabel, QPushButton
 from PyQt6.QtCore import Qt, pyqtSignal
-from PyQt6.QtGui import QColor, QLinearGradient, QPainter
+from PyQt6.QtGui import QColor
 
 from core.locale import tr
 from ui.adjustments_dialog import _JumpSlider
@@ -88,26 +88,3 @@ class _ColorButton(QPushButton):
         self._refresh_style()
 
 
-class _GradientPreview(QLabel):
-    """Horizontal gradient bar showing shadow→highlight mapping."""
-
-    def __init__(self, parent=None):
-        super().__init__(parent)
-        self._shadow    = QColor(0, 0, 0)
-        self._highlight = QColor(255, 255, 255)
-        self.setFixedHeight(18)
-        self.setSizePolicy(QSizePolicy.Policy.Expanding,
-                           QSizePolicy.Policy.Fixed)
-
-    def set_colors(self, shadow: QColor, highlight: QColor):
-        self._shadow    = shadow
-        self._highlight = highlight
-        self.update()
-
-    def paintEvent(self, event):
-        p = QPainter(self)
-        grad = QLinearGradient(0, 0, self.width(), 0)
-        grad.setColorAt(0.0, self._shadow)
-        grad.setColorAt(1.0, self._highlight)
-        p.fillRect(self.rect(), grad)
-        p.end()

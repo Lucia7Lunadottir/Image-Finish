@@ -85,8 +85,8 @@ def _apply_layer_adjustment(image: QImage, layer) -> QImage:
             color = d.get("color", QColor(255, 140, 0))
             return apply_photo_filter(image, color, int(get_v(["density", "dens"], 25)), bool(get_v(["preserve"], True)))
         elif t == "gradient_map":
-            from core.adjustments.gradient_map import apply_gradient_map
-            return apply_gradient_map(image, d.get("shadows", QColor(0,0,0)), d.get("highlights", QColor(255,255,255)))
+            from core.adjustments.gradient_map import apply_gradient_map, gradient_map_from_data
+            return apply_gradient_map(image, gradient_map_from_data(d))
         elif t == "color_lookup":
             from core.adjustments.color_lookup import apply_color_lookup
             return apply_color_lookup(image, d.get("lut", None), int(get_v(["intensity"], 100)))

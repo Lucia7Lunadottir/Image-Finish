@@ -239,31 +239,14 @@ def draw_transform_preview(painter, *, active_tool, pan, zoom):
             painter.setTransform(QTransform().translate(tl.x(), tl.y()) * transform, combine=True)
             painter.drawImage(0, 0, img)
             painter.restore()
-        elif len(fp) == 4 and fp[0] == "vector_transform":
-            _, mask, path_style, transform = fp
+        elif len(fp) == 2 and fp[0] == "live":
+            _, layer = fp
             painter.save()
             painter.translate(pan)
             painter.scale(zoom, zoom)
             painter.setRenderHint(QPainter.RenderHint.Antialiasing)
-            from core.layer import paint_path_style
-            paint_path_style(painter, transform.map(mask), path_style)
-            painter.restore()
-        elif len(fp) == 3 and fp[0] == "shape_transform":
-            _, sd, transform = fp
-            painter.save()
-            painter.translate(pan)
-            painter.scale(zoom, zoom)
-            painter.setRenderHint(QPainter.RenderHint.Antialiasing)
-            from core.layer import transform_shape_rect
-            from core.shape_model import ShapeSpec
-            spec = ShapeSpec.from_dict(sd)
-            if spec.kind.is_open:
-                start, end = transform.map(spec.params.start), transform.map(spec.params.end)
-                spec = spec.with_geometry(rect=QRectF(start, end).normalized(), start=start, end=end)
-            else:
-                new_rect, new_angle = transform_shape_rect(spec.params.rect, spec.angle, transform)
-                spec = spec.with_geometry(rect=new_rect, angle=new_angle)
-            spec.paint(painter)
+            painter.setOpacity(layer.opacity)
+            layer.paint_content(painter)
             painter.restore()
         elif len(fp) == 4 and fp[0] == "warp":
             _, src_img, patches, fast = fp

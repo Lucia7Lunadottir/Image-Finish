@@ -345,7 +345,6 @@
   "err.could_not_open":     "Öffnen fehlgeschlagen:\n{path}",
   "err.could_not_save":     "Speichern fehlgeschlagen:\n{path}",
   "err.text_layer_no_draw": "Dies ist eine Textebene. Rastern Sie diese zuerst, um darauf zu zeichnen.",
-  "err.text_layer_no_transform": "Textgröße kann nicht über Transformieren geändert werden. Nutzen Sie die Schrifteinstellungen.",
   "err.smart_object_no_draw": "Smartobjekt-Ebene. Rastern Sie diese, um darauf zu zeichnen.",
 
   "title.untitled":  "ImageFinish — Unbenannt ({mode})",
@@ -782,9 +781,6 @@
   "adj.photo_filter.preserve":     "Luminanz erhalten",
 
   "adj.gradient_map.title":        "Verlaufsumsetzung",
-  "adj.gradient_map.shadows":      "Tiefen:",
-  "adj.gradient_map.highlights":   "Lichter:",
-  "adj.gradient_map.swap_tip":     "Tiefen und Lichter tauschen",
 
   "adj.shadows_hl.title":          "Tiefen / Lichter",
   "adj.shadows_hl.shadows":        "Tiefen:",

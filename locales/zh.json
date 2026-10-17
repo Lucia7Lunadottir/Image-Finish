@@ -345,7 +345,6 @@
   "err.could_not_open":     "无法打开:\n{path}",
   "err.could_not_save":     "无法保存:\n{path}",
   "err.text_layer_no_draw": "这是一个文字图层。请先栅格化才能绘图。",
-  "err.text_layer_no_transform": "无法通过变换工具更改文字大小。请使用字体设置。",
   "err.smart_object_no_draw": "这是一个智能对象。请先栅格化才能绘图。",
 
   "title.untitled":  "ImageFinish — 未命名 ({mode})",
@@ -782,9 +781,6 @@
   "adj.photo_filter.preserve":     "保留亮度",
 
   "adj.gradient_map.title":        "渐变映射",
-  "adj.gradient_map.shadows":      "阴影:",
-  "adj.gradient_map.highlights":   "高光:",
-  "adj.gradient_map.swap_tip":     "交换阴影和高光",
 
   "adj.shadows_hl.title":          "阴影/高光",
   "adj.shadows_hl.shadows":        "阴影:",

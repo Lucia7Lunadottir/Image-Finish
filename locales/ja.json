@@ -345,7 +345,6 @@
   "err.could_not_open":     "開けませんでした:\n{path}",
   "err.could_not_save":     "保存できませんでした:\n{path}",
   "err.text_layer_no_draw": "テキストレイヤーです。描画するにはラスタライズしてください。",
-  "err.text_layer_no_transform": "Transformでテキストサイズを変更することはできません。フォント設定を使用してください。",
   "err.smart_object_no_draw": "スマートオブジェクトです。描画するにはラスタライズしてください。",
 
   "title.untitled":  "ImageFinish — 名称未設定 ({mode})",
@@ -782,9 +781,6 @@
   "adj.photo_filter.preserve":     "輝度を保持",
 
   "adj.gradient_map.title":        "グラデーションマップ",
-  "adj.gradient_map.shadows":      "シャドウ:",
-  "adj.gradient_map.highlights":   "ハイライト:",
-  "adj.gradient_map.swap_tip":     "シャドウとハイライトを入れ替え",
 
   "adj.shadows_hl.title":          "シャドウ・ハイライト",
   "adj.shadows_hl.shadows":        "シャドウ:",

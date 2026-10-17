@@ -345,7 +345,6 @@
   "err.could_not_open":     "No se pudo abrir:\n{path}",
   "err.could_not_save":     "No se pudo guardar:\n{path}",
   "err.text_layer_no_draw": "Esta es una capa de texto. Rasterícela para dibujar.",
-  "err.text_layer_no_transform": "No se puede cambiar el tamaño del texto mediante Transformación. Use los ajustes de fuente.",
   "err.smart_object_no_draw": "Este es un objeto inteligente. Rasterícelo para dibujar.",
 
   "title.untitled":  "ImageFinish — sin título ({mode})",
@@ -782,9 +781,6 @@
   "adj.photo_filter.preserve":     "Conservar luminosidad",
 
   "adj.gradient_map.title":        "Mapa de degradado",
-  "adj.gradient_map.shadows":      "Sombras:",
-  "adj.gradient_map.highlights":   "Iluminaciones:",
-  "adj.gradient_map.swap_tip":     "Conmutar sombras e iluminaciones",
 
   "adj.shadows_hl.title":          "Sombras / Iluminaciones",
   "adj.shadows_hl.shadows":        "Sombras:",

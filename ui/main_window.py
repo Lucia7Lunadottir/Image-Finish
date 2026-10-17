@@ -1137,16 +1137,6 @@ class MainWindow(QMainWindow,
             self._canvas.reset_rotation()
             return
         if key == "transform_params":
-            layer = self._document.get_active_layer()
-            if layer and getattr(layer, "layer_type", "raster") == "text":
-                if hasattr(self, "_status"):
-                    self._status.showMessage(tr("err.text_layer_no_transform"), 3000)
-                tool = self._canvas.active_tool
-                if hasattr(tool, "cancel_transform"):
-                    tool.cancel_transform(self._document)
-                    self._canvas_refresh()
-                    self._opts_bar.update_tool_state(None)
-                return
             tool = self._canvas.active_tool
             if hasattr(tool, "set_transform_params"):
                 tool.set_transform_params(self._document, value)

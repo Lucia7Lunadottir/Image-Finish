@@ -351,7 +351,6 @@
   "err.could_not_open":     "Could not open:\n{path}",
   "err.could_not_save":     "Could not save to:\n{path}",
   "err.text_layer_no_draw": "This is a text layer. Rasterize it to draw.",
-  "err.text_layer_no_transform": "Cannot transform a text layer. Use font settings to resize.",
   "err.smart_object_no_draw": "This is a smart object. Rasterize it to draw.",
 
   "title.untitled":  "ImageFinish \u2014 untitled ({mode})",
@@ -800,9 +799,6 @@
   "adj.photo_filter.preserve":     "Preserve Luminosity",
 
   "adj.gradient_map.title":        "Gradient Map",
-  "adj.gradient_map.shadows":      "Shadows:",
-  "adj.gradient_map.highlights":   "Highlights:",
-  "adj.gradient_map.swap_tip":     "Swap shadow / highlight",
 
   "adj.shadows_hl.title":          "Shadows / Highlights",
   "adj.shadows_hl.shadows":        "Shadows:",

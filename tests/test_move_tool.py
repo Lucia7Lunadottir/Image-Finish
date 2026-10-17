@@ -295,9 +295,8 @@ def test_vector_path_style_move_translates_vector_mask_live(qapp):
     # Live preview while still dragging must reflect the in-progress drag.
     tool.on_move(QPoint(90, 85), doc, QColor(), QColor(), OPTS)
     fp = tool.floating_preview()
-    assert fp[0] == "vector_transform"
-    live_bounds = fp[3].map(fp[1]).boundingRect()
-    assert live_bounds == QRectF(70, 70, 40, 30)
+    assert fp[0] == "live"
+    assert fp[1].vector_mask.boundingRect() == QRectF(70, 70, 40, 30)
 
     tool.apply_transform(doc)
     assert layer.vector_mask.boundingRect() == QRectF(70, 70, 40, 30)
@@ -358,7 +357,7 @@ def test_vector_shape_data_move_updates_rect_and_rebakes(qapp):
     tool = MoveTool()
     tool.on_press(QPoint(35, 35), doc, QColor(), QColor(), OPTS)
     fp = tool.floating_preview()
-    assert fp[0] == "shape_transform"  # crisp procedural preview, not the stale baked bitmap
+    assert fp[0] == "live"  # crisp re-rendered preview, not the stale baked bitmap
     tool.on_move(QPoint(45, 45), doc, QColor(), QColor(), OPTS)
     tool.apply_transform(doc)
 
@@ -381,11 +380,9 @@ def test_vector_shape_data_live_preview_reflects_in_progress_drag(qapp):
     tool.on_move(QPoint(55, 55), doc, QColor(), QColor(), OPTS)  # +20, +20, mid-drag
 
     fp = tool.floating_preview()
-    assert fp[0] == "shape_transform"
-    sd, transform = fp[1], fp[2]
-    from core.layer import transform_shape_rect
-    new_rect, new_angle = transform_shape_rect(QRectF(20, 20, 30, 30), 0, transform)
-    assert new_rect == QRectF(40, 40, 30, 30)
+    assert fp[0] == "live"
+    assert fp[1].shape_data["rect"] == (40, 40, 30, 30)
+    assert layer.shape_data["rect"] == (20, 20, 30, 30)   # the real layer is untouched mid-drag
 
 
 def test_vector_shape_data_corner_scale_rebakes_crisp_not_stretched(qapp):
@@ -454,3 +451,44 @@ def test_vector_shape_data_cancel_leaves_shape_data_unchanged(qapp):
     tool.cancel_transform(doc)
 
     assert layer.shape_data == original
+
+
+def test_text_move_preview_is_the_committed_result(qapp):
+    """Text used to preview as its baked bitmap stretched; the preview is
+    now the layer re-rendered with the same geometry the commit applies."""
+    from core.text_model import TextData, CharStyle
+    doc = Document(200, 200)
+    layer = TextLayer("t", 200, 200)
+    layer.set_data(TextData(text="Hi", runs=[(2, CharStyle(size=24))], x=40, y=40))
+    layer.rebake_thumbnail()
+    doc.layers.append(layer)
+    doc.active_layer_index = 1
+
+    tool = MoveTool()
+    c = layer.content_bounds().center().toPoint()
+    tool.on_press(c, doc, QColor(), QColor(), OPTS)
+    tool.on_move(c + QPoint(30, 10), doc, QColor(), QColor(), OPTS)
+    fp = tool.floating_preview()
+    assert fp[0] == "live"
+    preview = fp[1].data()
+    tool.apply_transform(doc)
+    committed = layer.data()
+    assert (preview.x, preview.y, preview.angle) == (committed.x, committed.y, committed.angle)
+    assert committed.x == 70 and committed.y == 50
+
+
+def test_numeric_transform_panel_scales_text_uniformly(qapp):
+    from core.text_model import TextData, CharStyle
+    doc = Document(200, 200)
+    layer = TextLayer("t", 200, 200)
+    layer.set_data(TextData(text="Hi", runs=[(2, CharStyle(size=20))], x=40, y=40))
+    layer.rebake_thumbnail()
+    doc.layers.append(layer)
+    doc.active_layer_index = 1
+    tool = MoveTool()
+    c = layer.content_bounds().center().toPoint()
+    tool.on_press(c, doc, QColor(), QColor(), OPTS)
+    params = tool.get_transform_params()
+    tool.set_transform_params(doc, dict(params, w=200.0, h=100.0))   # only W changed
+    tool.apply_transform(doc)
+    assert layer.data().runs[0][1].size == 40

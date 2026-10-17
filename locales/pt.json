@@ -345,7 +345,6 @@
   "err.could_not_open":     "Não foi possível abrir:\n{path}",
   "err.could_not_save":     "Não foi possível salvar:\n{path}",
   "err.text_layer_no_draw": "Esta é uma camada de texto. Rasterize para desenhar.",
-  "err.text_layer_no_transform": "O tamanho do texto não pode ser alterado via Transformação. Use as configurações de fonte.",
   "err.smart_object_no_draw": "Este é um objeto inteligente. Rasterize para desenhar.",
 
   "title.untitled":  "ImageFinish — sem título ({mode})",
@@ -782,9 +781,6 @@
   "adj.photo_filter.preserve":     "Preservar luminosidade",
 
   "adj.gradient_map.title":        "Mapa de degradê",
-  "adj.gradient_map.shadows":      "Sombras:",
-  "adj.gradient_map.highlights":   "Realces:",
-  "adj.gradient_map.swap_tip":     "Alternar sombras e realces",
 
   "adj.shadows_hl.title":          "Sombras / Realces",
   "adj.shadows_hl.shadows":        "Sombras:",

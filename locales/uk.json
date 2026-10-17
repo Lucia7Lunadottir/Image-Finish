@@ -345,7 +345,6 @@
   "err.could_not_open":     "Не вдалося відкрити:\n{path}",
   "err.could_not_save":     "Не вдалося зберегти:\n{path}",
   "err.text_layer_no_draw": "Це текстовий шар. Для малювання раструйте його.",
-  "err.text_layer_no_transform": "Не можна змінювати розмір тексту через Transform. Використовуйте налаштування шрифту.",
   "err.smart_object_no_draw": "Це смарт-об’єкт. Раструйте його для малювання.",
 
   "title.untitled":  "ImageFinish — без назви ({mode})",
@@ -782,9 +781,6 @@
   "adj.photo_filter.preserve":     "Зберегти яскравість",
 
   "adj.gradient_map.title":        "Карта градієнта",
-  "adj.gradient_map.shadows":      "Тіні:",
-  "adj.gradient_map.highlights":   "Відблиски:",
-  "adj.gradient_map.swap_tip":     "Поміняти тіні та відблиски",
 
   "adj.shadows_hl.title":          "Тіні / Відблиски",
   "adj.shadows_hl.shadows":        "Тіні:",

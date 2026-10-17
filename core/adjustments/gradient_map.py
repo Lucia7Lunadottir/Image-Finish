@@ -1,117 +1,116 @@
-from PyQt6.QtWidgets import QHBoxLayout, QLabel, QPushButton
+from PyQt6.QtWidgets import QHBoxLayout, QCheckBox
 from PyQt6.QtGui import QImage, QColor
 
 from core.locale import tr
+from core.gradient_model import Gradient
 from ui.adjustments_dialog import _to_argb32, _in_place_arr, _AdjustDialog
-from core.adjustments._widgets import _ColorButton, _GradientPreview
 
 
-def apply_gradient_map(src: QImage,
-                       shadow: tuple, highlight: tuple) -> QImage:
-    """Map each pixel's luminance to a gradient from *shadow* to *highlight*
-    (each is an (r, g, b) int tuple)."""
-    img = _to_argb32(src)
-    try:
-        import numpy as np
-        img = img.copy()
-        arr = _in_place_arr(img)
-        R = arr[:, :, 2].astype(np.uint32)
-        G = arr[:, :, 1].astype(np.uint32)
-        B = arr[:, :, 0].astype(np.uint32)
-        t = (299 * R + 587 * G + 114 * B).astype(np.float32) / (1000.0 * 255.0)
-        sr, sg, sb = shadow
-        hr, hg, hb = highlight
-        arr[:, :, 2] = np.clip(sr + (hr - sr) * t, 0, 255).astype(np.uint8)
-        arr[:, :, 1] = np.clip(sg + (hg - sg) * t, 0, 255).astype(np.uint8)
-        arr[:, :, 0] = np.clip(sb + (hb - sb) * t, 0, 255).astype(np.uint8)
-        return img.convertToFormat(QImage.Format.Format_ARGB32_Premultiplied)
-    except ImportError:
-        sr, sg, sb = shadow
-        hr, hg, hb = highlight
-        result = img.copy()
-        for y in range(result.height()):
-            for x in range(result.width()):
-                px = result.pixel(x, y)
-                a  = (px >> 24) & 0xFF
-                ri = (px >> 16) & 0xFF
-                gi = (px >>  8) & 0xFF
-                bi = px & 0xFF
-                t  = (299 * ri + 587 * gi + 114 * bi) / (1000.0 * 255.0)
-                result.setPixel(x, y,
-                    (a << 24) |
-                    (int(sr + (hr - sr) * t) << 16) |
-                    (int(sg + (hg - sg) * t) <<  8) |
-                    int(sb + (hb - sb) * t))
-        return result.convertToFormat(QImage.Format.Format_ARGB32_Premultiplied)
+def gradient_map_from_data(d: dict) -> Gradient:
+    """The adjustment's gradient: `gradient` (Gradient.to_dict) plus
+    `reverse`, or the original two-colour {"shadows", "highlights"} form."""
+    if d.get("gradient"):
+        g = Gradient.from_dict(d["gradient"])
+    else:
+        g = Gradient.two_color(QColor(d.get("shadows", QColor(0, 0, 0))),
+                               QColor(d.get("highlights", QColor(255, 255, 255))))
+    g.reverse = bool(d.get("reverse", False))
+    return g
+
+
+def apply_gradient_map(src: QImage, gradient: Gradient) -> QImage:
+    """Maps each pixel's luminance through `gradient` (shadows -> its start,
+    highlights -> its end), keeping the pixel's own alpha — Photoshop's
+    Gradient Map. Uses the gradient's colors; its opacity stops don't
+    make pixels transparent."""
+    import numpy as np
+    img = _to_argb32(src).copy()
+    arr = _in_place_arr(img)
+    lut = np.empty((256, 3), dtype=np.uint8)
+    for i in range(256):
+        c = gradient.color_at(i / 255.0)
+        lut[i] = (c.blue(), c.green(), c.red())
+    R = arr[:, :, 2].astype(np.uint32)
+    G = arr[:, :, 1].astype(np.uint32)
+    B = arr[:, :, 0].astype(np.uint32)
+    lum = ((299 * R + 587 * G + 114 * B) // 1000).astype(np.uint8)
+    arr[:, :, :3] = lut[lum]
+    return img.convertToFormat(QImage.Format.Format_ARGB32_Premultiplied)
 
 
 class GradientMapDialog(_AdjustDialog):
+    """Gradient Map with the full gradient editor (stops, midpoints,
+    presets) instead of two fixed color swatches."""
+
     def __init__(self, layer, canvas_refresh, parent=None):
         super().__init__(tr("adj.gradient_map.title"), layer, canvas_refresh, parent)
         self.setMinimumWidth(420)
+        from ui.gradient_editor import GradientPreviewWidget
+        self._gradient = Gradient.two_color(QColor(0, 0, 0), QColor(255, 255, 255))
 
-        # Gradient preview strip
-        self._preview_strip = _GradientPreview()
-        self._vbox.addWidget(self._preview_strip)
-        self._vbox.addSpacing(6)
-
-        # Swatches row
-        swatch_row = QHBoxLayout()
-        shad_lbl = QLabel(tr("adj.gradient_map.shadows"))
-        shad_lbl.setFixedWidth(70)
-        self._shadow_btn = _ColorButton(QColor(0, 0, 0))
-        self._shadow_btn.colorChanged.connect(self._on_swatch_change)
-
-        swap_btn = QPushButton("\u21c4")      # ⇄
-        swap_btn.setFixedWidth(30)
-        swap_btn.setToolTip(tr("adj.gradient_map.swap_tip"))
-        swap_btn.clicked.connect(self._swap)
-
-        high_lbl = QLabel(tr("adj.gradient_map.highlights"))
-        high_lbl.setFixedWidth(72)
-        self._highlight_btn = _ColorButton(QColor(255, 255, 255))
-        self._highlight_btn.colorChanged.connect(self._on_swatch_change)
-
-        swatch_row.addWidget(shad_lbl)
-        swatch_row.addWidget(self._shadow_btn)
-        swatch_row.addStretch()
-        swatch_row.addWidget(swap_btn)
-        swatch_row.addStretch()
-        swatch_row.addWidget(high_lbl)
-        swatch_row.addWidget(self._highlight_btn)
-        self._vbox.addLayout(swatch_row)
+        row = QHBoxLayout()
+        self._swatch = GradientPreviewWidget()
+        self._swatch.setFixedHeight(26)
+        self._swatch.setMinimumWidth(240)
+        self._swatch.setToolTip(tr("opts.gradient.edit_tip"))
+        self._swatch.clicked.connect(self._edit_gradient)
+        row.addWidget(self._swatch, 1)
+        self._reverse = QCheckBox(tr("gradient_editor.reverse"))
+        self._reverse.toggled.connect(lambda _v: self._on_change())
+        row.addWidget(self._reverse)
+        self._vbox.addLayout(row)
 
         self._seal(reset_fn=self._do_reset)
-        self._update_strip()
+        self._sync_swatch()
 
-    def _on_swatch_change(self):
-        self._update_strip()
-        self._on_change()
+    # ── adjustment-layer data (explicit, not scraped from widgets) ────
+    def adjustment_data(self) -> dict:
+        return {"type": "gradient_map", "gradient": self._gradient.to_dict(),
+                "reverse": self._reverse.isChecked()}
 
-    def _update_strip(self):
-        self._preview_strip.set_colors(
-            self._shadow_btn.color(), self._highlight_btn.color())
+    def load_adjustment_data(self, d: dict):
+        g = gradient_map_from_data(d)
+        self._reverse.blockSignals(True)
+        self._reverse.setChecked(g.reverse)
+        self._reverse.blockSignals(False)
+        g.reverse = False
+        self._gradient = g
+        self._sync_swatch()
+        self._apply_preview()
 
-    def _swap(self):
-        s = self._shadow_btn.color()
-        h = self._highlight_btn.color()
-        self._shadow_btn.set_color(h)
-        self._highlight_btn.set_color(s)
-        self._update_strip()
-        self._on_change()
+    # ── UI ────────────────────────────────────────────────────────────
+    def _current(self) -> Gradient:
+        g = self._gradient.copy()
+        g.reverse = self._reverse.isChecked()
+        return g
+
+    def _sync_swatch(self):
+        self._swatch.set_gradient(self._current())
+
+    def _edit_gradient(self):
+        from ui.gradient_editor import GradientEditorDialog
+        original = self._gradient.copy()
+        dlg = GradientEditorDialog(original, parent=self)
+
+        def _live(g):
+            self._gradient = g
+            self._sync_swatch()
+            self._on_change()
+        dlg.gradient_changed.connect(_live)
+        if not dlg.exec():
+            _live(original)
+
+    def _on_change(self):
+        self._sync_swatch()
+        super()._on_change()
 
     def _do_reset(self):
         self._timer.stop()
-        self._shadow_btn.set_color(QColor(0, 0, 0))
-        self._highlight_btn.set_color(QColor(255, 255, 255))
-        self._update_strip()
+        self._gradient = Gradient.two_color(QColor(0, 0, 0), QColor(255, 255, 255))
+        self._reverse.setChecked(False)
+        self._sync_swatch()
         self._apply_preview()
 
     def _apply_preview(self):
-        s = self._shadow_btn.color()
-        h = self._highlight_btn.color()
-        self._layer.image = apply_gradient_map(
-            self._orig_argb32,
-            (s.red(), s.green(), s.blue()),
-            (h.red(), h.green(), h.blue()))
+        self._layer.image = apply_gradient_map(self._orig_argb32, self._current())
         self._canvas_refresh()
