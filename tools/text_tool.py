@@ -273,7 +273,7 @@ class _BaseTypeTool(BaseTool):
         top center of the first column (vertical)."""
         style = data.runs[0][1]
         if data.vertical:
-            return click.x() - style.size * PT_TO_PX * data.paragraph.leading / 2, click.y()
+            return click.x() - style.size * PT_TO_PX * data.paragraphs[0].leading / 2, click.y()
         ascent = QFontMetricsF(qfont(style), layout_device()).ascent()
         return click.x(), click.y() - ascent
 

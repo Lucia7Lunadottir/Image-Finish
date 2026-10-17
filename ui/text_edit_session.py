@@ -214,7 +214,7 @@ class TextEditSession(QObject):
     # ── model change plumbing ───────────────────────────────────────
     def layout(self):
         shown = self._display_data()
-        key = (id(shown), shown.text, tuple(shown.runs), shown.paragraph, shown.effects,
+        key = (id(shown), shown.text, tuple(shown.runs), tuple(shown.paragraphs), shown.effects,
                shown.box, shown.vertical, shown.x, shown.y, shown.angle)
         if self._layout_for != key:
             self._layout = layout_text(shown)
@@ -486,10 +486,11 @@ class TextEditSession(QObject):
                 self._pending = replace(self._insert_style(), **{f: v})
                 self._after_move()
             return True
-        if key in PARAGRAPH_OPTION_KEYS:
+        if key in PARAGRAPH_OPTION_KEYS:   # the caret's / selection's paragraphs
             self._snapshot()
             f = PARAGRAPH_OPTION_KEYS[key]
-            self.data.paragraph = replace(self.data.paragraph, **{f: _coerce(f, value)})
+            a, b = self._sel()
+            self.data.restyle_paragraphs(a, b, **{f: _coerce(f, value)})
             self._changed()
             return True
         if key in EFFECT_OPTION_KEYS:

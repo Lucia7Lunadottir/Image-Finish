@@ -317,7 +317,7 @@ def test_paragraph_indents_and_spacing_move_lines(main_window):
     data = TextData(text="one\ntwo", runs=[(7, CharStyle())])
     base = layout_text(data)
     from dataclasses import replace
-    data.paragraph = replace(data.paragraph, indent_left=10, space_before=20)
+    data.restyle_all_paragraphs(indent_left=10, space_before=20)
     moved = layout_text(data)
     assert moved.lines[0].dx > base.lines[0].dx
     assert moved.lines[1].top > base.lines[1].top + 20
@@ -458,3 +458,38 @@ def test_rasterize_keeps_the_text_pixels(main_window):
     diff = sum(1 for x in range(0, 300, 3) for y in range(0, 200, 3)
                if before.pixelColor(x, y) != after.pixelColor(x, y))
     assert diff < 5
+
+
+def test_paragraph_settings_are_per_paragraph(main_window):
+    w = main_window
+    doc, canvas, session = _setup(w)
+    _click(w, 20, 40)
+    _type(session, "first\nsecond\nthird")
+    session._set_cursor(len("first\nsec"), False)       # caret in the 2nd paragraph
+    w._on_opt_changed("text_align", "right")
+    paras = session.data.paragraphs
+    assert [p.align for p in paras] == ["left", "right", "left"]
+    session.anchor, session.cursor = 0, len(session.data.text)
+    w._on_opt_changed("para_space_before", 12)
+    assert all(p.space_before == 12 for p in session.data.paragraphs)
+    page = w._opts_bar._pages["Text"]
+    session._set_cursor(len("first\nsec"), False)
+    assert w._canvas.tool_opts["text_align"] == "right"     # panels follow the caret's paragraph
+
+
+def test_splitting_and_merging_paragraphs_keeps_their_styles():
+    from core.text_model import TextData, CharStyle
+    data = TextData(text="ab\ncd", runs=[(5, CharStyle())])
+    data.restyle_paragraphs(4, 4, align="center")
+    assert [p.align for p in data.paragraphs] == ["left", "center"]
+    data.insert(4, "\nX")                                # split the 2nd paragraph
+    assert [p.align for p in data.paragraphs] == ["left", "center", "center"]
+    data.delete(1, 4)                                     # merge 1st with the rest of 2nd
+    assert [p.align for p in data.paragraphs] == ["left", "center"]
+    assert TextData.from_dict(data.to_dict()).paragraphs == data.paragraphs
+
+
+def test_first_version_layer_wide_paragraph_still_loads():
+    from core.text_model import TextData
+    old = {"version": 2, "text": "a\nb", "runs": [[3, {}]], "paragraph": {"align": "center"}}
+    assert [p.align for p in TextData.from_dict(old).paragraphs] == ["center", "center"]

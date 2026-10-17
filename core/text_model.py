@@ -102,6 +102,14 @@ class TextEffects:
     shadow_dy: float = 3.0
 
 
+def _paragraph_from_dict(p: dict) -> ParagraphStyle:
+    return ParagraphStyle(
+        align=p.get("align", "left") if p.get("align") in ALIGNS else "left",
+        leading=float(p.get("leading", 1.0) or 1.0),
+        **{k: float(p[k]) for k in ("indent_left", "indent_right", "indent_first",
+                                    "space_before", "space_after") if k in p})
+
+
 @dataclass
 class TextData:
     text: str = ""
@@ -109,7 +117,10 @@ class TextData:
     # Always at least one run, even for empty text — it's the style new
     # typing gets.
     runs: list = field(default_factory=lambda: [(0, CharStyle())])
-    paragraph: ParagraphStyle = field(default_factory=ParagraphStyle)
+    # One ParagraphStyle per newline-separated paragraph (Photoshop keeps
+    # alignment/indents/spacing per paragraph), kept in step with the text
+    # by insert/delete.
+    paragraphs: list = field(default_factory=lambda: [ParagraphStyle()])
     effects: TextEffects = field(default_factory=TextEffects)
     x: float = 0.0                 # document position of the text's local origin
     y: float = 0.0
@@ -117,13 +128,19 @@ class TextData:
     vertical: bool = False
     box: tuple | None = None       # (w, h) for paragraph (area) text; None = point text
 
+    def __post_init__(self):
+        # Constructed directly (tests, legacy data) the runs/paragraphs may
+        # not match the text yet — make the invariants hold from the start.
+        self._normalize()
+
     # ── serialization ───────────────────────────────────────────────
     def to_dict(self) -> dict:
         return {
             "version": 2,
             "text": self.text,
             "runs": [[n, s.to_dict()] for n, s in self.runs],
-            "paragraph": {f.name: getattr(self.paragraph, f.name) for f in fields(ParagraphStyle)},
+            "paragraphs": [{f.name: getattr(ps, f.name) for f in fields(ParagraphStyle)}
+                           for ps in self.paragraphs],
             "effects": {f.name: getattr(self.effects, f.name) for f in fields(TextEffects)},
             "x": self.x, "y": self.y, "angle": self.angle,
             "vertical": self.vertical,
@@ -135,17 +152,15 @@ class TextData:
         d = d or {}
         if d.get("version") == 2:
             runs = [(int(n), CharStyle.from_dict(s)) for n, s in d.get("runs") or []]
-            p = d.get("paragraph") or {}
+            # "paragraphs" (per paragraph) or the first version's single
+            # layer-wide "paragraph".
+            paras = d.get("paragraphs") or [d.get("paragraph") or {}]
             e = d.get("effects") or {}
             known_e = {f.name for f in fields(TextEffects)}
             data = cls(
                 text=d.get("text", ""),
                 runs=runs or [(len(d.get("text", "")), CharStyle())],
-                paragraph=ParagraphStyle(
-                    align=p.get("align", "left") if p.get("align") in ALIGNS else "left",
-                    leading=float(p.get("leading", 1.0) or 1.0),
-                    **{k: float(p[k]) for k in ("indent_left", "indent_right", "indent_first",
-                                                "space_before", "space_after") if k in p}),
+                paragraphs=[_paragraph_from_dict(p) for p in paras],
                 effects=TextEffects(**{k: _coerce(k, v) for k, v in e.items() if k in known_e}),
                 x=float(d.get("x", 0)), y=float(d.get("y", 0)), angle=float(d.get("angle", 0) or 0),
                 vertical=bool(d.get("vertical", False)),
@@ -171,8 +186,8 @@ class TextData:
         text = d.get("text", "")
         return cls(
             text=text, runs=[(len(text), style)],
-            paragraph=ParagraphStyle(align=d.get("text_align", "left") if d.get("text_align") in ALIGNS else "left",
-                                     leading=float(d.get("text_leading", 1.0) or 1.0)),
+            paragraphs=[ParagraphStyle(align=d.get("text_align", "left") if d.get("text_align") in ALIGNS else "left",
+                                       leading=float(d.get("text_leading", 1.0) or 1.0))] * (text.count("\n") + 1),
             effects=TextEffects(
                 stroke_width=float(d.get("text_stroke_w", 0) or 0),
                 stroke_color=col(d.get("text_stroke_color"), "#ff000000"),
@@ -189,21 +204,48 @@ class TextData:
                      box=None) -> "TextData":
         """A brand-new, empty text layer styled from the Text tool options."""
         base = cls._from_legacy({k: v for k, v in opts.items()})
-        para = replace(base.paragraph, **{f: float(opts[k]) for k, f in PARAGRAPH_OPTION_KEYS.items()
-                                          if k in opts and f not in ("align", "leading")})
-        base.paragraph = para
+        para = replace(base.paragraphs[0], **{f: float(opts[k]) for k, f in PARAGRAPH_OPTION_KEYS.items()
+                                              if k in opts and f not in ("align", "leading")})
         style = base.runs[0][1]
         extra = {}
         if "font_baseline_shift" in opts:
             extra["baseline_shift"] = float(opts["font_baseline_shift"])
         if opts.get("font_caps") in CAPS:
             extra["caps"] = opts["font_caps"]
-        return cls(text="", runs=[(0, replace(style, **extra))], paragraph=base.paragraph,
+        return cls(text="", runs=[(0, replace(style, **extra))], paragraphs=[para],
                    effects=base.effects, x=float(x), y=float(y), vertical=vertical,
                    box=tuple(box) if box else None)
 
     def copy(self) -> "TextData":
-        return replace(self, runs=list(self.runs))
+        return replace(self, runs=list(self.runs), paragraphs=list(self.paragraphs))
+
+    # ── paragraphs ──────────────────────────────────────────────────
+    @property
+    def paragraph(self) -> ParagraphStyle:
+        """The first paragraph's style (defaults shown for a whole layer)."""
+        return self.paragraphs[0]
+
+    def paragraph_index(self, pos: int) -> int:
+        return self.text.count("\n", 0, max(0, min(pos, len(self.text))))
+
+    def restyle_paragraphs(self, a: int, b: int, **changes):
+        """Paragraph changes apply to every paragraph [a, b] touches (the
+        caret's own paragraph when a == b), like Photoshop."""
+        lo, hi = self.paragraph_index(min(a, b)), self.paragraph_index(max(a, b))
+        for i in range(lo, hi + 1):
+            self.paragraphs[i] = replace(self.paragraphs[i], **changes)
+
+    def restyle_all_paragraphs(self, **changes):
+        self.paragraphs = [replace(p, **changes) for p in self.paragraphs]
+
+    def _sync_paragraphs(self):
+        need = self.text.count("\n") + 1
+        if not self.paragraphs:
+            self.paragraphs = [ParagraphStyle()]
+        if len(self.paragraphs) < need:
+            self.paragraphs = self.paragraphs + [self.paragraphs[-1]] * (need - len(self.paragraphs))
+        elif len(self.paragraphs) > need:
+            self.paragraphs = self.paragraphs[:need]
 
     # ── runs ────────────────────────────────────────────────────────
     def _normalize(self):
@@ -234,6 +276,7 @@ class TextData:
         if not out:
             out = [(0, self.runs[0][1] if self.runs else CharStyle())]
         self.runs = out
+        self._sync_paragraphs()
 
     def style_at(self, pos: int) -> CharStyle:
         """Style of the character *before* `pos` (what typing at `pos`
@@ -283,6 +326,10 @@ class TextData:
             return
         pos = max(0, min(len(self.text), pos))
         style = style or self.style_at(pos)
+        pi = self.paragraph_index(pos)
+        new_breaks = s.count("\n")
+        if new_breaks:   # a split paragraph keeps its style on both halves
+            self.paragraphs[pi + 1:pi + 1] = [self.paragraphs[pi]] * new_breaks
         self.text = self.text[:pos] + s + self.text[pos:]
         self._split_at(pos)
         runs, acc, done = [], 0, False
@@ -302,6 +349,10 @@ class TextData:
         if a == b:
             return
         keep_style = self.style_at(a + 1)
+        removed_breaks = self.text.count("\n", a, b)
+        if removed_breaks:   # merged paragraphs take the first one's style
+            pi = self.paragraph_index(a)
+            del self.paragraphs[pi + 1:pi + 1 + removed_breaks]
         self.text = self.text[:a] + self.text[b:]
         runs, acc = [], 0
         for n, s in self.runs:
@@ -354,7 +405,8 @@ class TextData:
         s = self.styles_in(a, b if b is not None else a)[0]
         opts = {key: getattr(s, f) for key, f in CHAR_OPTION_KEYS.items()}
         opts["text_color"] = QColor(s.color)
-        opts.update({key: getattr(self.paragraph, f) for key, f in PARAGRAPH_OPTION_KEYS.items()})
+        para = self.paragraphs[self.paragraph_index(a)]
+        opts.update({key: getattr(para, f) for key, f in PARAGRAPH_OPTION_KEYS.items()})
         for key, f in EFFECT_OPTION_KEYS.items():
             v = getattr(self.effects, f)
             opts[key] = QColor(v) if f.endswith("color") else v

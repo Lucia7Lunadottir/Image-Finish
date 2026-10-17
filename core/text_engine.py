@@ -166,7 +166,8 @@ def _decorations(path: QPainterPath, style: CharStyle, span, vertical: bool = Fa
 # ── horizontal ─────────────────────────────────────────────────────────────
 
 class _Line:
-    __slots__ = ("layout", "qline", "para_start", "dx", "top", "height", "start", "end", "para_end", "indent")
+    __slots__ = ("layout", "qline", "para_start", "dx", "top", "height", "start", "end", "para_end",
+                 "indent", "indent_right", "align")
 
     def __init__(self, layout, qline, para_start, para_end):
         self.layout = layout
@@ -177,6 +178,8 @@ class _Line:
         self.end = self.start + qline.textLength()
         self.dx = 0.0
         self.indent = 0.0
+        self.indent_right = 0.0
+        self.align = "left"
         self.top = 0.0
         self.height = qline.height()
 
@@ -191,13 +194,13 @@ class HorizontalLayout(TextLayoutResult):
         super().__init__(data)
         self.lines: list[_Line] = []
         self._layouts = []
-        para = data.paragraph
-        ind_l, ind_r = para.indent_left * PT_TO_PX, para.indent_right * PT_TO_PX
-        ind_first = para.indent_first * PT_TO_PX
-        wrap_width = max(10.0, data.box[0] - ind_l - ind_r) if data.box else _UNBOUNDED
-        leading = para.leading or 1.0
         y = 0.0
         for pi, (para_start, ptext) in enumerate(_paragraphs(data.text)):
+            para = data.paragraphs[pi]   # each paragraph has its own settings
+            ind_l, ind_r = para.indent_left * PT_TO_PX, para.indent_right * PT_TO_PX
+            ind_first = para.indent_first * PT_TO_PX
+            wrap_width = max(10.0, data.box[0] - ind_l - ind_r) if data.box else _UNBOUNDED
+            leading = para.leading or 1.0
             if pi:
                 y += para.space_before * PT_TO_PX
             para_end = para_start + len(ptext)
@@ -212,7 +215,7 @@ class HorizontalLayout(TextLayoutResult):
             opt = QTextOption()
             opt.setWrapMode(QTextOption.WrapMode.WrapAtWordBoundaryOrAnywhere if data.box
                             else QTextOption.WrapMode.NoWrap)
-            if data.paragraph.align == "justify" and data.box:
+            if para.align == "justify" and data.box:
                 opt.setAlignment(Qt.AlignmentFlag.AlignJustify)
             tl.setTextOption(opt)
             tl.beginLayout()
@@ -227,6 +230,8 @@ class HorizontalLayout(TextLayoutResult):
                 ln = _Line(tl, ql, para_start, para_end)
                 ln.top = y
                 ln.indent = ind_l + (ind_first if first else 0.0)
+                ln.indent_right = ind_r
+                ln.align = para.align
                 para_lines.append(ln)
                 y += ql.height() * leading
             tl.endLayout()
@@ -236,14 +241,13 @@ class HorizontalLayout(TextLayoutResult):
 
         natural = [ln.qline.naturalTextWidth() for ln in self.lines]
         self.width = data.box[0] if data.box else max(
-            (w + ln.indent + ind_r for ln, w in zip(self.lines, natural)), default=0.0)
-        align = para.align
+            (w + ln.indent + ln.indent_right for ln, w in zip(self.lines, natural)), default=0.0)
         for ln, w in zip(self.lines, natural):
-            room = self.width - ind_r - ln.indent - w   # free space on this line
+            room = self.width - ln.indent_right - ln.indent - w   # free space on this line
             ln.dx = ln.indent
-            if align == "center":
+            if ln.align == "center":
                 ln.dx += room / 2
-            elif align == "right":
+            elif ln.align == "right":
                 ln.dx += room
         self.height = (self.lines[-1].top + self.lines[-1].height) if self.lines else 0.0
 
@@ -325,9 +329,10 @@ class _Cell:
 
 
 class _Column:
-    __slots__ = ("x", "width", "cells", "start", "end")
+    __slots__ = ("x", "width", "cells", "start", "end", "align")
 
-    def __init__(self, start):
+    def __init__(self, start, align: str = "left"):
+        self.align = align   # vertical text: left/center/right = top/middle/bottom
         self.x = 0.0
         self.width = 0.0
         self.cells: list[_Cell] = []
@@ -349,10 +354,11 @@ class VerticalLayout(TextLayoutResult):
         super().__init__(data)
         self.columns: list[_Column] = []
         limit = data.box[1] if data.box else _UNBOUNDED
-        leading = data.paragraph.leading or 1.0
         glyphs = []   # (column, cell, path, style)
-        for para_start, ptext in _paragraphs(data.text):
-            col = _Column(para_start)
+        for pi, (para_start, ptext) in enumerate(_paragraphs(data.text)):
+            para = data.paragraphs[pi]
+            leading = para.leading or 1.0
+            col = _Column(para_start, para.align)
             self.columns.append(col)
             base = data.style_at(para_start + 1 if ptext else para_start)
             col.width = base.size * PT_TO_PX * leading
@@ -364,7 +370,7 @@ class VerticalLayout(TextLayoutResult):
                 cell_h = em * (1.0 + style.tracking / 1000.0)
                 if y + cell_h > limit and col.cells:
                     col.end = pos
-                    col = _Column(pos)
+                    col = _Column(pos, para.align)
                     self.columns.append(col)
                     col.width = em * leading
                     y = 0.0
@@ -385,12 +391,11 @@ class VerticalLayout(TextLayoutResult):
                 col.x = -sum(c.width for c in self.columns[1:i + 1])
         self.length = max((c.bottom() for c in self.columns), default=0.0)
         span = data.box[1] if data.box else self.length
-        align = data.paragraph.align
         for col in self.columns:
             off = 0.0
-            if align == "center":
+            if col.align == "center":
                 off = (span - col.bottom()) / 2
-            elif align == "right":
+            elif col.align == "right":
                 off = span - col.bottom()
             for c in col.cells:
                 c.top += off

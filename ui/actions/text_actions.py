@@ -66,7 +66,7 @@ class TextActionsMixin:
             data.restyle_all(**{f: _coerce(f, value)})
         elif key in PARAGRAPH_OPTION_KEYS:
             f = PARAGRAPH_OPTION_KEYS[key]
-            data.paragraph = replace(data.paragraph, **{f: _coerce(f, value)})
+            data.restyle_all_paragraphs(**{f: _coerce(f, value)})
         elif key in EFFECT_OPTION_KEYS:
             f = EFFECT_OPTION_KEYS[key]
             data.effects = replace(data.effects, **{f: _coerce(f, value)})
