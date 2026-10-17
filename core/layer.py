@@ -103,6 +103,16 @@ class Layer:
     # no base to clip against" gate, which only makes sense for pixel layers.
     _is_container = False
 
+    # `_draws_own_pixels`: False for layers whose `image` is not their
+    # content — adjustment layers re-grade what's below them. Together with
+    # `_is_container` it answers "can this layer's image be used as a
+    # picture" (e.g. a Match Color source).
+    _draws_own_pixels = True
+
+    @property
+    def has_own_pixels(self) -> bool:
+        return self._draws_own_pixels and not self._is_container
+
     # `_move_tool_uniform_scale_only`: True forbids MoveTool free (per-axis)
     # resize — edge handles are hidden and corner handles always scale with
     # locked aspect ratio, as if Shift were held. Text: independent width/
@@ -1030,6 +1040,7 @@ class VectorLayer(LiveRenderedLayer):
 
 class AdjustmentLayer(Layer):
     _LAYER_TAG = "adjustment"
+    _draws_own_pixels = False
 
     def __init__(self, name: str, width: int, height: int, fill_color: QColor = None):
         super().__init__(name, width, height, fill_color)

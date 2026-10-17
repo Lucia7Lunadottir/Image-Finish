@@ -386,6 +386,7 @@ class _OutputWidget(QWidget):
 class LevelsDialog(BaseDialog):
     """Non-destructive Levels dialog with real-time canvas preview."""
 
+    PAINTS_INTO_IMAGE = True   # see ui.adjustments_dialog.build_adjustment_dialog
     _DEBOUNCE_MS = 40
 
     def __init__(self, image: QImage, parent=None):

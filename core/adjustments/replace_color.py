@@ -1,9 +1,10 @@
 from PyQt6.QtWidgets import QHBoxLayout, QLabel
-from PyQt6.QtGui import QImage, QColor
+from PyQt6.QtGui import QImage
 
 from core.locale import tr
 from ui.adjustments_dialog import _to_argb32, _in_place_arr, _AdjustDialog, _SliderRow
 from core.adjustments._widgets import _ColorButton
+from core.adjustments.registry import get_kind
 
 
 def apply_replace_color(src: QImage,
@@ -109,25 +110,26 @@ def apply_replace_color(src: QImage,
 
 
 class ReplaceColorDialog(_AdjustDialog):
-    _DEFAULT_COLOR   = QColor(255, 0, 0)
-    _DEFAULT_FUZZINESS = 40
+    ADJUSTMENT_TYPE = "replace_color"
 
     def __init__(self, layer, canvas_refresh, parent=None):
         super().__init__(tr("adj.replace_color.title"), layer, canvas_refresh, parent)
         self.setMinimumWidth(400)
+        defaults = get_kind(self.ADJUSTMENT_TYPE).defaults()
 
         # Target colour row
         color_row = QHBoxLayout()
         color_lbl = QLabel(tr("adj.replace_color.target"))
         color_lbl.setFixedWidth(90)
-        self._color_btn = _ColorButton(self._DEFAULT_COLOR)
+        self._color_btn = self._bind("color", _ColorButton(defaults["color"]))
         self._color_btn.colorChanged.connect(self._on_change)
         color_row.addWidget(color_lbl)
         color_row.addWidget(self._color_btn)
         color_row.addStretch()
         self._vbox.addLayout(color_row)
 
-        self._fuzz = _SliderRow(tr("adj.replace_color.fuzziness"), 1, 100, self._DEFAULT_FUZZINESS)
+        self._fuzz = self._bind("fuzziness", _SliderRow(tr("adj.replace_color.fuzziness"),
+                                                        1, 100, defaults["fuzziness"]))
         self._add_row(self._fuzz)
 
         # Divider label
@@ -136,28 +138,10 @@ class ReplaceColorDialog(_AdjustDialog):
                           " padding-top: 6px;")
         self._vbox.addWidget(sep)
 
-        self._hue   = _SliderRow(tr("adj.replace_color.hue"),        -180, 180)
-        self._sat   = _SliderRow(tr("adj.replace_color.saturation"), -100, 100)
-        self._light = _SliderRow(tr("adj.replace_color.lightness"),  -100, 100)
+        self._hue   = self._bind("hue", _SliderRow(tr("adj.replace_color.hue"), -180, 180))
+        self._sat   = self._bind("saturation", _SliderRow(tr("adj.replace_color.saturation"), -100, 100))
+        self._light = self._bind("lightness", _SliderRow(tr("adj.replace_color.lightness"), -100, 100))
         for row in (self._hue, self._sat, self._light):
             self._add_row(row)
 
-        self._seal(reset_fn=self._do_reset)
-
-    def _do_reset(self):
-        self._timer.stop()
-        self._color_btn.set_color(self._DEFAULT_COLOR)
-        self._fuzz.reset()
-        self._hue.reset()
-        self._sat.reset()
-        self._light.reset()
-        self._apply_preview()
-
-    def _apply_preview(self):
-        c = self._color_btn.color()
-        self._layer.image = apply_replace_color(
-            self._orig_argb32,
-            c.red(), c.green(), c.blue(),
-            self._fuzz.value(),
-            self._hue.value(), self._sat.value(), self._light.value())
-        self._canvas_refresh()
+        self._seal(reset_fn=self._reset_to_defaults)

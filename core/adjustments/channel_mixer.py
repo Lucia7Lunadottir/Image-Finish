@@ -3,6 +3,7 @@ from PyQt6.QtGui import QImage
 
 from core.locale import tr
 from ui.adjustments_dialog import _to_argb32, _in_place_arr, _AdjustDialog, _SliderRow
+from core.adjustments.registry import get_kind, CHANNEL_MIXER_OUTPUTS
 
 
 def apply_channel_mixer(src: QImage,
@@ -54,17 +55,19 @@ def apply_channel_mixer(src: QImage,
         return result.convertToFormat(QImage.Format.Format_ARGB32_Premultiplied)
 
 
-_CM_CHANNELS = ("Red", "Green", "Blue")
 _CM_CHANNEL_KEYS = ("adj.channel_mixer.red", "adj.channel_mixer.green", "adj.channel_mixer.blue")
-_CM_DEFAULTS = ([100, 0, 0], [0, 100, 0], [0, 0, 100])
 
 
 class ChannelMixerDialog(_AdjustDialog):
+    """The three source sliders edit one output channel's row at a time;
+    the rows themselves live in self._values (keyed like the registry)."""
+    ADJUSTMENT_TYPE = "channel_mixer"
+
     def __init__(self, layer, canvas_refresh, parent=None):
         super().__init__(tr("adj.channel_mixer.title"), layer, canvas_refresh, parent)
 
-        # Stored mix values per output channel [R_src, G_src, B_src]
-        self._values    = [list(d) for d in _CM_DEFAULTS]
+        defaults = get_kind(self.ADJUSTMENT_TYPE).defaults()
+        self._values     = {k: defaults[k] for k in CHANNEL_MIXER_OUTPUTS}
         self._current_ch = 0
 
         # Output channel selector
@@ -85,65 +88,51 @@ class ChannelMixerDialog(_AdjustDialog):
         for row in (self._src_r, self._src_g, self._src_b):
             self._add_row(row)
 
-        self._mono = QCheckBox(tr("adj.channel_mixer.mono"))
+        self._mono = self._bind("monochrome", QCheckBox(tr("adj.channel_mixer.mono")))
         self._mono.stateChanged.connect(self._on_mono)
         self._vbox.addWidget(self._mono)
 
-        self._seal(reset_fn=self._do_reset)
+        self._seal(reset_fn=self._reset_to_defaults)
+
+    # ── parameters ────────────────────────────────────────────────────────────
+
+    def adjustment_data(self) -> dict:
+        self._save_current()
+        d = super().adjustment_data()
+        d.update({k: list(v) for k, v in self._values.items()})
+        return d
+
+    def _after_load(self, params):
+        self._values = {k: list(params[k]) for k in CHANNEL_MIXER_OUTPUTS}
+        self._select_channel(0)
+        self._ch_combo.setEnabled(not params["monochrome"])
 
     # ── helpers ───────────────────────────────────────────────────────────────
 
     def _save_current(self):
-        self._values[self._current_ch] = [
-            self._src_r.value(),
-            self._src_g.value(),
-            self._src_b.value(),
-        ]
+        self._values[CHANNEL_MIXER_OUTPUTS[self._current_ch]] = [
+            self._src_r.value(), self._src_g.value(), self._src_b.value()]
 
-    def _load_channel(self, idx):
-        rr, rg, rb = self._values[idx]
+    def _select_channel(self, idx):
+        """Show row *idx* in the sliders (without saving the current one)."""
+        self._current_ch = idx
+        self._ch_combo.blockSignals(True)
+        self._ch_combo.setCurrentIndex(idx)
+        self._ch_combo.blockSignals(False)
+        rr, rg, rb = self._values[CHANNEL_MIXER_OUTPUTS[idx]]
         self._src_r.set_value(rr)
         self._src_g.set_value(rg)
         self._src_b.set_value(rb)
 
     def _switch_channel(self, idx):
         self._save_current()
-        self._current_ch = idx
-        self._load_channel(idx)
+        self._select_channel(idx)
         self._on_change()
 
     def _on_mono(self):
         self._ch_combo.setEnabled(not self._mono.isChecked())
         if self._mono.isChecked():
+            # Monochrome mixes from the red row only — show that one.
             self._save_current()
-            self._ch_combo.blockSignals(True)
-            self._ch_combo.setCurrentIndex(0)
-            self._ch_combo.blockSignals(False)
-            self._current_ch = 0
-            self._load_channel(0)
+            self._select_channel(0)
         self._on_change()
-
-    def _do_reset(self):
-        self._timer.stop()
-        self._values    = [list(d) for d in _CM_DEFAULTS]
-        self._current_ch = 0
-        self._ch_combo.blockSignals(True)
-        self._ch_combo.setCurrentIndex(0)
-        self._ch_combo.blockSignals(False)
-        self._ch_combo.setEnabled(True)
-        self._load_channel(0)
-        self._mono.blockSignals(True)
-        self._mono.setChecked(False)
-        self._mono.blockSignals(False)
-        self._apply_preview()
-
-    def _apply_preview(self):
-        self._save_current()
-        rR, rG, rB = self._values[0]
-        gR, gG, gB = self._values[1]
-        bR, bG, bB = self._values[2]
-        self._layer.image = apply_channel_mixer(
-            self._orig_argb32,
-            rR, rG, rB, gR, gG, gB, bR, bG, bB,
-            monochrome=self._mono.isChecked())
-        self._canvas_refresh()

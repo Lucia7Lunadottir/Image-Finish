@@ -3,10 +3,9 @@ from PyQt6.QtGui import QImage
 
 from core.locale import tr
 from ui.adjustments_dialog import _to_argb32, _in_place_arr, _AdjustDialog, _SliderRow
+from core.adjustments.registry import SELECTIVE_COLOR_RANGES as _SC_RANGES
 
 
-_SC_RANGES = ("Reds", "Yellows", "Greens", "Cyans",
-              "Blues", "Magentas", "Whites", "Neutrals", "Blacks")
 _SC_RANGE_KEYS = (
     "adj.selective_color.reds",     "adj.selective_color.yellows",
     "adj.selective_color.greens",   "adj.selective_color.cyans",
@@ -138,6 +137,10 @@ def apply_selective_color(src: QImage, adjustments: dict) -> QImage:
 
 
 class SelectiveColorDialog(_AdjustDialog):
+    """The four ink sliders edit one colour range at a time; all ranges
+    live in self._values (the registry's "ranges" parameter)."""
+    ADJUSTMENT_TYPE = "selective_color"
+
     def __init__(self, layer, canvas_refresh, parent=None):
         super().__init__(tr("adj.selective_color.title"), layer, canvas_refresh, parent)
         self.setMinimumWidth(400)
@@ -165,7 +168,19 @@ class SelectiveColorDialog(_AdjustDialog):
         for row in (self._cyan, self._magenta, self._yellow, self._black):
             self._add_row(row)
 
-        self._seal(reset_fn=self._do_reset)
+        self._seal(reset_fn=self._reset_to_defaults)
+
+    # ── parameters ────────────────────────────────────────────────────────────
+
+    def adjustment_data(self) -> dict:
+        self._save_current()
+        d = super().adjustment_data()
+        d["ranges"] = {name: list(v) for name, v in self._values.items()}
+        return d
+
+    def _after_load(self, params):
+        self._values = {name: list(v) for name, v in params["ranges"].items()}
+        self._select_range(_SC_RANGES[0])
 
     # ── helpers ───────────────────────────────────────────────────────────────
 
@@ -175,29 +190,17 @@ class SelectiveColorDialog(_AdjustDialog):
             self._yellow.value(), self._black.value(),
         ]
 
-    def _load_range(self, name):
+    def _select_range(self, name):
+        """Show range *name* in the sliders (without saving the current one)."""
+        self._current_range = name
+        self._rng_combo.blockSignals(True)
+        self._rng_combo.setCurrentIndex(_SC_RANGES.index(name))
+        self._rng_combo.blockSignals(False)
         c, m, y, k = self._values[name]
         self._cyan.set_value(c);    self._magenta.set_value(m)
         self._yellow.set_value(y);  self._black.set_value(k)
 
     def _switch_range(self, name):
         self._save_current()
-        self._current_range = name
-        self._load_range(name)
+        self._select_range(name)
         self._on_change()
-
-    def _do_reset(self):
-        self._timer.stop()
-        self._values = {name: [0, 0, 0, 0] for name in _SC_RANGES}
-        self._rng_combo.blockSignals(True)
-        self._rng_combo.setCurrentIndex(0)
-        self._rng_combo.blockSignals(False)
-        self._current_range = _SC_RANGES[0]
-        self._load_range(_SC_RANGES[0])
-        self._apply_preview()
-
-    def _apply_preview(self):
-        self._save_current()
-        self._layer.image = apply_selective_color(
-            self._orig_argb32, self._values)
-        self._canvas_refresh()

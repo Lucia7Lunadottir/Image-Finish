@@ -268,6 +268,21 @@ def _write_control(w, v):
             w.blockSignals(False)
 
 
+def build_adjustment_dialog(DialogClass, layer, canvas_refresh, parent):
+    """Constructs any adjustment dialog for *layer*.
+
+    Two construction models exist: the `_AdjustDialog` family takes
+    (layer, canvas_refresh, parent) and writes layer.image; Levels and
+    Curves (PAINTS_INTO_IMAGE) take the image itself, paint into it in
+    place and call `_canvas_refresh` afterwards. Declared on the class —
+    not guessed from __init__'s parameter names, as the callers used to."""
+    if getattr(DialogClass, "PAINTS_INTO_IMAGE", False):
+        dlg = DialogClass(layer.image, parent)
+        dlg._canvas_refresh = canvas_refresh
+        return dlg
+    return DialogClass(layer, canvas_refresh, parent)
+
+
 # ── base adjustment dialog ────────────────────────────────────────────────────
 
 class _AdjustDialog(BaseDialog):
@@ -410,6 +425,16 @@ class _AdjustDialog(BaseDialog):
 
     def _after_load(self, params: dict):
         """Hook for parameters that aren't plain bound controls."""
+
+    def _reset_to_defaults(self):
+        """"Reset" button: the registered defaults, through the same path
+        that restores a saved layer — no per-dialog list of widgets to
+        reset by hand (and forget one of)."""
+        from core.adjustments.registry import get_kind
+        self._timer.stop()
+        self.load_adjustment_data(get_kind(self.ADJUSTMENT_TYPE).defaults())
+        if getattr(self, "_is_adj_layer", False):
+            self._layer.adjustment_data = self.adjustment_data()
 
     def _on_change(self):
         """Slider moved — (re)start debounce timer."""

@@ -39,22 +39,12 @@ def apply_shadows_highlights(src: QImage, shadows: int,
 
 
 class ShadowsHighlightsDialog(_AdjustDialog):
+    ADJUSTMENT_TYPE = "shadows_highlights"
+
     def __init__(self, layer, canvas_refresh, parent=None):
         super().__init__(tr("adj.shadows_hl.title"), layer, canvas_refresh, parent)
-        self._shadows    = _SliderRow(tr("adj.shadows_hl.shadows"),    0, 100)
-        self._highlights = _SliderRow(tr("adj.shadows_hl.highlights"), 0, 100)
+        self._shadows    = self._bind("shadows", _SliderRow(tr("adj.shadows_hl.shadows"), 0, 100))
+        self._highlights = self._bind("highlights", _SliderRow(tr("adj.shadows_hl.highlights"), 0, 100))
         self._add_row(self._shadows)
         self._add_row(self._highlights)
-        self._seal(reset_fn=self._do_reset)
-
-    def _do_reset(self):
-        self._timer.stop()
-        self._shadows.reset()
-        self._highlights.reset()
-        self._apply_preview()
-
-    def _apply_preview(self):
-        self._layer.image = apply_shadows_highlights(
-            self._orig_argb32,
-            self._shadows.value(), self._highlights.value())
-        self._canvas_refresh()
+        self._seal(reset_fn=self._reset_to_defaults)

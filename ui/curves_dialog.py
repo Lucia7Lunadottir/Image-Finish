@@ -377,6 +377,7 @@ class CurvesDialog(BaseDialog):
     """
 
     NON_BLOCKING = True
+    PAINTS_INTO_IMAGE = True   # see ui.adjustments_dialog.build_adjustment_dialog
     _DEBOUNCE_MS = 40
 
     def __init__(self, image: QImage, parent=None):

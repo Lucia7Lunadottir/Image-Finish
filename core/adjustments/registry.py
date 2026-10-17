@@ -15,6 +15,7 @@ and the adjustment layer render all call the same `AdjustmentKind.apply`
 with the same parameter dict, and `normalize` is the one place that reads
 older saved data.
 """
+import copy
 from dataclasses import dataclass
 
 from PyQt6.QtGui import QColor, QImage
@@ -44,7 +45,9 @@ class AdjustmentKind:
     params: tuple = ()
 
     def defaults(self) -> dict:
-        return {p.key: (QColor(p.default) if isinstance(p.default, QColor) else p.default)
+        # Fresh copies: a default list/dict must never be shared between
+        # dialogs or layers that later edit their parameters in place.
+        return {p.key: (QColor(p.default) if isinstance(p.default, QColor) else copy.deepcopy(p.default))
                 for p in self.params}
 
     def normalize(self, data: dict | None) -> dict:
@@ -280,3 +283,90 @@ class HDRToning(AdjustmentKind):
         from core.adjustments.hdr_toning import apply_hdr_toning
         return apply_hdr_toning(image, radius=int(p["radius"]), strength=p["strength"] / 100.0,
                                 gamma=p["gamma"], detail=p["detail"] / 100.0)
+
+
+@register
+class ShadowsHighlights(AdjustmentKind):
+    type = "shadows_highlights"
+    params = (Param("shadows", 0), Param("highlights", 0))
+
+    def apply(self, image, p):
+        from core.adjustments.shadows_highlights import apply_shadows_highlights
+        return apply_shadows_highlights(image, p["shadows"], p["highlights"])
+
+
+@register
+class ReplaceColor(AdjustmentKind):
+    type = "replace_color"
+    params = (Param("color", QColor(255, 0, 0), QColor), Param("fuzziness", 40),
+              Param("hue", 0), Param("saturation", 0), Param("lightness", 0))
+
+    def apply(self, image, p):
+        from core.adjustments.replace_color import apply_replace_color
+        c = p["color"]
+        return apply_replace_color(image, c.red(), c.green(), c.blue(), max(1, p["fuzziness"]),
+                                   p["hue"], p["saturation"], p["lightness"])
+
+
+CHANNEL_MIXER_OUTPUTS = ("red", "green", "blue")
+
+
+@register
+class ChannelMixer(AdjustmentKind):
+    """One [from red, from green, from blue] row (percent, 100 = identity)
+    per output channel; monochrome uses the red row for all three."""
+    type = "channel_mixer"
+    params = (Param("red", [100, 0, 0], object), Param("green", [0, 100, 0], object),
+              Param("blue", [0, 0, 100], object), Param("monochrome", False, bool))
+
+    def _fix_legacy_units(self, p, raw):
+        for key, default in zip(CHANNEL_MIXER_OUTPUTS, ([100, 0, 0], [0, 100, 0], [0, 0, 100])):
+            row = p[key]
+            p[key] = ([int(round(v)) for v in row[:3]]
+                      if isinstance(row, (list, tuple)) and len(row) >= 3 else list(default))
+
+    def apply(self, image, p):
+        from core.adjustments.channel_mixer import apply_channel_mixer
+        return apply_channel_mixer(image, *p["red"], *p["green"], *p["blue"],
+                                   monochrome=p["monochrome"])
+
+
+SELECTIVE_COLOR_RANGES = ("Reds", "Yellows", "Greens", "Cyans", "Blues", "Magentas",
+                          "Whites", "Neutrals", "Blacks")
+
+
+@register
+class SelectiveColor(AdjustmentKind):
+    """Per colour range, a [cyan, magenta, yellow, black] shift in -100..100."""
+    type = "selective_color"
+    params = (Param("ranges", {}, object),)
+
+    def _fix_legacy_units(self, p, raw):
+        given = p["ranges"] if isinstance(p["ranges"], dict) else {}
+        out = {}
+        for name in SELECTIVE_COLOR_RANGES:
+            v = given.get(name)
+            out[name] = ([int(round(x)) for x in v[:4]]
+                         if isinstance(v, (list, tuple)) and len(v) >= 4 else [0, 0, 0, 0])
+        p["ranges"] = out
+
+    def apply(self, image, p):
+        from core.adjustments.selective_color import apply_selective_color
+        return apply_selective_color(image, p["ranges"])
+
+
+@register
+class MatchColor(AdjustmentKind):
+    """`source` is the QImage whose colour statistics are matched — a live
+    image, so this one is destructive-only (Image > Adjustments), never
+    saved on a layer."""
+    type = "match_color"
+    params = (Param("source", None, object), Param("luminance", 100),
+              Param("intensity", 100), Param("fade", 0))
+
+    def apply(self, image, p):
+        src = p["source"]
+        if src is None or src.isNull():
+            return image
+        from core.adjustments.match_color import apply_match_color
+        return apply_match_color(image, src, p["luminance"], p["intensity"], p["fade"])

@@ -4,6 +4,32 @@ from core.locale import tr
 from ui.document_controller import require_document
 
 
+# Adjustment-layer type -> its live-preview dialog ("module:Class", imported
+# on first use). Types not listed open the generic AdjustmentLayerDialog.
+_ADJUSTMENT_LAYER_DIALOGS = {
+    "levels":       "ui.levels_dialog:LevelsDialog",
+    "curves":       "ui.curves_dialog:CurvesDialog",
+    "exposure":     "core.adjustments.exposure:ExposureDialog",
+    "vibrance":     "core.adjustments.vibrance:VibranceDialog",
+    "black_white":  "core.adjustments.black_white:BlackWhiteDialog",
+    "posterize":    "core.adjustments.posterize:PosterizeDialog",
+    "threshold":    "core.adjustments.threshold:ThresholdDialog",
+    "photo_filter": "core.adjustments.photo_filter:PhotoFilterDialog",
+    "gradient_map": "core.adjustments.gradient_map:GradientMapDialog",
+    "color_lookup": "core.adjustments.color_lookup:ColorLookupDialog",
+    "hdr_toning":   "core.adjustments.hdr_toning:HDRToningDialog",
+}
+
+
+def _adjustment_dialog_class(adj_type: str):
+    spec = _ADJUSTMENT_LAYER_DIALOGS.get(adj_type)
+    if spec is None:
+        return None
+    import importlib
+    module, cls = spec.split(":")
+    return getattr(importlib.import_module(module), cls)
+
+
 class LayerActionsMixin:
     def _refresh_layers(self):
         if not self._document:
@@ -176,53 +202,12 @@ class LayerActionsMixin:
                 layer.adjustment_data = layer_data()
             self._canvas_refresh()
 
-        import inspect
-        def create_dlg(DialogClass):
-            sig = inspect.signature(DialogClass.__init__)
-            params = [p for p in sig.parameters.values() if p.name != 'self']
-            if len(params) >= 3 and params[1].name in ("canvas_refresh", "cb"):
-                return DialogClass(proxy, wrapped_refresh, self)
-            else:
-                dlg_inst = DialogClass(target_img, self)
-                dlg_inst._canvas_refresh = wrapped_refresh
-                return dlg_inst
-
-        if t == "levels":
-            from ui.levels_dialog import LevelsDialog
-            dlg = create_dlg(LevelsDialog)
-        elif t == "curves":
-            from ui.curves_dialog import CurvesDialog
-            dlg = create_dlg(CurvesDialog)
-        elif t == "exposure":
-            from ui.more_adjustments import ExposureDialog
-            dlg = create_dlg(ExposureDialog)
-        elif t == "vibrance":
-            from ui.more_adjustments import VibranceDialog
-            dlg = create_dlg(VibranceDialog)
-        elif t == "black_white":
-            from ui.more_adjustments import BlackWhiteDialog
-            dlg = create_dlg(BlackWhiteDialog)
-        elif t == "posterize":
-            from ui.more_adjustments import PosterizeDialog
-            dlg = create_dlg(PosterizeDialog)
-        elif t == "threshold":
-            from ui.more_adjustments import ThresholdDialog
-            dlg = create_dlg(ThresholdDialog)
-        elif t == "photo_filter":
-            from ui.more_adjustments import PhotoFilterDialog
-            dlg = create_dlg(PhotoFilterDialog)
-        elif t == "gradient_map":
-            from ui.more_adjustments import GradientMapDialog
-            dlg = create_dlg(GradientMapDialog)
-        elif t == "color_lookup":
-            from core.adjustments.color_lookup import ColorLookupDialog
-            dlg = create_dlg(ColorLookupDialog)
-        elif t == "hdr_toning":
-            from core.adjustments.hdr_toning import HDRToningDialog
-            dlg = create_dlg(HDRToningDialog)
-        else:
+        dialog_cls = _adjustment_dialog_class(t)
+        if dialog_cls is None:
             from ui.adjustment_layer_dialog import AdjustmentLayerDialog
             return AdjustmentLayerDialog(layer, self._canvas_refresh, self)
+        from ui.adjustments_dialog import build_adjustment_dialog
+        dlg = build_adjustment_dialog(dialog_cls, proxy, wrapped_refresh, self)
 
         dlg_ref[0] = dlg
         if is_adj:

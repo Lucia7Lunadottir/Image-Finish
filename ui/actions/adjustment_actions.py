@@ -6,14 +6,8 @@ class AdjustmentActionsMixin:
         layer = self._document and self._document.get_active_layer()
         if not layer or layer.image.isNull(): return
         self._push_history(tr(history_desc), modified_index=self._document.active_layer_index)
-        import inspect
-        sig = inspect.signature(DialogClass.__init__)
-        params = [p for p in sig.parameters.values() if p.name != 'self']
-        if len(params) >= 3 and params[1].name in ("canvas_refresh", "cb"):
-            dlg = DialogClass(layer, self._canvas_refresh, self)
-        else:
-            dlg = DialogClass(layer.image, parent=self)
-            dlg._canvas_refresh = self._canvas_refresh
+        from ui.adjustments_dialog import build_adjustment_dialog
+        dlg = build_adjustment_dialog(DialogClass, layer, self._canvas_refresh, self)
         # Dialogs that need real clicks on the main canvas (e.g. Curves'
         # eyedroppers) opt out of modal .exec(): QDialog.exec() forces
         # Qt::WA_ShowModal regardless of setModal(), which blocks input to
@@ -79,25 +73,16 @@ class AdjustmentActionsMixin:
 
     def _match_color(self):
         layer = self._document and self._document.get_active_layer()
-        if not layer:
+        if not layer or layer.image.isNull():
             return
         from ui.more_adjustments import MatchColorDialog
-        active_idx = self._document.active_layer_index
-        sources = [
-            (lyr.name, lyr.image)
-            for i, lyr in enumerate(self._document.layers)
-            if i != active_idx
-        ]
+        # Only layers with pictures of their own can be a colour source —
+        # not adjustment layers or groups/artboards.
+        sources = [(lyr.name, lyr.image) for lyr in self._document.layers
+                   if lyr is not layer and lyr.has_own_pixels
+                   and lyr.image is not None and not lyr.image.isNull()]
         self._push_history(tr("history.before_match_color"), modified_index=self._document.active_layer_index)
-        import inspect
-        sig = inspect.signature(MatchColorDialog.__init__)
-        params = [p for p in sig.parameters.values() if p.name != 'self']
-        if params and params[0].name == "image":
-            dlg = MatchColorDialog(layer.image, sources, parent=self)
-            dlg._canvas_refresh = self._canvas_refresh
-        else:
-            dlg = MatchColorDialog(layer, sources, self._canvas_refresh, self)
-        dlg.exec()
+        MatchColorDialog(layer, sources, self._canvas_refresh, self).exec()
 
     def _shadows_highlights(self):
         from ui.more_adjustments import ShadowsHighlightsDialog

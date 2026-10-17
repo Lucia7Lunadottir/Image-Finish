@@ -159,3 +159,166 @@ def test_destructive_dialog_preview_equals_the_registry(qapp):
     dlg._apply_preview()
     expected = apply_adjustment(_img(), {"type": "brightness_contrast", "brightness": 40, "contrast": -15})
     assert _same(layer.image, expected)
+
+
+# ── destructive-only dialogs (Image > Adjustments) on the registry ────────
+# Channel Mixer, Selective Color, Shadows/Highlights, Replace Color and
+# Match Color used to read their widgets inside their own _apply_preview —
+# which, for a large image, the final full-resolution apply runs on a
+# worker thread. Now they go through the frozen parameter dict like the rest.
+
+def _raster(img=None):
+    from core.layer import RasterLayer
+    layer = RasterLayer("r", 8, 4)
+    layer.image = img or _img()
+    return layer
+
+
+def test_new_kinds_match_their_functions(qapp):
+    from core.adjustments.channel_mixer import apply_channel_mixer
+    from core.adjustments.selective_color import apply_selective_color
+    from core.adjustments.shadows_highlights import apply_shadows_highlights
+    from core.adjustments.replace_color import apply_replace_color
+    from core.adjustments.match_color import apply_match_color
+    img = _img()
+    other = _img().mirrored(True, False)
+    ranges = {"Reds": [20, -10, 5, 0], "Blues": [0, 0, -30, 15]}
+    cases = [
+        ({"type": "channel_mixer", "red": [80, 20, 0], "green": [0, 120, -20],
+          "blue": [10, 0, 90], "monochrome": False},
+         apply_channel_mixer(img, 80, 20, 0, 0, 120, -20, 10, 0, 90)),
+        ({"type": "channel_mixer", "red": [50, 30, 20], "monochrome": True},
+         apply_channel_mixer(img, 50, 30, 20, 0, 100, 0, 0, 0, 100, monochrome=True)),
+        ({"type": "selective_color", "ranges": ranges}, apply_selective_color(img, ranges)),
+        ({"type": "shadows_highlights", "shadows": 40, "highlights": 25},
+         apply_shadows_highlights(img, 40, 25)),
+        ({"type": "replace_color", "color": QColor(0, 120, 200), "fuzziness": 60,
+          "hue": 90, "saturation": -20, "lightness": 10},
+         apply_replace_color(img, 0, 120, 200, 60, 90, -20, 10)),
+        ({"type": "match_color", "source": other, "luminance": 120, "intensity": 80, "fade": 30},
+         apply_match_color(img, other, 120, 80, 30)),
+    ]
+    for data, expected in cases:
+        assert _same(apply_adjustment(img, data), expected), data["type"]
+
+
+def test_match_color_without_source_is_a_no_op(qapp):
+    img = _img()
+    assert apply_adjustment(img, {"type": "match_color"}) is img
+
+
+def test_defaults_are_fresh_copies(qapp):
+    kind = get_kind("channel_mixer")
+    a = kind.defaults()
+    a["red"][0] = -200
+    assert kind.defaults()["red"] == [100, 0, 0]
+    ranges = get_kind("selective_color").normalize({"ranges": {"Reds": [1, 2, 3, 4]}})["ranges"]
+    assert ranges["Reds"] == [1, 2, 3, 4] and ranges["Blacks"] == [0, 0, 0, 0]
+
+
+def test_channel_mixer_dialog_keeps_each_output_row(qapp):
+    from core.adjustments.channel_mixer import ChannelMixerDialog
+    layer = _raster()
+    dlg = ChannelMixerDialog(layer, lambda: None)
+    dlg._src_r.set_value(70)
+    dlg._src_g.set_value(30)
+    dlg._ch_combo.setCurrentIndex(2)          # Blue output
+    dlg._src_b.set_value(150)
+    dlg._ch_combo.setCurrentIndex(0)          # back to Red: its row survived
+    assert (dlg._src_r.value(), dlg._src_g.value()) == (70, 30)
+    data = dlg.adjustment_data()
+    assert data["red"] == [70, 30, 0] and data["blue"] == [0, 0, 150]
+    dlg._apply_preview()
+    assert _same(layer.image, apply_adjustment(_img(), data))
+
+
+def test_selective_color_dialog_preview_equals_the_registry(qapp):
+    from core.adjustments.selective_color import SelectiveColorDialog
+    layer = _raster()
+    dlg = SelectiveColorDialog(layer, lambda: None)
+    dlg._cyan.set_value(40)
+    dlg._rng_combo.setCurrentIndex(4)         # Blues
+    dlg._black.set_value(-25)
+    data = dlg.adjustment_data()
+    assert data["ranges"]["Reds"] == [40, 0, 0, 0]
+    assert data["ranges"]["Blues"] == [0, 0, 0, -25]
+    dlg._apply_preview()
+    assert _same(layer.image, apply_adjustment(_img(), data))
+
+
+@pytest.mark.parametrize("dialog", ["channel_mixer", "selective_color", "shadows_highlights",
+                                    "replace_color", "match_color"])
+def test_reset_restores_registry_defaults(qapp, dialog):
+    from core.adjustments.channel_mixer import ChannelMixerDialog
+    from core.adjustments.selective_color import SelectiveColorDialog
+    from core.adjustments.shadows_highlights import ShadowsHighlightsDialog
+    from core.adjustments.replace_color import ReplaceColorDialog
+    from core.adjustments.match_color import MatchColorDialog
+    layer = _raster()
+    if dialog == "match_color":
+        dlg = MatchColorDialog(layer, [("other", _img().mirrored(True, False))], lambda: None)
+        dlg._src_combo.setCurrentIndex(1)
+        dlg._fade.set_value(60)
+    else:
+        cls = {"channel_mixer": ChannelMixerDialog, "selective_color": SelectiveColorDialog,
+               "shadows_highlights": ShadowsHighlightsDialog,
+               "replace_color": ReplaceColorDialog}[dialog]
+        dlg = cls(layer, lambda: None)
+        for w in dlg._bindings.values():
+            if hasattr(w, "set_value"):
+                w.set_value(17)
+        if dialog == "channel_mixer":
+            dlg._src_g.set_value(55)
+            dlg._ch_combo.setCurrentIndex(1)
+        if dialog == "selective_color":
+            dlg._yellow.set_value(33)
+            dlg._rng_combo.setCurrentIndex(3)
+    dlg._apply_preview()
+    dlg._reset_to_defaults()
+    kind = get_kind(dialog)
+    got = kind.normalize(dlg.adjustment_data())
+    want = kind.defaults()
+    want = kind.normalize({**want})
+    for key in want:
+        assert got[key] == want[key], key
+    assert _same(layer.image, apply_adjustment(_img(), {"type": dialog, **want}))
+
+
+def test_full_res_apply_does_not_read_widgets(qapp):
+    """The final apply uses the parameters frozen on the GUI thread."""
+    from core.adjustments.replace_color import ReplaceColorDialog
+    layer = _raster()
+    dlg = ReplaceColorDialog(layer, lambda: None)
+    dlg._hue.set_value(120)
+    dlg._frozen_data = dlg.adjustment_data()
+    dlg._hue.set_value(-50)                   # a widget change after freezing is ignored
+    dlg._apply_preview()
+    assert _same(layer.image, apply_adjustment(_img(), dlg._frozen_data))
+
+
+def test_match_color_offers_only_layers_with_pixels(main_window, mocked_dialogs, monkeypatch):
+    import core.adjustments.match_color as mc
+    seen = {}
+    real_init = mc.MatchColorDialog.__init__
+
+    def spy(self, layer, sources, *a, **k):
+        seen["names"] = [n for n, _ in sources]
+        real_init(self, layer, sources, *a, **k)
+
+    monkeypatch.setattr(mc.MatchColorDialog, "__init__", spy)
+    w = main_window
+    w._add_tab(Document(20, 20), "t")
+    doc = w._document
+    doc.add_layer(name="pixels")
+    doc.add_layer(name="adj", layer_cls=AdjustmentLayer)
+    doc.active_layer_index = 0
+    w._match_color()
+    assert "pixels" in seen["names"] and "adj" not in seen["names"]
+    assert doc.layers[0].name not in seen["names"]
+
+
+def test_has_own_pixels(qapp):
+    from core.layer import RasterLayer, GroupLayer
+    assert RasterLayer("r", 2, 2).has_own_pixels
+    assert not AdjustmentLayer("a", 2, 2).has_own_pixels
+    assert not GroupLayer("g", 2, 2).has_own_pixels

@@ -116,57 +116,43 @@ def apply_match_color(src: QImage, source_img: QImage,
 
 class MatchColorDialog(_AdjustDialog):
     """sources: list of (display_name, QImage) for the source dropdown."""
+    ADJUSTMENT_TYPE = "match_color"
 
     def __init__(self, layer, sources: list, canvas_refresh, parent=None):
         super().__init__(tr("adj.match_color.title"), layer, canvas_refresh, parent)
         self.setMinimumWidth(420)
         self._sources = sources          # [(name, QImage), ...]
 
-        # Source selector
+        # Source selector: item data is the index into self._sources
+        # (-1 = "None"), so the bound value is plain data, not a QImage.
         src_row = QHBoxLayout()
         src_lbl = QLabel(tr("adj.match_color.source"))
         src_lbl.setFixedWidth(90)
         self._src_combo = QComboBox()
-        self._src_combo.addItem(tr("adj.match_color.none"))
-        for name, _ in sources:
-            self._src_combo.addItem(name)
+        self._src_combo.addItem(tr("adj.match_color.none"), -1)
+        for i, (name, _) in enumerate(sources):
+            self._src_combo.addItem(name, i)
         self._src_combo.currentIndexChanged.connect(self._on_change)
         src_row.addWidget(src_lbl)
         src_row.addWidget(self._src_combo)
         src_row.addStretch()
         self._vbox.addLayout(src_row)
 
-        self._lum  = _SliderRow(tr("adj.match_color.luminance"),  1, 200, 100)
-        self._ci   = _SliderRow(tr("adj.match_color.intensity"),  1, 200, 100)
-        self._fade = _SliderRow(tr("adj.match_color.fade"),       0, 100,   0)
+        self._lum  = self._bind("luminance", _SliderRow(tr("adj.match_color.luminance"), 1, 200, 100))
+        self._ci   = self._bind("intensity", _SliderRow(tr("adj.match_color.intensity"), 1, 200, 100))
+        self._fade = self._bind("fade", _SliderRow(tr("adj.match_color.fade"), 0, 100, 0))
         for row in (self._lum, self._ci, self._fade):
             self._add_row(row)
 
-        self._seal(reset_fn=self._do_reset)
+        self._seal(reset_fn=self._reset_to_defaults)
 
-    def _source_image(self):
-        idx = self._src_combo.currentIndex() - 1   # 0 = "None" offset
-        if 0 <= idx < len(self._sources):
-            return self._sources[idx][1]
-        return None
+    def adjustment_data(self) -> dict:
+        d = super().adjustment_data()
+        idx = self._src_combo.currentData()
+        d["source"] = self._sources[idx][1] if idx is not None and 0 <= idx < len(self._sources) else None
+        return d
 
-    def _do_reset(self):
-        self._timer.stop()
+    def _after_load(self, params):
         self._src_combo.blockSignals(True)
         self._src_combo.setCurrentIndex(0)
         self._src_combo.blockSignals(False)
-        self._lum.reset()
-        self._ci.reset()
-        self._fade.reset()
-        self._apply_preview()
-
-    def _apply_preview(self):
-        src = self._source_image()
-        if src is None:
-            self._layer.image = self._original.copy()
-            self._canvas_refresh()
-            return
-        self._layer.image = apply_match_color(
-            self._orig_argb32, src,
-            self._lum.value(), self._ci.value(), self._fade.value())
-        self._canvas_refresh()
