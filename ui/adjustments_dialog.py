@@ -269,17 +269,10 @@ def _write_control(w, v):
 
 
 def build_adjustment_dialog(DialogClass, layer, canvas_refresh, parent):
-    """Constructs any adjustment dialog for *layer*.
-
-    Two construction models exist: the `_AdjustDialog` family takes
-    (layer, canvas_refresh, parent) and writes layer.image; Levels and
-    Curves (PAINTS_INTO_IMAGE) take the image itself, paint into it in
-    place and call `_canvas_refresh` afterwards. Declared on the class —
-    not guessed from __init__'s parameter names, as the callers used to."""
-    if getattr(DialogClass, "PAINTS_INTO_IMAGE", False):
-        dlg = DialogClass(layer.image, parent)
-        dlg._canvas_refresh = canvas_refresh
-        return dlg
+    """Constructs any adjustment dialog for *layer* — every one is an
+    _AdjustDialog taking (layer, canvas_refresh, parent). (Levels and Curves
+    used to take the QImage itself and paint into it; the callers guessed
+    which by reading __init__'s parameter names.)"""
     return DialogClass(layer, canvas_refresh, parent)
 
 

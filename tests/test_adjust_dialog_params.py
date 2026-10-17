@@ -11,6 +11,7 @@ Bugs this pins down:
 - HDR Toning's Reset moved the sliders but never re-rendered.
 """
 import pytest
+from PyQt6.QtCore import QPoint
 from PyQt6.QtGui import QColor, QImage
 
 from core.layer import RasterLayer
@@ -173,3 +174,58 @@ def test_pixel_distances_scale_with_the_preview_proxy(qapp, monkeypatch):
     dlg._orig_argb32_full = None
     dlg._apply_preview()
     assert seen[-1] == (3200, pytest.approx(4.0))
+
+
+# ── Levels / Curves on the shared base ─────────────────────────────────────
+# They used to paint into the QImage they were given, had no live-preview
+# proxy (every tick re-ran on the full 8K image), and OK inside the
+# debounce window kept the previous preview.
+
+def test_levels_preview_ok_and_cancel(qapp):
+    from ui.levels_dialog import LevelsDialog, apply_levels
+    layer = _layer()
+    dlg = LevelsDialog(layer, lambda: None)
+    dlg._black_sp.setValue(30)                 # debounce pending
+    dlg._white_sp.setValue(200)
+    dlg.accept()
+    assert _same(layer.image, apply_levels(_img(), 30, 1.0, 200, 0, 255))
+
+    layer = _layer()
+    dlg = LevelsDialog(layer, lambda: None)
+    dlg._gamma_sp.setValue(2.0)
+    dlg._apply_preview()
+    assert not _same(layer.image, _img())
+    dlg.reject()
+    assert _same(layer.image, _img())
+
+
+def test_levels_auto_previews(qapp):
+    from ui.levels_dialog import LevelsDialog, apply_levels
+    layer = _layer()
+    dlg = LevelsDialog(layer, lambda: None)
+    dlg._auto()
+    dlg._apply_preview()
+    p = dlg._params()
+    assert _same(layer.image, apply_levels(_img(), p["black"], p["gamma"], p["white"], 0, 255))
+
+
+def test_levels_uses_the_live_preview_proxy_on_large_images(qapp):
+    from ui.levels_dialog import LevelsDialog
+    big = RasterLayer("big", 3200, 40)
+    dlg = LevelsDialog(big, lambda: None)
+    assert dlg._orig_argb32.width() == 1600 and dlg._orig_argb32_full.width() == 3200
+    dlg.reject()
+
+
+def test_curves_eyedropper_samples_full_res_in_layer_coordinates(qapp):
+    from ui.curves_dialog import CurvesDialog
+    big = RasterLayer("big", 3200, 40)
+    big.image.fill(QColor(0, 0, 0))
+    big.image.setPixelColor(2001, 10, QColor(200, 200, 200))
+    big.offset = QPoint(100, 0)
+    dlg = CurvesDialog(big, lambda: None)
+    dlg._picking = "white"
+    dlg._sample_point(2101, 10)               # document point over that pixel
+    pts = dlg.adjustment_data()["points"]["rgb"]
+    assert (200, 255) in [tuple(p) for p in pts]
+    dlg.reject()

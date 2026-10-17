@@ -4,17 +4,16 @@ eyedroppers sampling straight from the document canvas, and a freehand
 (pencil) draw mode."""
 
 from PyQt6.QtWidgets import (
-    QVBoxLayout, QHBoxLayout, QLabel, QComboBox, QPushButton,
+    QHBoxLayout, QLabel, QComboBox, QPushButton,
     QDialogButtonBox, QWidget, QSizePolicy, QSpinBox,
 )
-from PyQt6.QtCore import Qt, QTimer, QPointF, QRectF, QEvent, pyqtSignal
+from PyQt6.QtCore import Qt, QPointF, QRectF, QEvent, pyqtSignal
 from PyQt6.QtGui import QImage, QPainter, QColor, QPen, QPainterPath
 
 from core.locale import tr
-from ui.base_dialog import BaseDialog
-from ui.adjustments_dialog import _to_argb32
+from ui.adjustments_dialog import _AdjustDialog
 from ui.levels_dialog import compute_histogram
-from core.adjustments.curves import apply_curves, spline_lut, IDENTITY_POINTS
+from core.adjustments.curves import spline_lut, IDENTITY_POINTS
 
 from ui import theme
 
@@ -363,7 +362,7 @@ class _CurveWidget(QWidget):
             self.curve_changed.emit()
 
 
-class CurvesDialog(BaseDialog):
+class CurvesDialog(_AdjustDialog):
     """Non-destructive Curves dialog with real-time canvas preview.
 
     NON_BLOCKING = True: the black/gray/white-point eyedroppers need real
@@ -377,19 +376,12 @@ class CurvesDialog(BaseDialog):
     """
 
     NON_BLOCKING = True
-    PAINTS_INTO_IMAGE = True   # see ui.adjustments_dialog.build_adjustment_dialog
-    _DEBOUNCE_MS = 40
+    ADJUSTMENT_TYPE = "curves"
 
-    def __init__(self, image: QImage, parent=None):
-        super().__init__(parent)
-        self.setWindowTitle(tr("adj.curves.title"))
+    def __init__(self, layer, canvas_refresh, parent=None):
+        super().__init__(tr("adj.curves.title"), layer, canvas_refresh, parent)
         self.setModal(False)
         self.setMinimumSize(420, 620)
-
-        self._image = image
-        self._original = image.copy()
-        self._orig_argb32 = _to_argb32(self._original)
-        self._curve_points = {ch: list(IDENTITY_POINTS) for ch in _CHANNELS}
         self._picking = None       # "black" | "gray" | "white" | None
         self._pick_canvas = None
 
@@ -400,16 +392,11 @@ class CurvesDialog(BaseDialog):
             "g": _channel_histogram(argb, 1),
             "b": _channel_histogram(argb, 0),
         }
-
-        self._timer = QTimer(self)
-        self._timer.setSingleShot(True)
-        self._timer.setInterval(self._DEBOUNCE_MS)
-        self._timer.timeout.connect(self._apply_preview)
-
         self._build_ui()
+        self._seal()
 
     def _build_ui(self):
-        lo = QVBoxLayout(self)
+        lo = self._vbox
         lo.setSpacing(8)
 
         ch_row = QHBoxLayout()
@@ -463,17 +450,9 @@ class CurvesDialog(BaseDialog):
         pick_row.addStretch()
         lo.addLayout(pick_row)
 
-        btn_row = QHBoxLayout()
-        reset_btn = QPushButton(tr("adj.reset"))
+        reset_btn = QPushButton(tr("adj.reset"))          # resets the current channel
         reset_btn.clicked.connect(self._reset_channel)
-        dlg_btns = QDialogButtonBox(
-            QDialogButtonBox.StandardButton.Ok | QDialogButtonBox.StandardButton.Cancel)
-        dlg_btns.accepted.connect(self.accept)
-        dlg_btns.rejected.connect(self.reject)
-        btn_row.addWidget(reset_btn)
-        btn_row.addStretch()
-        btn_row.addWidget(dlg_btns)
-        lo.addLayout(btn_row)
+        self._btns.addButton(reset_btn, QDialogButtonBox.ButtonRole.ResetRole)
 
     # ── selected-point spinboxes ──────────────────────────────────────────────
 
@@ -502,10 +481,6 @@ class CurvesDialog(BaseDialog):
 
     def _reset_channel(self):
         self._curve.reset_channel()
-
-    def _on_change(self):
-        self._curve_points = self._curve.points()
-        self._timer.start()
 
     # ── eyedropper: click the document canvas to sample black/gray/white ─────
 
@@ -546,7 +521,12 @@ class CurvesDialog(BaseDialog):
         return super().eventFilter(obj, event)
 
     def _sample_point(self, doc_x: int, doc_y: int):
-        img = self._orig_argb32
+        # The full-resolution source (the working copy may be a downscaled
+        # live-preview proxy), in the layer's own coordinates.
+        img = self._orig_argb32_full or self._orig_argb32
+        off = getattr(self._layer, "offset", None)
+        if off is not None:
+            doc_x, doc_y = doc_x - off.x(), doc_y - off.y()
         x = max(0, min(img.width() - 1, doc_x))
         y = max(0, min(img.height() - 1, doc_y))
         color = img.pixelColor(x, y)
@@ -575,50 +555,15 @@ class CurvesDialog(BaseDialog):
         self._stop_picking()
         super().done(result)
 
-    # ── adjustment-layer data (core/adjustments/registry.py "curves") ─────────
-
-    ADJUSTMENT_TYPE = "curves"
+    # ── parameters (core/adjustments/registry.py "curves") ───────────────────
 
     def adjustment_data(self) -> dict:
-        return {"type": "curves", "points": {ch: [tuple(p) for p in pts]
-                                             for ch, pts in self._curve_points.items()}}
+        d = super().adjustment_data()
+        d["points"] = {ch: [tuple(p) for p in pts] for ch, pts in self._curve.points().items()}
+        return d
 
-    def load_adjustment_data(self, data: dict):
-        from core.adjustments.registry import get_kind
-        points = get_kind("curves").normalize(data)["points"] or {}
-        self._curve.set_points(points)
-        self._curve_points = self._curve.points()
-        self._apply_preview()
-
-    # ── preview + apply ───────────────────────────────────────────────────────
-
-    def _apply_preview(self):
-        res = apply_curves(self._orig_argb32, self._curve_points)
-        if not getattr(self, "_is_adj_layer", False):
-            p = QPainter(self._image)
-            p.setCompositionMode(QPainter.CompositionMode.CompositionMode_Source)
-            p.drawImage(0, 0, res)
-            p.end()
-        if hasattr(self, "_canvas_refresh"):
-            self._canvas_refresh()
-        elif self.parent() and hasattr(self.parent(), "_canvas_refresh"):
-            self.parent()._canvas_refresh()
-
-    def reject(self):
-        self._timer.stop()
-        self._stop_picking()
-        if getattr(self, "_is_adj_layer", False) and hasattr(self, "_layer"):
-            self._layer.adjustment_data = getattr(self, "_orig_adj_data", {})
-        else:
-            p = QPainter(self._image)
-            p.setCompositionMode(QPainter.CompositionMode.CompositionMode_Source)
-            p.drawImage(0, 0, self._original)
-            p.end()
-        if hasattr(self, "_canvas_refresh"):
-            self._canvas_refresh()
-        elif self.parent() and hasattr(self.parent(), "_canvas_refresh"):
-            self.parent()._canvas_refresh()
-        super().reject()
+    def _after_load(self, params):
+        self._curve.set_points(params["points"] or {})
 
 
 def _channel_histogram(argb: QImage, channel_idx: int) -> list:

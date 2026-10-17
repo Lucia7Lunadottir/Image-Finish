@@ -3,16 +3,15 @@
 import math
 
 from PyQt6.QtWidgets import (
-    QVBoxLayout, QHBoxLayout, QLabel, QDialogButtonBox,
+    QHBoxLayout, QLabel, QDialogButtonBox,
     QPushButton, QSpinBox, QDoubleSpinBox, QWidget,
 )
-from PyQt6.QtCore import Qt, QTimer, QPoint, pyqtSignal
+from PyQt6.QtCore import Qt, QPoint, pyqtSignal
 from PyQt6.QtGui import (
     QImage, QPainter, QColor, QLinearGradient, QBrush, QPen, QPolygon,
 )
 from core.locale import tr
-from ui.base_dialog import BaseDialog
-from ui.adjustments_dialog import _to_argb32
+from ui.adjustments_dialog import _AdjustDialog, _to_argb32
 
 from ui import theme
 
@@ -383,21 +382,17 @@ class _OutputWidget(QWidget):
 
 # ── levels dialog ─────────────────────────────────────────────────────────────
 
-class LevelsDialog(BaseDialog):
-    """Non-destructive Levels dialog with real-time canvas preview."""
+class LevelsDialog(_AdjustDialog):
+    """Levels: histogram with input handles, output handles, Auto. The five
+    values live in self._black ... self._out_max (kept in sync between the
+    handles and the spin boxes); everything else — preview through the
+    registry, live-preview proxy, frozen parameters for the full-resolution
+    pass, Cancel, the adjustment-layer data — is _AdjustDialog's."""
+    ADJUSTMENT_TYPE = "levels"
 
-    PAINTS_INTO_IMAGE = True   # see ui.adjustments_dialog.build_adjustment_dialog
-    _DEBOUNCE_MS = 40
-
-    def __init__(self, image: QImage, parent=None):
-        super().__init__(parent)
-        self.setWindowTitle(tr("adj.levels.title"))
-        self.setModal(True)
+    def __init__(self, layer, canvas_refresh, parent=None):
+        super().__init__(tr("adj.levels.title"), layer, canvas_refresh, parent)
         self.setMinimumWidth(460)
-
-        self._image          = image
-        self._original       = image.copy()
-        self._orig_argb32    = _to_argb32(self._original)
 
         self._black   = 0
         self._gamma   = 1.0
@@ -405,19 +400,14 @@ class LevelsDialog(BaseDialog):
         self._out_min = 0
         self._out_max = 255
 
-        self._histogram = compute_histogram(self._original)
-
-        self._timer = QTimer(self)
-        self._timer.setSingleShot(True)
-        self._timer.setInterval(self._DEBOUNCE_MS)
-        self._timer.timeout.connect(self._apply_preview)
-
+        self._histogram = compute_histogram(self._orig_argb32)
         self._build_ui()
+        self._seal()
 
     # ── UI construction ───────────────────────────────────────────────────────
 
     def _build_ui(self):
-        lo = QVBoxLayout(self)
+        lo = self._vbox
         lo.setSpacing(6)
 
         def _lbl(text):
@@ -477,25 +467,11 @@ class LevelsDialog(BaseDialog):
         self._out_w = _OutputWidget()
         lo.addWidget(self._out_w)
 
-        # ── Buttons ────────────────────────────────────────────────────────
-        lo.addSpacing(4)
-        btn_row = QHBoxLayout()
-
         auto_btn = QPushButton(tr("adj.levels.auto"))
         auto_btn.setObjectName("smallBtn")
         auto_btn.setFixedWidth(72)
         auto_btn.clicked.connect(self._auto)
-
-        dlg_btns = QDialogButtonBox(
-            QDialogButtonBox.StandardButton.Ok |
-            QDialogButtonBox.StandardButton.Cancel)
-        dlg_btns.accepted.connect(self.accept)
-        dlg_btns.rejected.connect(self.reject)
-
-        btn_row.addWidget(auto_btn)
-        btn_row.addStretch()
-        btn_row.addWidget(dlg_btns)
-        lo.addLayout(btn_row)
+        self._btns.addButton(auto_btn, QDialogButtonBox.ButtonRole.ActionRole)
 
         # ── Signal wiring ──────────────────────────────────────────────────
         # histogram handles → spinboxes (one-way, blocked to avoid loops)
@@ -503,7 +479,7 @@ class LevelsDialog(BaseDialog):
         self._hist_w.gamma_changed.connect(self._from_hist_gamma)
         self._hist_w.white_changed.connect(self._from_hist_white)
 
-        # spinboxes → histogram widget + timer
+        # spinboxes → histogram widget
         self._black_sp.valueChanged.connect(self._from_sp_black)
         self._gamma_sp.valueChanged.connect(self._from_sp_gamma)
         self._white_sp.valueChanged.connect(self._from_sp_white)
@@ -518,88 +494,67 @@ class LevelsDialog(BaseDialog):
 
     # ── slot helpers (widget handles → spinboxes) ─────────────────────────────
 
+    @staticmethod
+    def _quiet_set(sp, v):
+        sp.blockSignals(True);  sp.setValue(v);  sp.blockSignals(False)
+
     def _from_hist_black(self, v):
         self._black = v
-        self._black_sp.blockSignals(True);  self._black_sp.setValue(v)
-        self._black_sp.blockSignals(False); self._timer.start()
+        self._quiet_set(self._black_sp, v); self._on_change()
 
     def _from_hist_gamma(self, v):
         self._gamma = v
-        self._gamma_sp.blockSignals(True);  self._gamma_sp.setValue(round(v, 2))
-        self._gamma_sp.blockSignals(False); self._timer.start()
+        self._quiet_set(self._gamma_sp, round(v, 2)); self._on_change()
 
     def _from_hist_white(self, v):
         self._white = v
-        self._white_sp.blockSignals(True);  self._white_sp.setValue(v)
-        self._white_sp.blockSignals(False); self._timer.start()
+        self._quiet_set(self._white_sp, v); self._on_change()
 
     def _from_out_min(self, v):
         self._out_min = v
-        self._out_min_sp.blockSignals(True);  self._out_min_sp.setValue(v)
-        self._out_min_sp.blockSignals(False); self._timer.start()
+        self._quiet_set(self._out_min_sp, v); self._on_change()
 
     def _from_out_max(self, v):
         self._out_max = v
-        self._out_max_sp.blockSignals(True);  self._out_max_sp.setValue(v)
-        self._out_max_sp.blockSignals(False); self._timer.start()
+        self._quiet_set(self._out_max_sp, v); self._on_change()
 
     # ── slot helpers (spinboxes → widget) ─────────────────────────────────────
 
     def _from_sp_black(self, v):
         self._black = min(v, self._white - 1)
         self._hist_w.set_values(self._black, self._gamma, self._white)
-        self._timer.start()
+        self._on_change()
 
     def _from_sp_gamma(self, v):
         self._gamma = v
         self._hist_w.set_values(self._black, self._gamma, self._white)
-        self._timer.start()
+        self._on_change()
 
     def _from_sp_white(self, v):
         self._white = max(v, self._black + 1)
         self._hist_w.set_values(self._black, self._gamma, self._white)
-        self._timer.start()
+        self._on_change()
 
     def _from_sp_out_min(self, v):
         self._out_min = min(v, self._out_max - 1)
         self._out_w.set_values(self._out_min, self._out_max)
-        self._timer.start()
+        self._on_change()
 
     def _from_sp_out_max(self, v):
         self._out_max = max(v, self._out_min + 1)
         self._out_w.set_values(self._out_min, self._out_max)
-        self._timer.start()
+        self._on_change()
 
-    # ── adjustment-layer data (core/adjustments/registry.py "levels") ─────────
-
-    ADJUSTMENT_TYPE = "levels"
+    # ── parameters (core/adjustments/registry.py "levels") ───────────────────
 
     def adjustment_data(self) -> dict:
-        return {"type": "levels", "black": self._black, "gamma": self._gamma, "white": self._white,
-                "out_min": self._out_min, "out_max": self._out_max}
+        d = super().adjustment_data()
+        d.update(black=self._black, gamma=self._gamma, white=self._white,
+                 out_min=self._out_min, out_max=self._out_max)
+        return d
 
-    def load_adjustment_data(self, data: dict):
-        from core.adjustments.registry import get_kind
-        p = get_kind("levels").normalize(data)
-        self._set_all(p["black"], p["gamma"], p["white"], p["out_min"], p["out_max"])
-        self._apply_preview()
-
-    # ── preview + apply ───────────────────────────────────────────────────────
-
-    def _apply_preview(self):
-        res = apply_levels(
-            self._orig_argb32,
-            self._black, self._gamma, self._white,
-            self._out_min, self._out_max)
-            
-        if not getattr(self, "_is_adj_layer", False):
-            p = QPainter(self._image)
-            p.setCompositionMode(QPainter.CompositionMode.CompositionMode_Source)
-            p.drawImage(0, 0, res)
-            p.end()
-            
-        if hasattr(self, "_canvas_refresh"): self._canvas_refresh()
-        elif self.parent() and hasattr(self.parent(), "_canvas_refresh"): self.parent()._canvas_refresh()
+    def _after_load(self, p):
+        self._show_values(p["black"], p["gamma"], p["white"], p["out_min"], p["out_max"])
 
     # ── Auto ──────────────────────────────────────────────────────────────────
 
@@ -625,38 +580,16 @@ class LevelsDialog(BaseDialog):
                 break
 
         auto_black = min(auto_black, auto_white - 1)
-        self._set_all(auto_black, 1.0, auto_white, self._out_min, self._out_max)
+        self._show_values(auto_black, 1.0, auto_white, self._out_min, self._out_max)
+        self._on_change()
 
-    def _set_all(self, black, gamma, white, out_min, out_max):
+    def _show_values(self, black, gamma, white, out_min, out_max):
+        """Set the five values and every control showing them, silently."""
         self._black, self._gamma, self._white = black, gamma, white
         self._out_min, self._out_max          = out_min, out_max
-
-        for sp, v in [(self._black_sp, black),
-                      (self._white_sp, white),
-                      (self._out_min_sp, out_min),
-                      (self._out_max_sp, out_max)]:
-            sp.blockSignals(True);  sp.setValue(v);  sp.blockSignals(False)
-
-        self._gamma_sp.blockSignals(True)
-        self._gamma_sp.setValue(round(gamma, 2))
-        self._gamma_sp.blockSignals(False)
-
+        for sp, v in [(self._black_sp, black), (self._white_sp, white),
+                      (self._out_min_sp, out_min), (self._out_max_sp, out_max)]:
+            self._quiet_set(sp, v)
+        self._quiet_set(self._gamma_sp, round(gamma, 2))
         self._hist_w.set_values(black, gamma, white)
         self._out_w.set_values(out_min, out_max)
-        self._timer.start()
-
-    # ── cancel ────────────────────────────────────────────────────────────────
-
-    def reject(self):
-        self._timer.stop()
-        if getattr(self, "_is_adj_layer", False) and hasattr(self, "_layer"):
-            self._layer.adjustment_data = getattr(self, "_orig_adj_data", {})
-        else:
-            p = QPainter(self._image)
-            p.setCompositionMode(QPainter.CompositionMode.CompositionMode_Source)
-            p.drawImage(0, 0, self._original)
-            p.end()
-            
-        if hasattr(self, "_canvas_refresh"): self._canvas_refresh()
-        elif self.parent() and hasattr(self.parent(), "_canvas_refresh"): self.parent()._canvas_refresh()
-        super().reject()
