@@ -1,4 +1,4 @@
-from PyQt6.QtWidgets import QWidget, QHBoxLayout, QStackedWidget, QScrollArea, QSizePolicy
+from PyQt6.QtWidgets import QWidget, QHBoxLayout, QStackedWidget, QScrollArea, QSizePolicy, QToolButton
 from PyQt6.QtCore import pyqtSignal, Qt
 
 from .tool_options.brush_options import BrushOptions
@@ -21,6 +21,7 @@ from .tool_options.patch_options import PatchOptions, SpotHealingOptions, RedEye
 from .tool_options.pen_options import PenOptions
 from .tool_options.frame_options import FrameOptions
 from .tool_options.magnetic_lasso_options import MagneticLassoOptions
+from .tool_options.overflow import OptionsOverflow
 
 class ToolOptionsBar(QWidget):
     option_changed = pyqtSignal(str, object)
@@ -40,7 +41,9 @@ class ToolOptionsBar(QWidget):
         self._scroll = QScrollArea()
         self._scroll.setWidgetResizable(True)
         self._scroll.setVerticalScrollBarPolicy(Qt.ScrollBarPolicy.ScrollBarAlwaysOff)
-        self._scroll.setHorizontalScrollBarPolicy(Qt.ScrollBarPolicy.ScrollBarAsNeeded)
+        # Too-wide pages overflow into the "»" popup (OptionsOverflow)
+        # instead of scrolling off-screen.
+        self._scroll.setHorizontalScrollBarPolicy(Qt.ScrollBarPolicy.ScrollBarAlwaysOff)
         self._scroll.setFrameShape(QScrollArea.Shape.NoFrame)
 
         self._container = QWidget()
@@ -53,6 +56,9 @@ class ToolOptionsBar(QWidget):
         
         self._scroll.setWidget(self._container)
         outer.addWidget(self._scroll, 1)
+        overflow_btn = QToolButton()
+        outer.addWidget(overflow_btn)
+        self._overflow = OptionsOverflow(overflow_btn, self)
 
         self._pages: dict[str, QWidget] = {}
         self._build_pages()
@@ -145,6 +151,16 @@ class ToolOptionsBar(QWidget):
                 current.setSizePolicy(QSizePolicy.Policy.Ignored, QSizePolicy.Policy.Ignored)
             page.setSizePolicy(QSizePolicy.Policy.Preferred, QSizePolicy.Policy.Preferred)
             self._stack.setCurrentWidget(page)
+            self._fit_current()
+
+    def _fit_current(self):
+        page = self._stack.currentWidget()
+        if page is not None:
+            self._overflow.fit(page, self._scroll.viewport().width() - 20)
+
+    def resizeEvent(self, ev):
+        super().resizeEvent(ev)
+        self._fit_current()
 
     def update_tool_state(self, state: object):
         current = self._stack.currentWidget()

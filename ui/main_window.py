@@ -494,6 +494,7 @@ class MainWindow(QMainWindow,
             cp = getattr(self, "_color_panel", None)
             canvas.fg_color = getattr(cp, "_fg", QColor(0, 0, 0))
             canvas.bg_color = getattr(cp, "_bg", QColor(255, 255, 255))
+            canvas.tool_opts.update(getattr(self, "_session_tool_opts", {}))
         canvas.is_modified = False
         canvas.document_changed.connect(self._on_doc_changed)
         canvas.pixels_changed.connect(self._on_pixels_changed)
@@ -1217,9 +1218,18 @@ class MainWindow(QMainWindow,
         if self._document:
             self._apply_shape_option_live(key, value)
             self._apply_text_option_live(key, value)
+        # Also remembered window-wide: with no document open (Welcome
+        # screen) there's no canvas to hold it, and the next opened document
+        # should still start with what the user just picked.
+        if not hasattr(self, "_session_tool_opts"):
+            self._session_tool_opts = {}
+        self._session_tool_opts[key] = value
         if not hasattr(self, "_doc_tabs"): return
         for i in range(self._doc_tabs.count()):
             self._doc_tabs.widget(i).tool_opts[key] = value
+        canvas = self._canvas
+        if canvas is None:
+            return
         # Every text-option control (toolbar and dock alike) funnels
         # through here — refresh both so whichever one the user *didn't*
         # just touch reflects the same state instead of silently drifting
@@ -1230,14 +1240,14 @@ class MainWindow(QMainWindow,
             self._paragraph_panel.refresh(self._canvas)
         text_page = self._opts_bar._pages.get("Text") if hasattr(self, "_opts_bar") else None
         if text_page is not None and hasattr(text_page, "update_from_opts"):
-            text_page.update_from_opts(self._canvas.tool_opts)
+            text_page.update_from_opts(canvas.tool_opts)
         # tool_opts is stored above, but nothing here ever asked the canvas
         # to actually repaint — the live text-edit preview (which reads
         # tool_opts fresh every paintGL() frame) only looked live before
         # because *something else* happened to trigger a repaint shortly
         # after. Explicitly: an option change must be visible immediately,
         # not just eventually.
-        self._canvas.update()
+        canvas.update()
 
     @require_document
     def _on_layer_blend_mode(self, mode: str):

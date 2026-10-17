@@ -258,7 +258,11 @@ QWidget#toolOptionsBar {{
 QLabel#optLabel {{
     color: {SUBTEXT};
     font-size: 12px;
-    min-width: 70px;
+}}
+QFrame#optionsOverflowPopup {{
+    background-color: {MANTLE};
+    border: 1px solid {SURFACE1};
+    border-radius: 6px;
 }}
 QSlider::groove:horizontal {{
     height: 4px;

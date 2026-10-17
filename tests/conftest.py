@@ -76,3 +76,19 @@ def _drain_thread_pool():
 def _drain_pool_at_session_end():
     yield
     _drain_thread_pool()
+
+
+@pytest.fixture(autouse=True)
+def _fail_on_slot_exceptions():
+    """An exception raised inside a Qt slot never reaches the test: PyQt6
+    hands it to sys.excepthook, and the default hook abort()s the whole
+    process — the run just dies with a C stack. Record it instead and fail
+    the test that caused it, with the Python traceback."""
+    import traceback
+    errors = []
+    previous = sys.excepthook
+    sys.excepthook = lambda t, v, tb: errors.append("".join(traceback.format_exception(t, v, tb)))
+    yield
+    sys.excepthook = previous
+    if errors:
+        pytest.fail("Exception in a Qt slot:\n" + "\n".join(errors), pytrace=False)
