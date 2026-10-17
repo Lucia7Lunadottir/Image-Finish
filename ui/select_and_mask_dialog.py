@@ -1,7 +1,7 @@
 import numpy as np
 
-from PyQt6.QtWidgets import (QDialog, QVBoxLayout, QHBoxLayout, QLabel, QComboBox, QPushButton, 
-                             QDialogButtonBox, QWidget)
+from PyQt6.QtWidgets import (QVBoxLayout, QHBoxLayout, QLabel, QComboBox, QPushButton,
+    QDialogButtonBox, QWidget)
 from PyQt6.QtCore import Qt, QPoint, QPointF, QRect, QTimer
 from PyQt6.QtGui import (QImage, QColor, QPen)
 
@@ -11,6 +11,7 @@ from ui.adjustments_dialog import _JumpSlider
 from ui.preview_canvas_base import PreviewCanvasBase
 
 from ui import theme
+from ui.base_dialog import BaseDialog
 
 def _blur_mask(m, r):
     if r <= 0: return m
@@ -80,7 +81,7 @@ class SelectAndMaskCanvas(PreviewCanvasBase):
             self.dialog.commit_stroke()
 
 
-class SelectAndMaskDialog(QDialog):
+class SelectAndMaskDialog(BaseDialog):
     def __init__(self, document, parent=None):
         super().__init__(parent)
         self.setWindowTitle(tr("sam.title"))

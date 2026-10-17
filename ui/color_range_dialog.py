@@ -1,12 +1,13 @@
 import numpy as np
-from PyQt6.QtWidgets import (QDialog, QVBoxLayout, QHBoxLayout, QLabel, 
-                             QPushButton, QDialogButtonBox, QSpinBox)
+from PyQt6.QtWidgets import (QVBoxLayout, QHBoxLayout, QLabel, QPushButton, QDialogButtonBox,
+    QSpinBox)
 from PyQt6.QtCore import Qt
 from PyQt6.QtGui import QColor, QImage, QPixmap
 from core.locale import tr
 from ui.adjustments_dialog import _JumpSlider
+from ui.base_dialog import BaseDialog
 
-class ColorRangeDialog(QDialog):
+class ColorRangeDialog(BaseDialog):
     def __init__(self, document, update_cb, parent=None):
         super().__init__(parent)
         self.setWindowTitle(tr("color_range.title"))

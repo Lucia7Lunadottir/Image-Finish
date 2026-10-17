@@ -1,10 +1,11 @@
-from PyQt6.QtWidgets import (QDialog, QVBoxLayout, QHBoxLayout, QLabel,
-                             QComboBox, QPushButton, QDialogButtonBox, QWidget)
+from PyQt6.QtWidgets import (QVBoxLayout, QHBoxLayout, QLabel, QComboBox, QPushButton,
+    QDialogButtonBox, QWidget)
 from PyQt6.QtGui import QColor, QPixmap, QIcon
 from core.locale import tr
+from ui.base_dialog import BaseDialog
 
 
-class FillLayerDialog(QDialog):
+class FillLayerDialog(BaseDialog):
 
     def __init__(self, layer, canvas_refresh=None, parent=None):
         # Callers pass either a Layer (live preview possible) or a plain

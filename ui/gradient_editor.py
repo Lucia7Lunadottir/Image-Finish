@@ -14,14 +14,14 @@ import json
 from PyQt6.QtCore import Qt, pyqtSignal, QRect, QPointF, QSize, QSettings
 from PyQt6.QtGui import (QColor, QPainter, QLinearGradient, QBrush, QPen, QPolygonF,
                          QPixmap, QIcon)
-from PyQt6.QtWidgets import (QDialog, QVBoxLayout, QHBoxLayout, QGridLayout, QLabel,
-                             QPushButton, QSpinBox, QDialogButtonBox, QWidget, QSizePolicy,
-                             QListWidget, QListWidgetItem, QListView, QMenu, QInputDialog,
-                             QComboBox, QCheckBox, QGroupBox)
+from PyQt6.QtWidgets import (QVBoxLayout, QHBoxLayout, QGridLayout, QLabel, QPushButton, QSpinBox,
+    QDialogButtonBox, QWidget, QSizePolicy, QListWidget, QListWidgetItem, QListView, QMenu,
+    QInputDialog, QComboBox, QCheckBox, QGroupBox)
 
 from core.gradient_model import (Gradient, ColorStop, OpacityStop, GRADIENT_STYLES,
                                  builtin_presets)
 from core.locale import tr
+from ui.base_dialog import BaseDialog
 
 
 # ── shared painting ─────────────────────────────────────────────────────────
@@ -413,7 +413,7 @@ def save_user_presets(presets: list) -> None:
 
 # ── dialog ──────────────────────────────────────────────────────────────────
 
-class GradientEditorDialog(QDialog):
+class GradientEditorDialog(BaseDialog):
     """`gradient_changed` fires on every edit (live preview); the caller
     restores its own state if the dialog is rejected. `with_layout=True`
     adds style/angle/scale/reverse — for fills that lay the gradient out

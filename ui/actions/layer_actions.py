@@ -291,24 +291,30 @@ class LayerActionsMixin:
         layer = self._document.get_active_layer()
         if not layer:
             return
-        ltype = getattr(layer, "layer_type", "raster")
-        if ltype == "fill":
+        from core.layer import AdjustmentLayer, FillLayer
+        # Both dialogs preview on the layer itself, so the undo snapshot is
+        # taken *before* they open (taken after OK it already held the new
+        # settings, and Undo changed nothing).
+        index = self._document.active_layer_index
+        if isinstance(layer, FillLayer):
             from ui.fill_layer_dialog import FillLayerDialog
+            pre_state = self._make_history_state(tr("history.edit_fill_layer"), modified_index=index)
             dlg = FillLayerDialog(layer, self._canvas_refresh, self)
             if dlg.exec():
-                self._push_history(tr("history.edit_fill_layer"))
+                self._history.push(pre_state)
                 self._refresh_layers()
             else:
                 self._canvas_refresh()
-        elif ltype == "adjustment":
+        elif isinstance(layer, AdjustmentLayer):
             t = (layer.adjustment_data or {}).get("type", "")
+            pre_state = self._make_history_state(tr("history.edit_adj_layer"), modified_index=index)
             dlg = self._get_adj_dialog(layer, t)
             if dlg is None:
                 return
 
             def on_finished(result):
                 if result:
-                    self._push_history(tr("history.edit_adj_layer"))
+                    self._history.push(pre_state)
                     self._refresh_layers()
                 else:
                     self._canvas_refresh()

@@ -9,6 +9,7 @@ from core.text_model import TextData
 from core.layer import TextLayer
 from core.text_engine import (layout_device, paint_text, qfont, text_transform,
                               text_outline_in_document, PT_TO_PX)
+from ui.base_dialog import BaseDialog
 
 
 # ── Compatibility helpers ────────────────────────────────────────────────────
@@ -59,7 +60,7 @@ def _text_path_v(pos, text: str, opts: dict) -> QPainterPath:
 
 # ── Text dialog ────────────────────────────────────────────────────────────────
 
-class _TextDialog(QDialog):
+class _TextDialog(BaseDialog):
     _PREVIEW_H = 80
     _PREVIEW_W = 480
 

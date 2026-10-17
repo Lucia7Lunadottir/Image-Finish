@@ -1,15 +1,15 @@
-from PyQt6.QtWidgets import (QDialog, QVBoxLayout, QHBoxLayout, QLabel,
-                             QComboBox, QSpinBox, QDialogButtonBox,
-                             QWidget, QFormLayout)
+from PyQt6.QtWidgets import (QVBoxLayout, QHBoxLayout, QLabel, QComboBox, QSpinBox,
+    QDialogButtonBox, QWidget, QFormLayout)
 from PyQt6.QtCore import Qt
 from core.locale import tr
 from ui.adjustments_dialog import _JumpSlider
+from ui.base_dialog import BaseDialog
 
 
 _ADJ_TYPES = ["brightness_contrast", "hue_saturation", "invert"]
 
 
-class AdjustmentLayerDialog(QDialog):
+class AdjustmentLayerDialog(BaseDialog):
 
     def __init__(self, layer, canvas_refresh, parent=None):
         super().__init__(parent)

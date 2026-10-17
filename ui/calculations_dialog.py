@@ -1,13 +1,14 @@
 import numpy as np
 import ctypes
-from PyQt6.QtWidgets import (QDialog, QVBoxLayout, QHBoxLayout, QLabel, 
-                             QComboBox, QCheckBox, QDialogButtonBox, QWidget)
+from PyQt6.QtWidgets import (QVBoxLayout, QHBoxLayout, QLabel, QComboBox, QCheckBox,
+    QDialogButtonBox, QWidget)
 from PyQt6.QtCore import Qt, QTimer, QPoint
 from PyQt6.QtGui import QImage, QPainter, QPixmap
 from core.locale import tr
 from ui.adjustments_dialog import _to_argb32, _const_arr, _SliderRow
 
 from ui import theme
+from ui.base_dialog import BaseDialog
 
 def _lbl(text):
     l = QLabel(text)
@@ -67,7 +68,7 @@ def _blend_arrays(base, blend, mode, opacity):
     return base * (1.0 - opacity) + res * opacity
 
 
-class ApplyImageDialog(QDialog):
+class ApplyImageDialog(BaseDialog):
     def __init__(self, document, canvas_refresh, parent=None):
         super().__init__(parent)
         self.setWindowTitle(tr("menu.apply_image"))
@@ -173,7 +174,7 @@ class ApplyImageDialog(QDialog):
         self.reject()
 
 
-class CalculationsDialog(QDialog):
+class CalculationsDialog(BaseDialog):
     def __init__(self, document, canvas_refresh, parent=None):
         super().__init__(parent)
         self.setWindowTitle(tr("menu.calculations"))
