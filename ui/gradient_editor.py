@@ -429,7 +429,6 @@ class GradientEditorDialog(QDialog):
         self._fg = QColor(fg) if fg else QColor(0, 0, 0)
         self._bg = QColor(bg) if bg else QColor(255, 255, 255)
         self._updating = False
-        self._with_layout = with_layout
         gradient = _as_gradient(stops)
 
         lo = QVBoxLayout(self)

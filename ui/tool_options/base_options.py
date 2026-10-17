@@ -20,6 +20,16 @@ class BaseOptions(QWidget):
         self._auto_labels.append((lbl, key))
         return lbl
 
+    @staticmethod
+    def set_silently(widget, setter, value):
+        """Push model state into a control without re-emitting its change
+        signal (update_from_opts of every page)."""
+        widget.blockSignals(True)
+        try:
+            setter(value)
+        finally:
+            widget.blockSignals(False)
+
     def retranslate(self):
         from core.locale import tr
         for lbl, key in self._auto_labels:

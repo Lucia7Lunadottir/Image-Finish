@@ -4,6 +4,7 @@ from PyQt6.QtCore import pyqtSignal
 from PyQt6.QtGui import QColor, QFont
 from .base_options import BaseOptions
 from core.locale import tr
+from core.adjustments._widgets import _ColorButton
 
 from ui import theme
 from ui.text_style_widgets import make_style_toggle_btn
@@ -117,55 +118,25 @@ class TextOptions(BaseOptions):
         self._cancel_btn.setVisible(editing)
 
     def update_from_opts(self, opts: dict):
-        """Matches the update_from_opts(opts) convention every other
-        options page already uses (brush_options.py etc.) — this bar can
-        also *set* every one of these options, but until now had no way
-        to reflect a change made anywhere else (Character panel, a
-        reopened text layer): the toolbar-vs-dock desync bug."""
-        self._font_combo.blockSignals(True)
-        self._font_combo.setCurrentFont(QFont(opts.get("font_family", "Sans Serif")))
-        self._font_combo.blockSignals(False)
-
-        self._size_sp.blockSignals(True)
-        self._size_sp.setValue(float(opts.get("font_size", 24)))
-        self._size_sp.blockSignals(False)
-
-        self._orient_btn.blockSignals(True)
-        self._orient_btn.setChecked(bool(opts.get("text_vertical", False)))
-        self._orient_btn.blockSignals(False)
-
+        """Reflects tool_opts (or the style at the text caret, see
+        ui/actions/text_actions.py) without re-emitting option_changed."""
+        put = self.set_silently
+        put(self._font_combo, self._font_combo.setCurrentFont, QFont(opts.get("font_family", "Sans Serif")))
+        put(self._size_sp, self._size_sp.setValue, float(opts.get("font_size", 24)))
+        put(self._orient_btn, self._orient_btn.setChecked, bool(opts.get("text_vertical", False)))
         for btn, key in ((self._btn_b, "font_bold"), (self._btn_i, "font_italic"),
-                        (self._btn_u, "font_underline"), (self._btn_s, "font_strikeout")):
-            btn.blockSignals(True)
-            btn.setChecked(bool(opts.get(key, False)))
-            btn.blockSignals(False)
-
+                         (self._btn_u, "font_underline"), (self._btn_s, "font_strikeout"),
+                         (self._btn_shadow, "text_shadow")):
+            put(btn, btn.setChecked, bool(opts.get(key, False)))
         for btn, key, default in ((self._clr_text, "text_color", QColor(0, 0, 0)),
                                   (self._clr_stroke, "text_stroke_color", QColor(0, 0, 0)),
                                   (self._clr_shadow, "text_shadow_color", QColor(0, 0, 0, 160))):
-            c = opts.get(key, default)
-            if isinstance(c, str):
-                c = QColor(c)
-            if isinstance(c, QColor) and c.isValid():
-                btn._color = QColor(c)
-                btn.setStyleSheet(
-                    f"background:{c.name()}; border:1px solid #555; border-radius:3px;")
-
-        self._stroke_sp.blockSignals(True)
-        self._stroke_sp.setValue(int(opts.get("text_stroke_w", 0)))
-        self._stroke_sp.blockSignals(False)
-
-        self._btn_shadow.blockSignals(True)
-        self._btn_shadow.setChecked(bool(opts.get("text_shadow", False)))
-        self._btn_shadow.blockSignals(False)
-
-        self._sdx.blockSignals(True)
-        self._sdx.setValue(int(opts.get("text_shadow_dx", 3)))
-        self._sdx.blockSignals(False)
-
-        self._sdy.blockSignals(True)
-        self._sdy.setValue(int(opts.get("text_shadow_dy", 3)))
-        self._sdy.blockSignals(False)
+            c = QColor(opts.get(key, default))
+            if c.isValid():
+                btn.set_color(c)   # never emits
+        for sp, key, default in ((self._stroke_sp, "text_stroke_w", 0),
+                                 (self._sdx, "text_shadow_dx", 3), (self._sdy, "text_shadow_dy", 3)):
+            put(sp, sp.setValue, int(round(float(opts.get(key, default)))))
 
     def _sep(self) -> QFrame:
         f = QFrame()
@@ -179,22 +150,8 @@ class TextOptions(BaseOptions):
         btn.toggled.connect(lambda checked: self.option_changed.emit(key, checked))
         return btn
 
-    def _color_btn(self, color: QColor, key: str) -> QPushButton:
-        btn = QPushButton()
+    def _color_btn(self, color: QColor, key: str):
+        btn = _ColorButton(QColor(color))
         btn.setFixedSize(26, 26)
-
-        def _set_color(c: QColor):
-            btn._color = QColor(c)
-            btn.setStyleSheet(
-                f"background:{c.name()}; border:1px solid #555; border-radius:3px;")
-            self.option_changed.emit(key, QColor(c))
-
-        _set_color(color)
-        btn.clicked.connect(lambda: self._pick_color(btn, _set_color))
+        btn.colorChanged.connect(lambda c: self.option_changed.emit(key, QColor(c)))
         return btn
-
-    def _pick_color(self, btn, callback):
-        from ui.hsv_picker import ColorPickerDialog
-        c = ColorPickerDialog.get_color(getattr(btn, "_color", QColor(0, 0, 0)), btn, tr("adj.choose_color"))
-        if c is not None and c.isValid():
-            callback(c)

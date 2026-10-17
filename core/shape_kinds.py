@@ -11,8 +11,8 @@ stroke alignment possible at all: they all need the geometry as data.
 import math
 from dataclasses import dataclass
 
-from PyQt6.QtCore import QPoint, QPointF, QRectF
-from PyQt6.QtGui import QPolygon, QPolygonF, QPainterPath, QTransform
+from PyQt6.QtCore import QPointF, QRectF
+from PyQt6.QtGui import QPolygonF, QPainterPath, QTransform
 
 from core.app_logging import get_logger
 
@@ -45,18 +45,6 @@ def _regular_points(rect: QRectF, count: int, radius_at) -> list[QPointF]:
         r = radius_at(i)
         pts.append(QPointF(cx + rx * r * math.cos(a), cy + ry * r * math.sin(a)))
     return pts
-
-
-def polygon_points(rect, sides: int) -> QPolygon:
-    """Regular N-gon inscribed in the bounding ellipse of rect (int points,
-    kept for callers that still want a QPolygon)."""
-    pts = _regular_points(QRectF(rect), max(3, sides), lambda i: 1.0)
-    return QPolygon([QPoint(int(p.x()), int(p.y())) for p in pts])
-
-
-def star_points(rect, points: int = 5, inner: float = 0.4) -> QPolygon:
-    pts = _regular_points(QRectF(rect), max(3, points) * 2, lambda i: 1.0 if i % 2 == 0 else inner)
-    return QPolygon([QPoint(int(p.x()), int(p.y())) for p in pts])
 
 
 def _closed_polygon_path(points: list[QPointF]) -> QPainterPath:
@@ -302,21 +290,3 @@ def get_shape_kind(shape: str) -> ShapeKind:
     if shape.startswith("custom:"):
         return CustomShapeKind(shape[7:])
     return _REGISTRY.get(shape, _DEFAULT_KIND)
-
-
-def draw_shape(painter, shape: str, rect, start, end, sides: int, angle, fill: bool,
-               fg, bg, size, extra: dict | None = None) -> None:
-    """Back-compat entry point (positional arguments of the pre-ShapeSpec
-    API). Builds a `ShapeSpec` and paints it — there is only one renderer."""
-    from core.shape_model import ShapeSpec
-    extra = extra or {}
-    r = extra.get("corner_radius", 0)
-    spec = ShapeSpec.from_dict({
-        "shape": shape,
-        "rect": (rect.x(), rect.y(), rect.width(), rect.height()),
-        "start": (start.x(), start.y()), "end": (end.x(), end.y()),
-        "sides": sides, "angle": angle, "fill": fill, "size": size,
-        "fill_color": bg, "stroke_color": fg,
-        "corner_radii": extra.get("corner_radii", [r, r, r, r]),
-    })
-    spec.paint(painter)

@@ -35,9 +35,6 @@ class CharStyle:
     baseline_shift: float = 0.0    # points, positive = up
     caps: str = "normal"
 
-    def qcolor(self) -> QColor:
-        return QColor(self.color)
-
     def to_dict(self) -> dict:
         return {f.name: getattr(self, f.name) for f in fields(self)}
 

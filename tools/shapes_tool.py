@@ -1,14 +1,10 @@
 import random
 
 from PyQt6.QtCore import QPoint, QRect, Qt
-from PyQt6.QtGui import QPainter, QPolygon, QPainterPath, QColor
+from PyQt6.QtGui import QPainter, QColor
 from tools.base_tool import BaseTool
 
 from core.app_logging import get_logger
-from core.shape_kinds import (
-    draw_shape, polygon_points, star_points, arrow_path, cross_path,
-    load_custom_shape_path,
-)
 from core.shape_model import ShapeSpec, BOOLEAN_OPS
 
 logger = get_logger("shapes_tool")
@@ -31,11 +27,8 @@ class ShapesTool(BaseTool):
     def __init__(self):
         self._start:       QPoint | None = None
         self._preview_end: QPoint | None = None
-        self._shape_type:  str           = "rect"
         self._shift:       bool          = False
-        self._sides:       int           = 6
         self._angle:       int           = 0
-        self._corner_radius: int         = 20
 
     # ── Geometry helpers ──────────────────────────────────────────────────────
 
@@ -50,36 +43,7 @@ class ShapesTool(BaseTool):
             start.y() + (side if dy >= 0 else -side),
         )
 
-    @staticmethod
-    def _polygon_points(rect: QRect, sides: int) -> QPolygon:
-        return polygon_points(rect, sides)
-
-    @staticmethod
-    def _star_points(rect: QRect, points: int = 5, inner: float = 0.4) -> QPolygon:
-        return star_points(rect, points, inner)
-
-    @staticmethod
-    def _arrow_path(rect: QRect) -> QPainterPath:
-        return arrow_path(rect)
-
-    @staticmethod
-    def _cross_path(rect: QRect) -> QPainterPath:
-        return cross_path(rect)
-
-    @staticmethod
-    def _load_custom_shape(filepath: str) -> QPainterPath:
-        return load_custom_shape_path(filepath)
-
     # ── Drawing ───────────────────────────────────────────────────────────────
-
-    @staticmethod
-    def _draw_shape(painter: QPainter, shape: str, rect: QRect,
-                    start: QPoint, end: QPoint, sides: int, angle: int,
-                    fill: bool, fg, bg, size: int, corner_radius: int = 0):
-        """Back-compat positional entry point (tests call it); renders
-        through the one ShapeSpec renderer in core/shape_model.py."""
-        draw_shape(painter, shape, rect, start, end, sides, angle, fill, fg, bg, size,
-                  extra={"corner_radius": corner_radius})
 
     @staticmethod
     def _bake_shape(image, shape_data: dict, doc_selection=None):
@@ -107,45 +71,26 @@ class ShapesTool(BaseTool):
         self._start       = pos
         self._preview_end = pos
         self._shift       = bool(opts.get("_shift", False))
+        # Fixed per drag (a random angle must not re-roll on every move).
         self._angle       = int(opts.get("shape_angle", 0))
         if opts.get("shape_angle_random", False):
             self._angle = random.randint(0, 359)
-        self._shape_type  = opts.get("shape_type", "rect")
-        self._sides       = int(opts.get("shape_sides", 6))
-        self._corner_radius = int(opts.get("shape_corner_radius", 20))
 
     def on_move(self, pos, doc, fg, bg, opts):
         self._preview_end = pos
         self._shift       = bool(opts.get("_shift", False))
-        self._sides       = int(opts.get("shape_sides", 6))
-        self._corner_radius = int(opts.get("shape_corner_radius", 20))
 
     def _end_point(self, pos, shift: bool) -> QPoint:
         return self._constrain(self._start, pos) if shift else pos
-
-    def preview_shape(self) -> dict | None:
-        """Return a dict describing the live shape preview, or None."""
-        if self._start is None or self._preview_end is None:
-            return None
-        end = self._end_point(self._preview_end, self._shift)
-        return {
-            "shape": self._shape_type,
-            "start": self._start,
-            "end":   end,
-            "rect":  QRect(self._start, end).normalized(),
-            "sides": self._sides,
-            "angle": self._angle,
-            "corner_radius": self._corner_radius,
-        }
 
     def preview_shape_data(self, opts, fg) -> dict | None:
         """The in-progress drag as a full shape_data dict, styled exactly
         like the shape on_release will create — the creation preview
         renders through the same ShapeSpec as the finished layer."""
-        ps = self.preview_shape()
-        if ps is None:
+        if self._start is None or self._preview_end is None:
             return None
-        return shape_data_from_opts(opts, fg, ps["start"], ps["end"], self._angle)
+        end = self._end_point(self._preview_end, self._shift)
+        return shape_data_from_opts(opts, fg, self._start, end, self._angle)
 
     def on_release(self, pos, doc, fg, bg, opts):
         self._preview_end = None

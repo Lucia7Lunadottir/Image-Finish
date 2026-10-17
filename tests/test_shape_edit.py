@@ -207,8 +207,8 @@ def test_clicking_a_shapes_body_also_syncs_the_options_bar(main_window):
     item1.mouseReleaseEvent(_FakeMouseEvent(QPointF(15, 15)))
 
     page = w._opts_bar._pages["Shapes"]
-    assert page._radius_sp.value() == layer1.shape_data["corner_radius"]
-    assert page._radius_sp.value() != 17  # not left over from layer2
+    assert page._radius_sps[0].value() == layer1.shape_data["corner_radius"]
+    assert page._radius_sps[0].value() != 17  # not left over from layer2
 
 
 def test_rounded_rect_shows_radius_handle_only_when_active_and_rounded(main_window):
@@ -230,14 +230,14 @@ def test_rounded_rect_shows_radius_handle_only_when_active_and_rounded(main_wind
 
     plain_item = overlay._items[plain.layer_id]
     rounded_item = overlay._items[rounded.layer_id]
-    assert not plain_item._radius_handle.isVisible()   # not rounded, not active
-    assert rounded_item._radius_handle.isVisible()     # rounded AND active
+    assert not plain_item._radius_handles[0].isVisible()   # not rounded, not active
+    assert rounded_item._radius_handles[0].isVisible()     # rounded AND active
 
     doc.active_layer_index = doc.layers.index(plain)
     overlay.refresh_items()
     plain_item = overlay._items[plain.layer_id]
     rounded_item = overlay._items[rounded.layer_id]
-    assert not rounded_item._radius_handle.isVisible()  # rounded but no longer active
+    assert not rounded_item._radius_handles[0].isVisible()  # rounded but no longer active
 
 
 def test_dragging_the_radius_handle_changes_corner_radius_and_rebakes(main_window):

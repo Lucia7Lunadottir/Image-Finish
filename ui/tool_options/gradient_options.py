@@ -74,18 +74,13 @@ class GradientOptions(BaseOptions):
         if opts.get("gradient"):
             self._gradient = Gradient.from_dict(opts["gradient"])
         self._swatch.set_gradient(self._current())
-        for w, setter, key, default in (
-                (self._style, lambda v: self._style.setCurrentIndex(max(0, self._style.findData(v))),
-                 "gradient_type", "linear"),
-                (self._mode, self._mode.set_value, "gradient_mode", "SourceOver"),
-                (self._opacity_sp, self._opacity_sp.setValue, "gradient_opacity", 100),
-                (self._reverse, self._reverse.setChecked, "gradient_reverse", False)):
-            w.blockSignals(True)
-            setter(opts.get(key, default))
-            w.blockSignals(False)
-        self._opacity_sl.blockSignals(True)
-        self._opacity_sl.setValue(self._opacity_sp.value())
-        self._opacity_sl.blockSignals(False)
+        put = self.set_silently
+        put(self._style, lambda v: self._style.setCurrentIndex(max(0, self._style.findData(v))),
+            opts.get("gradient_type", "linear"))
+        put(self._mode, self._mode.set_value, opts.get("gradient_mode", "SourceOver"))
+        put(self._opacity_sp, self._opacity_sp.setValue, int(opts.get("gradient_opacity", 100)))
+        put(self._opacity_sl, self._opacity_sl.setValue, self._opacity_sp.value())
+        put(self._reverse, self._reverse.setChecked, bool(opts.get("gradient_reverse", False)))
 
     def retranslate(self):
         super().retranslate()

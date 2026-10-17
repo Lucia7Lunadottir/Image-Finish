@@ -103,11 +103,11 @@ def test_selecting_a_shape_layer_syncs_the_options_bar_to_its_own_values(main_wi
     w._activate_tool("Shapes")
 
     page = w._opts_bar._pages["Shapes"]
-    assert page._radius_sp.value() != 33  # sanity: didn't already happen to match
+    assert page._radius_sps[0].value() != 33  # sanity: didn't already happen to match
 
     w._on_layer_selected_wrap(doc.active_layer_index)
 
-    assert page._radius_sp.value() == 33
+    assert page._radius_sps[0].value() == 33
     assert page._color_btn._color.name() == "#0080ff"
 
 

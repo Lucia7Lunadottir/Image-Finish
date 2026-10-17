@@ -9,7 +9,7 @@ tests backstopped the render_into polymorphism refactor.
 from PyQt6.QtCore import QPoint, QRect
 from PyQt6.QtGui import QImage, QColor, QPainter
 
-from tools.shapes_tool import ShapesTool
+from core.shape_model import ShapeSpec
 
 
 def _render(shape, rect, start=None, end=None, sides=6, angle=0,
@@ -19,9 +19,14 @@ def _render(shape, rect, start=None, end=None, sides=6, angle=0,
     img.fill(QColor(0, 0, 0, 0))
     p = QPainter(img)
     p.setRenderHint(QPainter.RenderHint.Antialiasing, False)  # exact pixel comparisons
-    ShapesTool._draw_shape(p, shape, rect, start or rect.topLeft(),
-                           end or rect.bottomRight(), sides, angle, fill, fg, fg, size,
-                           corner_radius)
+    start, end = start or rect.topLeft(), end or rect.bottomRight()
+    ShapeSpec.from_dict({
+        "shape": shape, "rect": (rect.x(), rect.y(), rect.width(), rect.height()),
+        "start": (start.x(), start.y()), "end": (end.x(), end.y()),
+        "sides": sides, "angle": angle, "fill": fill, "size": size,
+        "fill_color": fg.name(QColor.NameFormat.HexArgb), "stroke_color": fg.name(QColor.NameFormat.HexArgb),
+        "corner_radius": corner_radius,
+    }).paint(p)
     p.end()
     return img
 
@@ -96,7 +101,7 @@ def test_stroked_rect_has_sharp_miter_corners_not_bevel():
     """Real bug found by her: Qt's QPen defaults to BevelJoin, so any shape
     drawn with a stroke (fill or not) showed a visibly chamfered corner
     instead of a crisp 90-degree point — on every corner, at any zoom,
-    with no rotation involved at all. draw_shape() must force MiterJoin."""
+    with no rotation involved at all. ShapeAppearance must use MiterJoin."""
     img = _render("rect", QRect(20, 20, 30, 30), fill=False, size=10)
     # The outward corner tip a miter join reaches that a bevel join cuts away.
     assert img.pixelColor(16, 16).alpha() > 0

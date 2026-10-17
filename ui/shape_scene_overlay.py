@@ -176,18 +176,9 @@ class ShapeLayerItem(QGraphicsObject):
         self._layout_handles()
         self.set_active(False)  # ShapeSceneOverlay.refresh_items() sets the real state right after construction
 
-    # Back-compat: older code/tests address "the" radius handle.
-    @property
-    def _radius_handle(self):
-        return self._radius_handles[0]
-
     @property
     def _rect(self) -> QRectF:
         return self._spec.params.rect
-
-    @property
-    def _corner_radius(self) -> float:
-        return self._spec.params.corner_radii[0]
 
     def _is_rounded_rect(self) -> bool:
         return self._spec.kind.uses_corner_radii

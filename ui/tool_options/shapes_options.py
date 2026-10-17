@@ -99,7 +99,6 @@ class ShapesOptions(BaseOptions):
             sp.setToolTip(tr(f"opts.shape.radius_{corner}"))
             sp.valueChanged.connect(lambda v, c=len(self._radius_sps): self._on_radius_changed(c, v))
             self._radius_sps.append(sp)
-        self._radius_sp = self._radius_sps[0]   # kept: the top-left / uniform value
         self._radius_link = QToolButton()
         self._radius_link.setText("🔗")
         self._radius_link.setCheckable(True)
@@ -234,9 +233,7 @@ class ShapesOptions(BaseOptions):
         if linked:
             v = self._radius_sps[0].value()
             for sp in self._radius_sps[1:]:
-                sp.blockSignals(True)
-                sp.setValue(v)
-                sp.blockSignals(False)
+                self.set_silently(sp, sp.setValue, v)
         self._update_visibility_for_shape(self._current_shape())
         if linked:
             self.option_changed.emit("shape_corner_radii", [self._radius_sps[0].value()] * 4)
@@ -245,9 +242,7 @@ class ShapesOptions(BaseOptions):
         if self._radius_link.isChecked():
             for sp in self._radius_sps:
                 if sp.value() != value:
-                    sp.blockSignals(True)
-                    sp.setValue(value)
-                    sp.blockSignals(False)
+                    self.set_silently(sp, sp.setValue, value)
         self.option_changed.emit("shape_corner_radii", [sp.value() for sp in self._radius_sps])
 
     def _on_fill_type_changed(self, _i):
@@ -315,12 +310,6 @@ class ShapesOptions(BaseOptions):
             w.setToolTip(tr(key))
 
     # ── model -> widgets ────────────────────────────────────────────
-    @staticmethod
-    def _set(widget, setter, value):
-        widget.blockSignals(True)
-        setter(value)
-        widget.blockSignals(False)
-
     def update_from_opts(self, opts: dict):
         """Pushes model state into the widgets without re-emitting
         option_changed — used on tool activation (canvas.tool_opts, the
@@ -329,11 +318,11 @@ class ShapesOptions(BaseOptions):
         if "shape_color" in opts:
             c = QColor(opts["shape_color"])
             for btn in (self._color_btn, self._stroke_color_btn):
-                self._set(btn, btn.set_color, c)
+                self.set_silently(btn, btn.set_color, c)
         for key, btn in (("shape_fill_color", self._color_btn),
                          ("shape_stroke_color", self._stroke_color_btn)):
             if opts.get(key) is not None:
-                self._set(btn, btn.set_color, QColor(opts[key]))
+                self.set_silently(btn, btn.set_color, QColor(opts[key]))
         if opts.get("shape_gradient"):
             self._gradient = Gradient.from_dict(opts["shape_gradient"])
             self._grad_swatch.set_gradient(self._gradient)
@@ -348,10 +337,10 @@ class ShapesOptions(BaseOptions):
                 idx = self._SHAPE_VALUES.index(shape)
             else:
                 idx = self._SHAPE_VALUES.index("rect")
-            self._set(self._combo, self._combo.setCurrentIndex, idx)
+            self.set_silently(self._combo, self._combo.setCurrentIndex, idx)
 
         if "shape_stroke" in opts:
-            self._set(self._stroke_cb, self._stroke_cb.setChecked, bool(opts["shape_stroke"]))
+            self.set_silently(self._stroke_cb, self._stroke_cb.setChecked, bool(opts["shape_stroke"]))
         if "shape_fill" in opts or "shape_fill_type" in opts:
             fill_on = opts.get("shape_fill", self._fill_type.value() != "none")
             ftype = opts.get("shape_fill_type", self._last_fill_type)
@@ -366,19 +355,19 @@ class ShapesOptions(BaseOptions):
 
         width = opts.get("shape_stroke_width", opts.get("brush_size"))
         if width is not None:
-            self._set(self._stroke_sp, self._stroke_sp.setValue, int(width))
+            self.set_silently(self._stroke_sp, self._stroke_sp.setValue, int(width))
         for key, sp in (("shape_sides", self._sides_sp), ("shape_angle", self._angle_sp),
                         ("shape_star_points", self._star_points_sp), ("shape_star_inner", self._star_inner_sp)):
             if key in opts:
-                self._set(sp, sp.setValue, int(opts[key]))
+                self.set_silently(sp, sp.setValue, int(opts[key]))
 
         radii = opts.get("shape_corner_radii")
         if radii is None and "shape_corner_radius" in opts:
             radii = [opts["shape_corner_radius"]] * 4
         if radii is not None:
             for sp, v in zip(self._radius_sps, radii):
-                self._set(sp, sp.setValue, int(v))
-            self._set(self._radius_link, self._radius_link.setChecked, len(set(int(v) for v in radii)) == 1)
+                self.set_silently(sp, sp.setValue, int(v))
+            self.set_silently(self._radius_link, self._radius_link.setChecked, len(set(int(v) for v in radii)) == 1)
 
         self._update_visibility_for_shape(self._current_shape())
         self._update_fill_widgets()
