@@ -70,6 +70,25 @@ def draw_rulers(painter, *, width, height, pan, zoom):
             painter.restore()
 
 
+def draw_artboard_frames(painter, *, doc, pan, zoom):
+    """Each artboard's outline and its name above it."""
+    painter.save()
+    painter.translate(pan)
+    painter.scale(zoom, zoom)
+    painter.setRenderHint(QPainter.RenderHint.TextAntialiasing)
+    for layer in doc.artboards():
+        ar = layer.artboard_rect
+        painter.setPen(QPen(QColor(120, 120, 120), max(1.0, 1.0 / zoom)))
+        painter.setBrush(Qt.BrushStyle.NoBrush)
+        painter.drawRect(ar)
+        painter.setPen(QColor(200, 200, 200))
+        font = painter.font()
+        font.setPointSizeF(max(10.0, 12.0 / zoom))
+        painter.setFont(font)
+        painter.drawText(ar.left(), ar.top() - max(4, int(4 / zoom)), layer.name)
+    painter.restore()
+
+
 def draw_guides(painter, *, doc, pan, zoom, dragging_guide):
     if not getattr(doc, "show_guides", False):
         return

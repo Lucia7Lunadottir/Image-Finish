@@ -17,7 +17,7 @@ from core.brush_symmetry import BrushSymmetry
 from ui.canvas_cursors import BrushCursorOverlay, selection_cursor, selection_mode
 from ui.canvas_guides import GuideDrag
 from ui.overlay_renderers import (
-    draw_grid, draw_guides, draw_rulers, draw_slices, draw_symmetry_axes, draw_selection,
+    draw_grid, draw_guides, draw_rulers, draw_artboard_frames, draw_slices, draw_symmetry_axes, draw_selection,
     draw_subtract_drag, draw_lasso_preview, draw_transform_preview,
     draw_brush_stroke, draw_crop_preview, draw_perspective_crop,
     draw_shapes_preview, draw_gradient_preview, draw_artboard_preview,
@@ -401,23 +401,8 @@ class CanvasWidget(QOpenGLWidget):
             else:
                 self._paint_canvas_content(painter)
                 
-            # Draw artboard names
-            painter.save()
-            painter.translate(self._pan)
-            painter.scale(self.zoom, self.zoom)
-            painter.setRenderHint(QPainter.RenderHint.TextAntialiasing)
-            for layer in self.document.artboards():
-                ar = layer.artboard_rect
-                painter.setPen(QPen(QColor(120, 120, 120), max(1.0, 1.0/self.zoom)))
-                painter.setBrush(Qt.BrushStyle.NoBrush)
-                painter.drawRect(ar)
-                painter.setPen(QColor(200, 200, 200))
-                font = painter.font()
-                font.setPointSizeF(max(10.0, 12.0/self.zoom))
-                painter.setFont(font)
-                painter.drawText(ar.left(), ar.top() - max(4, int(4/self.zoom)), layer.name)
-            painter.restore()
-                
+            draw_artboard_frames(painter, doc=self.document, pan=self._pan, zoom=self.zoom)
+
             # Guarded rendering of custom tool overlays
             if self.active_tool and hasattr(self.active_tool, "draw_overlays"):
                 try:
@@ -571,53 +556,9 @@ class CanvasWidget(QOpenGLWidget):
             if current_ch == "RGB" or self._composite_cache is None:
                 self._display_cache = self._composite_cache
             else:
-                import numpy as np
-                from core.pixel_buffer import qimage_argb_view
-                comp = self._composite_cache
-                w, h = comp.width(), comp.height()
-                arr = qimage_argb_view(comp, writable=False)[:, :w]
-                
-                B = arr[..., 0].astype(np.float32)
-                G = arr[..., 1].astype(np.float32)
-                R = arr[..., 2].astype(np.float32)
-                
-                if current_ch.startswith("alpha_"):
-                    idx = int(current_ch.split("_")[1])
-                    if hasattr(self.document, "alpha_channels") and 0 <= idx < len(self.document.alpha_channels):
-                        alpha_path = self.document.alpha_channels[idx]["path"]
-                        from core.pixel_buffer import path_mask
-                        gray_u8 = path_mask(alpha_path, w, h)
-                    else:
-                        gray_u8 = np.zeros((h, w), dtype=np.uint8)
-                else:
-                    if current_ch == "R": gray = R
-                    elif current_ch == "G": gray = G
-                    elif current_ch == "B": gray = B
-                    else:
-                        C_c = 1.0 - R / 255.0
-                        M_c = 1.0 - G / 255.0
-                        Y_c = 1.0 - B / 255.0
-                        K_c = np.minimum(C_c, np.minimum(M_c, Y_c))
-                        
-                        if current_ch == "K":
-                            gray = K_c * 255.0
-                        else:
-                            safe_K = np.where(K_c >= 0.999, 1.0, 1.0 - K_c)
-                            if current_ch == "C": gray = np.where(K_c >= 0.999, 0.0, (C_c - K_c) / safe_K) * 255.0
-                            elif current_ch == "M": gray = np.where(K_c >= 0.999, 0.0, (M_c - K_c) / safe_K) * 255.0
-                            elif current_ch == "Y": gray = np.where(K_c >= 0.999, 0.0, (Y_c - K_c) / safe_K) * 255.0
-                            
-                    gray_u8 = np.clip(gray, 0, 255).astype(np.uint8)
-                
-                disp_arr = np.empty((h, w, 4), dtype=np.uint8)
-                disp_arr[..., 0] = gray_u8
-                disp_arr[..., 1] = gray_u8
-                disp_arr[..., 2] = gray_u8
-                disp_arr[..., 3] = 255 if current_ch.startswith("alpha_") else arr[..., 3]
-                
-                new_img = QImage(w, h, QImage.Format.Format_ARGB32_Premultiplied)
-                qimage_argb_view(new_img, writable=True)[:, :w, :] = disp_arr
-                self._display_cache = new_img
+                from core.channel_view import channel_view
+                self._display_cache = channel_view(self._composite_cache, current_ch,
+                                                   getattr(self.document, "alpha_channels", ()))
 
         display_img = self._display_cache
 
