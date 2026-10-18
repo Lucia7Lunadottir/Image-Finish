@@ -72,6 +72,7 @@ class BrushEffectTool(_EffectStrokeMixin, BaseTool):
     Subclass must implement _compute_effect().
     Optionally: _make_mask() and _apply_qt_fallback().
     """
+    CONTEXT_MENU = "brush"
     BRUSH_CURSOR = True
     PIXEL_OP = "paint"
 

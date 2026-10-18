@@ -1144,5 +1144,18 @@
   "opts.text.commit_tip": "Commit text (Ctrl+Enter)",
   "opts.text.cancel_tip": "Cancel editing (Esc)",
   "opts.gradient.edit_tip": "Gradient — click to edit",
-  "adj.color_lookup.loaded": "Lookup table loaded"
+  "adj.color_lookup.loaded": "Lookup table loaded",
+  "menu.layer_via_copy": "Layer via Copy",
+  "menu.layer_via_cut": "Layer via Cut",
+  "menu.free_transform": "Free Transform",
+  "ctx.transform.rotate_180": "Rotate 180°",
+  "ctx.transform.rotate_cw": "Rotate 90° Clockwise",
+  "ctx.transform.rotate_ccw": "Rotate 90° Counter Clockwise",
+  "ctx.transform.flip_h": "Flip Horizontal",
+  "ctx.transform.flip_v": "Flip Vertical",
+  "ctx.view.actual_size": "Actual Size (100%)",
+  "ctx.view.reset_rotation": "Reset View Rotation",
+  "history.layer_via_copy": "Layer via Copy",
+  "history.layer_via_cut": "Layer via Cut",
+  "err.selection_empty_on_layer": "The selection doesn't cover any of this layer"
 }

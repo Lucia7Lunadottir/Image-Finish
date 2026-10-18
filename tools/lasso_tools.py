@@ -26,6 +26,7 @@ class LassoMixin:
 
 
 class LassoTool(BaseTool, LassoMixin):
+    CONTEXT_MENU = "selection"
     SELECTION_CURSOR = True
     name = "Lasso"
     icon = "➰"
@@ -55,6 +56,7 @@ class LassoTool(BaseTool, LassoMixin):
 
 
 class PolygonalLassoTool(BaseTool, LassoMixin):
+    CONTEXT_MENU = "selection"
     SELECTION_CURSOR = True
     name = "PolygonalLasso"
     icon = "⬡"

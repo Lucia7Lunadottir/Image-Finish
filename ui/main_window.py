@@ -4,7 +4,7 @@ from PyQt6.QtCore import Qt, QPoint, QPointF
 from PyQt6.QtGui import QAction
 
 from ui.canvas_widget       import CanvasWidget
-from ui.document_controller import DocumentController
+from ui.document_controller import DocumentController, require_document
 from ui.toolbar          import ToolBar
 from ui.tool_options_bar import ToolOptionsBar
 from ui.tool_catalog import build_tools, tool_title
@@ -328,6 +328,7 @@ class MainWindow(QMainWindow,
             (canvas.color_picked,       self._color_panel.set_fg),
             (canvas.tool_state_changed, self._opts_bar.update_tool_state),
             (canvas.cursor_info,        self._info_panel.update_info),
+            (canvas.context_menu_requested, lambda pos, gpos: self._show_canvas_menu(canvas, pos, gpos)),
         ])
         self._connect_text_session(canvas)
 
@@ -474,6 +475,41 @@ class MainWindow(QMainWindow,
         self._canvas_refresh()
         self._opts_bar.update_tool_state(None)
         return True
+
+    def _show_canvas_menu(self, canvas, doc_pos, global_pos):
+        from ui.canvas_context_menu import MenuContext, build_canvas_menu
+        ctx = MenuContext(win=self, canvas=canvas, doc=canvas.document,
+                          tool=canvas.active_tool, doc_pos=doc_pos)
+        menu = build_canvas_menu(ctx, self)
+        if menu is not None:
+            menu.exec(global_pos)
+
+    @require_document
+    def _free_transform(self):
+        """Edit > Free Transform (Ctrl+T): the Move tool with its box open
+        on the active layer (or the selected pixels)."""
+        self._activate_tool("Move")
+        if self._tools["Move"].start(self._document):
+            self._canvas_refresh()
+            self._canvas._emit_tool_state()
+
+    def _active_transform(self):
+        tool = self._canvas.active_tool if self._canvas else None
+        return tool if isinstance(tool, TransformTool) and tool.is_transforming else None
+
+    def _transform_rotate(self, degrees: float):
+        tool = self._active_transform()
+        if hasattr(tool, "rotate_by"):
+            tool.rotate_by(self._document, degrees)
+            self._canvas_refresh()
+            self._canvas._emit_tool_state()
+
+    def _transform_flip(self, horizontal: bool):
+        tool = self._active_transform()
+        if hasattr(tool, "flip"):
+            tool.flip(self._document, horizontal)
+            self._canvas_refresh()
+            self._canvas._emit_tool_state()
 
     def _activate_tool(self, name: str):
         if name != self._active_tool_name:

@@ -86,6 +86,15 @@ class ImageActionsMixin:
             self._canvas.reset_zoom()
             self._refresh_layers()
 
+    def _cancel_crop(self, tool):
+        """Drop the pending crop rectangle / perspective quad."""
+        if hasattr(tool, "pending_quad"):
+            tool.pending_quad = None
+            tool.points = []
+        else:
+            tool.pending_rect = None
+        self._canvas_refresh()
+
     @require_document
     def _apply_perspective_crop(self):
         from tools.other_tools import PerspectiveCropTool

@@ -5,6 +5,7 @@ from tools.base_tool import BaseTool
 
 
 class CropTool(BaseTool):
+    CONTEXT_MENU = "crop"
     name = "Crop"
     icon = "✂️"
     shortcut = "C"

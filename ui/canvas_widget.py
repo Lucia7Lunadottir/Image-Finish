@@ -30,6 +30,7 @@ class CanvasWidget(QOpenGLWidget):
     tool_state_changed = pyqtSignal(object)
     cursor_info      = pyqtSignal(int, int, QColor)  # doc x, doc y, pixel color
     view_changed     = pyqtSignal()  # zoom/pan changed (status bar, navigator)
+    context_menu_requested = pyqtSignal(QPoint, QPoint)  # right click: doc pos, global pos
 
     def __init__(self, parent=None):
         super().__init__(parent)
@@ -273,6 +274,10 @@ class CanvasWidget(QOpenGLWidget):
 
     def zoom_out(self):
         self._apply_zoom(1 / 1.25, self.rect().center())
+
+    def zoom_actual_size(self):
+        """100 %: one document pixel per screen pixel."""
+        self._apply_zoom(1.0 / self.zoom, self.rect().center())
 
     def to_doc(self, widget_pos: QPointF) -> QPoint:
         if self._view_rotation:
@@ -565,6 +570,13 @@ class CanvasWidget(QOpenGLWidget):
     def tabletEvent(self, ev):
         self.tool_opts["_pressure"] = ev.pressure()
         ev.ignore()
+
+    def contextMenuEvent(self, ev):
+        """Right click: the active tool's menu (built by the window, see
+        ui/canvas_context_menu.py) — not in the middle of a stroke/pan."""
+        if self.document is None or self._stroke_in_progress or self._panning:
+            return
+        self.context_menu_requested.emit(self.to_doc(QPointF(ev.pos())), ev.globalPos())
 
     def mousePressEvent(self, ev):
         """A press goes to the first handler that takes it: guides, panning,

@@ -38,6 +38,7 @@ def build_bezier_path(wp: dict) -> QPainterPath:
 
 
 class BasePenTool(BaseTool):
+    CONTEXT_MENU = "path"
     def __init__(self):
         super().__init__()
         self.current_pos = None

@@ -82,6 +82,48 @@ class LayerActionsMixin:
         self._canvas_refresh()
 
     @require_document
+    def _layer_via_copy(self):
+        """Layer > New > Layer via Copy (Ctrl+J): the selected pixels on a
+        new layer above; with nothing selected, the whole layer."""
+        if not self._has_selection():
+            self._duplicate_layer()
+            return
+        self._new_layer_from_selection(cut=False)
+
+    @require_document
+    def _layer_via_cut(self):
+        """Layer > New > Layer via Cut (Shift+Ctrl+J): the selected pixels
+        moved to a new layer above."""
+        if self._has_selection():
+            self._new_layer_from_selection(cut=True)
+
+    def _has_selection(self) -> bool:
+        sel = self._document.selection
+        return sel is not None and not sel.isEmpty()
+
+    def _new_layer_from_selection(self, cut: bool):
+        from tools.tool_utils import cut_floating_selection
+        from ui.actions.pixel_target import pixel_layer_for_edit
+        layer = pixel_layer_for_edit(self, "paint" if cut else "filter")
+        if layer is None:
+            return
+        doc = self._document
+        before = self._make_history_state(tr("history.layer_via_cut" if cut else "history.layer_via_copy"))
+        kept = layer.image.copy()
+        piece, offset, _sel, ok = cut_floating_selection(layer, doc.selection)
+        if not ok:
+            layer.image = kept
+            self._status.showMessage(tr("err.selection_empty_on_layer"), 4000)
+            return
+        if not cut:
+            layer.image = kept
+        self._history.push(before)
+        new = doc.add_layer(index=doc.active_layer_index + 1)
+        new.image, new.offset = piece, offset
+        self._refresh_layers()
+        self._canvas_refresh()
+
+    @require_document
     def _delete_layer(self):
         if len(self._document.layers) <= 1:
             QMessageBox.warning(self, tr("err.title.delete_layer"), tr("err.delete_last_layer"))

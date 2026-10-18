@@ -177,6 +177,7 @@ class PatchTool(BaseTool, LassoMixin):
 
 
 class SpotHealingTool(BaseTool):
+    CONTEXT_MENU = "brush"
     BRUSH_CURSOR = True
     PIXEL_OP = "paint"
     name = "SpotHealing"
@@ -368,6 +369,7 @@ class RedEyeTool(BaseTool):
 
 
 class HealingBrushTool(BaseTool):
+    CONTEXT_MENU = "brush"
     BRUSH_CURSOR = True
     PIXEL_OP = "paint"
     name = "HealingBrush"

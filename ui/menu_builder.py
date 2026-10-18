@@ -38,6 +38,7 @@ def build_menu_bar(win) -> None:
     win._act(edit_m, "menu.copy",            win._copy,  QKeySequence.StandardKey.Copy)
     win._act(edit_m, "menu.paste_new_layer", win._paste, QKeySequence.StandardKey.Paste)
     edit_m.addSeparator()
+    win._act(edit_m, "menu.free_transform", win._free_transform, QKeySequence("Ctrl+T"))
     win._act(edit_m, "menu.clear_layer",  win._clear_layer, QKeySequence("Delete"))
     edit_m.addSeparator()
     win._act(edit_m, "menu.define_brush", win._define_brush)
@@ -139,7 +140,9 @@ def build_menu_bar(win) -> None:
     # Layer
     layer_m = win._menu(mb, "menu.layer")
     win._act(layer_m, "menu.new_layer",       win._add_layer,       QKeySequence("Ctrl+Shift+N"))
-    win._act(layer_m, "menu.duplicate_layer", win._duplicate_layer, QKeySequence("Ctrl+J"))
+    win._act(layer_m, "menu.duplicate_layer", win._duplicate_layer)
+    win._act(layer_m, "menu.layer_via_copy", win._layer_via_copy, QKeySequence("Ctrl+J"))
+    win._act(layer_m, "menu.layer_via_cut", win._layer_via_cut, QKeySequence("Shift+Ctrl+J"))
     win._act(layer_m, "menu.delete_layer",    win._delete_layer)
     layer_m.addSeparator()
     win._act(layer_m, "menu.export_layer_png", win._export_layer_png)

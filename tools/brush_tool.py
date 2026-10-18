@@ -88,6 +88,7 @@ def _make_brush_stamp(size: int, hardness: float, mask: str) -> QImage:
 
 
 class BrushTool(BaseTool):
+    CONTEXT_MENU = "brush"
     ALT_EYEDROPPER = True
     BRUSH_CURSOR = True
     PIXEL_OP = "paint"

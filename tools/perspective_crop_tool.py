@@ -6,6 +6,7 @@ import math
 
 
 class PerspectiveCropTool(BaseTool):
+    CONTEXT_MENU = "crop"
     name = "Perspective Crop"
     icon = "📐"
     shortcut = "P"

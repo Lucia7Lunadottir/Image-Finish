@@ -1137,5 +1137,18 @@
   "opts.text.commit_tip": "テキストを確定（Ctrl+Enter）",
   "opts.text.cancel_tip": "編集をキャンセル（Esc）",
   "opts.gradient.edit_tip": "グラデーション — クリックして編集",
-  "adj.color_lookup.loaded": "テーブルを読み込みました"
+  "adj.color_lookup.loaded": "テーブルを読み込みました",
+  "menu.layer_via_copy": "コピーしたレイヤー",
+  "menu.layer_via_cut": "カットしたレイヤー",
+  "menu.free_transform": "自由変形",
+  "ctx.transform.rotate_180": "180° 回転",
+  "ctx.transform.rotate_cw": "90° 回転（時計回り）",
+  "ctx.transform.rotate_ccw": "90° 回転（反時計回り）",
+  "ctx.transform.flip_h": "水平方向に反転",
+  "ctx.transform.flip_v": "垂直方向に反転",
+  "ctx.view.actual_size": "100% 表示",
+  "ctx.view.reset_rotation": "表示の回転をリセット",
+  "history.layer_via_copy": "コピーしたレイヤー",
+  "history.layer_via_cut": "カットしたレイヤー",
+  "err.selection_empty_on_layer": "選択範囲がこのレイヤーにかかっていません"
 }

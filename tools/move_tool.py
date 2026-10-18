@@ -7,6 +7,7 @@ from tools.transform_base import TransformTool, bake_transform
 class MoveTool(TransformTool):
     """Free transform: move, scale, rotate, skew/distort (Ctrl) by the
     bounding-box handles, or numerically from the options bar."""
+    CONTEXT_MENU = "move"
     name = "Move"
     icon = "✋"
     shortcut = "V"
@@ -495,14 +496,36 @@ class MoveTool(TransformTool):
         t.rotate(angle)
         t.scale(w_pct, h_pct)
         t.translate(-self._bounds.center().x(), -self._bounds.center().y())
+        self._set_total(doc, t)
+
+    @property
+    def can_flip(self) -> bool:
+        """Text scales by font size only — it has no mirrored form."""
+        return not getattr(self._target_layer, "_move_tool_uniform_scale_only", False)
+
+    def rotate_by(self, doc, degrees: float):
+        """Rotate the open transform about its centre (Rotate 90°/180°)."""
+        self._compose(doc, QTransform().rotate(degrees))
+
+    def flip(self, doc, horizontal: bool):
+        if self.can_flip:
+            self._compose(doc, QTransform().scale(-1, 1) if horizontal else QTransform().scale(1, -1))
+
+    def _compose(self, doc, local: QTransform):
+        if not self.is_transforming:
+            return
+        c = self._total_transform.map(self._bounds.center())
+        about = QTransform().translate(-c.x(), -c.y()) * local * QTransform().translate(c.x(), c.y())
+        self._set_total(doc, self._total_transform * about)
+
+    def _set_total(self, doc, t: QTransform):
+        """The transform the session now shows, with everything that
+        follows it live: kind geometry, the selection outline, children."""
         self._total_transform = t
-        
-        layer = self._target_layer
-        handled = layer.move_tool_set_params_extra(self._total_transform, self._original_rect)
+        handled = self._target_layer.move_tool_set_params_extra(t, self._original_rect)
         if not handled and self._is_floating and self._sel_origin:
-            doc.selection = self._total_transform.map(self._sel_origin)
-            
-        self._set_children_offset(QPoint(int(self._total_transform.dx()), int(self._total_transform.dy())))
+            doc.selection = t.map(self._sel_origin)
+        self._set_children_offset(QPoint(int(t.dx()), int(t.dy())))
 
     def cursor(self):
         if not self.is_transforming: return Qt.CursorShape.SizeAllCursor

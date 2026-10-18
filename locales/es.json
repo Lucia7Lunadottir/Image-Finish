@@ -1137,5 +1137,18 @@
   "opts.text.commit_tip": "Confirmar texto (Ctrl+Intro)",
   "opts.text.cancel_tip": "Cancelar edición (Esc)",
   "opts.gradient.edit_tip": "Degradado: haga clic para editar",
-  "adj.color_lookup.loaded": "Tabla cargada"
+  "adj.color_lookup.loaded": "Tabla cargada",
+  "menu.layer_via_copy": "Capa vía copiar",
+  "menu.layer_via_cut": "Capa vía cortar",
+  "menu.free_transform": "Transformación libre",
+  "ctx.transform.rotate_180": "Rotar 180°",
+  "ctx.transform.rotate_cw": "Rotar 90° en sentido horario",
+  "ctx.transform.rotate_ccw": "Rotar 90° en sentido antihorario",
+  "ctx.transform.flip_h": "Voltear horizontal",
+  "ctx.transform.flip_v": "Voltear vertical",
+  "ctx.view.actual_size": "Tamaño real (100%)",
+  "ctx.view.reset_rotation": "Restablecer rotación de vista",
+  "history.layer_via_copy": "Capa vía copiar",
+  "history.layer_via_cut": "Capa vía cortar",
+  "err.selection_empty_on_layer": "La selección no abarca esta capa"
 }

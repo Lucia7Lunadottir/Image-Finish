@@ -3,6 +3,7 @@ from tools.base_tool import BaseTool
 
 
 class HandTool(BaseTool):
+    CONTEXT_MENU = "view"
     name     = "Hand"
     icon     = "🖐"
     shortcut = "H"
@@ -15,6 +16,7 @@ class HandTool(BaseTool):
 
 
 class ZoomTool(BaseTool):
+    CONTEXT_MENU = "view"
     name     = "Zoom"
     icon     = "🔍"
     shortcut = "Z"
@@ -27,6 +29,7 @@ class ZoomTool(BaseTool):
 
 
 class RotateViewTool(BaseTool):
+    CONTEXT_MENU = "view"
     REPAINT_ON_HOVER = True
     name     = "RotateView"
     icon     = "🔄"

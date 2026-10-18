@@ -209,6 +209,10 @@ QMenu::item:selected {{
     background-color: {ACCENT};
     color: white;
 }}
+QMenu::item:disabled {{
+    color: {MUTED};
+    background-color: transparent;
+}}
 QMenu::separator {{
     height: 1px;
     background-color: #414559;

@@ -88,6 +88,7 @@ class MagicEraserTool(BaseTool):
 
 
 class BackgroundEraserTool(BaseTool):
+    CONTEXT_MENU = "brush"
     PLAIN_BRUSH_CURSOR = True
     BRUSH_CURSOR = True
     PIXEL_OP = "paint"

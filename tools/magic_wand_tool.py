@@ -14,6 +14,7 @@ class AbstractSelectionTool(AbstractAsyncTool, LassoMixin):
     Intermediate parent class for selection tools.
     Contains methods for safe memory copying and mask vectorization.
     """
+    CONTEXT_MENU = "selection"
     def _get_safe_layer_snapshot(self, layer) -> tuple[QImage, np.ndarray] | None:
         """Creates an isolated copy of layer pixels, preventing leaks and C++ core crashes."""
         try:
@@ -150,6 +151,7 @@ class MagicWandTool(AbstractSelectionTool):
 
 class QuickSelectionTool(AbstractSelectionTool):
     """Quick Selection tool (Smart brush)."""
+    CONTEXT_MENU = "brush"
     BRUSH_CURSOR = True
     name = "QuickSelection"
     icon_name = "brush-selection.svg"

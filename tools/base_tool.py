@@ -34,6 +34,10 @@ class BaseTool(ABC):
     PLAIN_BRUSH_CURSOR: bool = False
     # Canvas repaints on every hover move (live preview following the cursor).
     REPAINT_ON_HOVER: bool = False
+    # Which right-click menu the canvas shows for this tool (the menus
+    # themselves live in ui/canvas_context_menu.py): "selection", "move",
+    # "brush", "path", "crop", "view" — or None for no menu.
+    CONTEXT_MENU: str | None = None
     # Set by the canvas before draw_overlays: False while the pointer is
     # outside it, so previews that follow the cursor aren't left hanging.
     pointer_inside: bool = True

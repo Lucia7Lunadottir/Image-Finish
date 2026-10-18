@@ -128,6 +128,15 @@ class TransformTool(BaseTool):
         self.is_transforming = True
         return True
 
+    def start(self, doc) -> bool:
+        """Open a session on the active layer without a click (Edit > Free
+        Transform). True when one is open afterwards."""
+        if not self.is_transforming:
+            layer = doc.get_active_layer()
+            if self._can_transform(layer, doc):
+                self._begin(layer, doc)
+        return self.is_transforming
+
     def _lift_layer(self, layer, doc):
         """Whole-layer session: take the opaque part, hide the layer."""
         from core.document import Document

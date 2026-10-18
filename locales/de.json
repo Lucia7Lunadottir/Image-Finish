@@ -1137,5 +1137,18 @@
   "opts.text.commit_tip": "Text bestätigen (Strg+Eingabe)",
   "opts.text.cancel_tip": "Bearbeitung abbrechen (Esc)",
   "opts.gradient.edit_tip": "Verlauf – zum Bearbeiten klicken",
-  "adj.color_lookup.loaded": "Tabelle geladen"
+  "adj.color_lookup.loaded": "Tabelle geladen",
+  "menu.layer_via_copy": "Ebene durch Kopie",
+  "menu.layer_via_cut": "Ebene durch Ausschneiden",
+  "menu.free_transform": "Frei transformieren",
+  "ctx.transform.rotate_180": "Um 180° drehen",
+  "ctx.transform.rotate_cw": "Um 90° im UZS drehen",
+  "ctx.transform.rotate_ccw": "Um 90° gegen UZS drehen",
+  "ctx.transform.flip_h": "Horizontal spiegeln",
+  "ctx.transform.flip_v": "Vertikal spiegeln",
+  "ctx.view.actual_size": "Originalgröße (100 %)",
+  "ctx.view.reset_rotation": "Ansichtsdrehung zurücksetzen",
+  "history.layer_via_copy": "Ebene durch Kopie",
+  "history.layer_via_cut": "Ebene durch Ausschneiden",
+  "err.selection_empty_on_layer": "Die Auswahl überschneidet diese Ebene nicht"
 }

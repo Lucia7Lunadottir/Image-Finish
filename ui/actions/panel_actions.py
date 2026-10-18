@@ -155,61 +155,59 @@ class PanelActionsMixin:
                 return paths[idx]
         return None
 
-    def _path_make_selection(self):
+    def _path_payload(self, wp):
+        """`wp` as given (the canvas menu passes the work path), else the
+        path selected in the Paths panel — None when it has no nodes."""
         if not self._document:
-            return
-        wp = self._selected_path_dict()
-        if not wp or not wp.get("nodes"):
-            return
+            return None
+        if wp is None or isinstance(wp, bool):     # bool: a clicked() signal's arg
+            wp = self._selected_path_dict()
+        return wp if wp and wp.get("nodes") else None
+
+    @staticmethod
+    def _path_shape(wp):
         from tools.pen_tool import build_bezier_path
         path = build_bezier_path(wp)
         if wp.get("closed"):
             path.closeSubpath()
+        return path
+
+    def _path_make_selection(self, wp=None):
+        wp = self._path_payload(wp)
+        if wp is None:
+            return
         self._push_history(tr("history.make_selection"))
-        self._document.selection = path
+        self._document.selection = self._path_shape(wp)
         self._canvas_refresh()
 
-    def _path_fill(self):
-        if not self._document:
+    def _path_fill(self, wp=None):
+        self._paint_path(wp, "history.fill_path", fill=True)
+
+    def _path_stroke(self, wp=None):
+        self._paint_path(wp, "history.stroke_path", fill=False)
+
+    def _paint_path(self, wp, history_key: str, fill: bool):
+        """Fill or stroke a path with the foreground colour on the active
+        layer (stroke width = the brush size)."""
+        from PyQt6.QtGui import QPainter, QPen
+        from ui.actions.pixel_target import pixel_layer_for_edit
+        wp = self._path_payload(wp)
+        if wp is None:
             return
-        wp = self._selected_path_dict()
-        if not wp or not wp.get("nodes"):
+        layer = pixel_layer_for_edit(self, "paint")
+        if layer is None:
             return
-        self._push_history(tr("history.fill_path"))
-        layer = self._document.get_active_layer()
-        if layer:
-            from PyQt6.QtGui import QPainter
-            from tools.pen_tool import build_bezier_path
-            p = QPainter(layer.image)
-            p.setCompositionMode(QPainter.CompositionMode.CompositionMode_SourceOver)
+        self._push_history(tr(history_key))
+        p = QPainter(layer.image)
+        p.setRenderHint(QPainter.RenderHint.Antialiasing)
+        p.translate(-layer.offset.x(), -layer.offset.y())
+        if fill:
             p.setBrush(self._canvas.fg_color)
             p.setPen(Qt.PenStyle.NoPen)
-            path = build_bezier_path(wp)
-            if wp.get("closed"):
-                path.closeSubpath()
-            p.drawPath(path)
-            p.end()
-        self._canvas_refresh()
-
-    def _path_stroke(self):
-        if not self._document:
-            return
-        wp = self._selected_path_dict()
-        if not wp or not wp.get("nodes"):
-            return
-        self._push_history(tr("history.stroke_path"))
-        layer = self._document.get_active_layer()
-        if layer:
-            from PyQt6.QtGui import QPainter, QPen
-            from tools.pen_tool import build_bezier_path
-            p = QPainter(layer.image)
-            pen = QPen(self._canvas.fg_color, self._canvas.tool_opts.get("brush_size", 2))
-            p.setPen(pen)
-            path = build_bezier_path(wp)
-            if wp.get("closed"):
-                path.closeSubpath()
-            p.drawPath(path)
-            p.end()
+        else:
+            p.setPen(QPen(self._canvas.fg_color, self._canvas.tool_opts.get("brush_size", 2)))
+        p.drawPath(self._path_shape(wp))
+        p.end()
         self._canvas_refresh()
 
     def _path_delete(self):
