@@ -51,7 +51,7 @@ class _CenteredMode(_DistortMode):
 
 class Twirl(_CenteredMode):
     key, title_key = "twirl", "menu.distort.twirl"
-    params = (Slider("amount", "distort.amount", -720, 720, 100),)
+    params = (Slider("amount", "distort.angle", -720, 720, 100),)
 
     def _map(self, X, Y, p, ctx, w, h):
         r, theta = self._polar(X, Y, ctx)
@@ -89,7 +89,7 @@ class Spherize(Pinch):
 class ZigZag(_CenteredMode):
     key, title_key = "zigzag", "menu.distort.zigzag"
     params = (Slider("amount", "distort.amount", -100, 100, 30, spatial=True),
-              Slider("ridges", "distort.param2", 1, 50, 10))
+              Slider("ridges", "distort.ridges", 1, 50, 10))
 
     def _map(self, X, Y, p, ctx, w, h):
         r, theta = self._polar(X, Y, ctx)
@@ -100,7 +100,7 @@ class ZigZag(_CenteredMode):
 class Ripple(_DistortMode):
     key, title_key = "ripple", "menu.distort.ripple"
     params = (Slider("amount", "distort.amount", 1, 100, 10, spatial=True),
-              Slider("period", "distort.param2", 1, 100, 30, spatial=True))
+              Slider("period", "distort.period", 1, 100, 30, spatial=True))
     second = staticmethod(np.sin)
 
     def _map(self, X, Y, p, ctx, w, h):
@@ -113,7 +113,7 @@ class Ripple(_DistortMode):
 class Wave(Ripple):
     key, title_key = "wave", "menu.distort.wave"
     params = (Slider("amount", "distort.amount", 1, 200, 20, spatial=True),
-              Slider("period", "distort.param2", 1, 500, 120, spatial=True))
+              Slider("period", "distort.period", 1, 500, 120, spatial=True))
     second = staticmethod(np.cos)
 
 
@@ -143,8 +143,8 @@ class Polar(_DistortMode):
 class Displace(_DistortMode):
     key, title_key = "displace", "menu.distort.displace"
     identity_at_zero = False
-    params = (Slider("amount", "distort.amount", -200, 200, 20, spatial=True),
-              Slider("vertical", "distort.param2", -200, 200, 20, spatial=True),
+    params = (Slider("amount", "distort.h_scale", -200, 200, 20, spatial=True),
+              Slider("vertical", "distort.v_scale", -200, 200, 20, spatial=True),
               ImageFile("map", "distort.load_map"))
 
     def _map(self, X, Y, p, ctx, w, h):

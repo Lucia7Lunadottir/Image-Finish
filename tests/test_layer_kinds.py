@@ -162,3 +162,52 @@ def test_undo_of_a_numeric_frame_transform_restores_its_rect(main_window, mocked
     assert round(w._document.layers[0].frame_data["rect"].x()) == 50
     w._undo()
     assert round(w._document.layers[0].frame_data["rect"].x()) == 20
+
+
+def _context_menu_texts(w, monkeypatch):
+    from PyQt6.QtCore import QPoint as _P
+    from PyQt6.QtWidgets import QMenu
+    seen = []
+    monkeypatch.setattr(QMenu, "exec", lambda self, *a: seen.extend(a.text() for a in self.actions()))
+    w._layers_panel._context_menu(_P(0, 0))
+    return set(seen)
+
+
+def test_layers_context_menu_per_kind(main_window, mocked_dialogs, monkeypatch):
+    from core.layer import SmartObjectLayer, VectorLayer
+    w = main_window
+    w._add_tab(Document(100, 80), "t")
+    doc = w._document
+    w._layers_panel._document = doc
+    cases = {
+        RasterLayer:      {"ctx.export_png", "ctx.smart_object"},
+        TextLayer:        {"ctx.export_png", "ctx.smart_object", "ctx.rasterize"},
+        VectorLayer:      {"ctx.export_png", "ctx.smart_object", "ctx.rasterize"},
+        FillLayer:        {"ctx.edit_layer", "ctx.rasterize"},
+        AdjustmentLayer:  {"ctx.edit_layer", "ctx.rasterize"},
+        SmartObjectLayer: {"ctx.export_png", "ctx.clear_smart_filters", "ctx.rasterize"},
+        GroupLayer:       {"ctx.export_png"},
+        ArtboardLayer:    {"ctx.export_png"},
+    }
+    kind_items = {"ctx.export_png", "ctx.edit_layer", "ctx.smart_object",
+                  "ctx.clear_smart_filters", "ctx.rasterize"}
+    for cls, expected in cases.items():
+        layer = doc.add_layer(name=cls.__name__, layer_cls=cls)
+        doc.active_layer_index = doc.layers.index(layer)
+        texts = _context_menu_texts(w, monkeypatch)
+        assert {k for k in kind_items if tr(k) in texts} == expected, cls.__name__
+
+
+def test_group_is_not_rasterized_or_made_smart(main_window, mocked_dialogs):
+    """Both turned a group into a plain layer whose children kept pointing
+    at a container that no longer was one."""
+    w = main_window
+    w._add_tab(Document(100, 80), "t")
+    doc = w._document
+    group = doc.add_layer(name="g", layer_cls=GroupLayer)
+    doc.active_layer_index = doc.layers.index(group)
+    doc.add_layer(name="kid")
+    for action in (w._rasterize_layer, w._new_smart_object):
+        doc.active_layer_index = doc.layers.index(group)
+        action()
+        assert isinstance(doc.layers[doc.layers.index(group)], GroupLayer)

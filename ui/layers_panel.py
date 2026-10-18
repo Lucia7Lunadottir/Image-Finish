@@ -594,8 +594,6 @@ class LayersPanel(QWidget):
 
         layer = (self._document.get_active_layer()
                  if self._document else None)
-        ltype = getattr(layer, "layer_type", "raster") if layer else "raster"
-
         menu.addSeparator()
         if layer:
             menu.addAction(tr("ctx.blending_options"), lambda: self.layer_styles_requested.emit(self._document.active_layer_index))
@@ -630,22 +628,18 @@ class LayersPanel(QWidget):
             menu.addAction(tr("ctx.delete_vector_mask"), self.layer_delete_vector_mask.emit)
 
         menu.addSeparator()
-        if layer and ltype not in ("adjustment", "fill"):
-            exp_act = menu.addAction(tr("ctx.export_png"))
-            exp_act.triggered.connect(self.layer_export_png.emit)
-
-        if ltype in ("adjustment", "fill"):
-            edit_act = menu.addAction(tr("ctx.edit_layer"))
-            edit_act.triggered.connect(self.layer_edit.emit)
-        if ltype in ("raster", "text", "vector"):
-            so_act = menu.addAction(tr("ctx.smart_object"))
-            so_act.triggered.connect(self.layer_smart_object.emit)
-        elif ltype == "smart_object":
-            clr_act = menu.addAction(tr("ctx.clear_smart_filters"))
-            clr_act.triggered.connect(self.layer_clear_smart_filters.emit)
-        if ltype != "raster":
-            rast_act = menu.addAction(tr("ctx.rasterize"))
-            rast_act.triggered.connect(self.layer_rasterize.emit)
+        if layer is not None:
+            from core.layer import SmartObjectLayer
+            if layer.SETTINGS_LAYER:
+                menu.addAction(tr("ctx.edit_layer"), self.layer_edit.emit)
+            else:
+                menu.addAction(tr("ctx.export_png"), self.layer_export_png.emit)
+            if layer.CAN_BE_SMART_OBJECT:
+                menu.addAction(tr("ctx.smart_object"), self.layer_smart_object.emit)
+            elif isinstance(layer, SmartObjectLayer):
+                menu.addAction(tr("ctx.clear_smart_filters"), self.layer_clear_smart_filters.emit)
+            if layer.rasterizable:
+                menu.addAction(tr("ctx.rasterize"), self.layer_rasterize.emit)
 
         menu.exec(self._list.mapToGlobal(pos))
 

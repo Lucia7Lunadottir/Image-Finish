@@ -124,6 +124,20 @@ class Layer:
         kind says otherwise (smart objects take filters but not paint)."""
         return self.pixel_access
 
+    # What the layer kind offers in Layer > … and the layers panel menu:
+    #   SETTINGS_LAYER      — drawn from settings re-edited in its dialog
+    #                         ("Edit layer…"; no image of its own to export);
+    #   CAN_BE_SMART_OBJECT — "Convert to Smart Object";
+    #   rasterizable        — "Rasterize": not a plain raster layer already,
+    #                         not a container (it would orphan its children).
+    SETTINGS_LAYER = False
+    CAN_BE_SMART_OBJECT = False
+    _RASTERIZABLE = True
+
+    @property
+    def rasterizable(self) -> bool:
+        return self._RASTERIZABLE and not self._is_container
+
     def content_image(self, document) -> QImage:
         """What the layer looks like, as pixels at its own size/offset —
         also for layers drawn from data (fill layers render on demand)."""
@@ -512,6 +526,8 @@ class Layer:
 
 class RasterLayer(Layer):
     """Plain pixel layer — the default/fallback layer kind. No extra fields."""
+    CAN_BE_SMART_OBJECT = True
+    _RASTERIZABLE = False
 
 
 def decompose_transform(t: "QTransform") -> tuple[float, float, float]:
@@ -548,6 +564,7 @@ def transform_shape_rect(rect: QRectF, angle: float, transform) -> tuple[QRectF,
 class LiveRenderedLayer(Layer):
     _live_edit_hidden = False   # class default: clones made via __new__ skip __init__
     _PIXEL_ACCESS = "rasterize"
+    CAN_BE_SMART_OBJECT = True
 
     """A layer whose pixels are a rendering of data (shape geometry, text)
     rather than stored pixels. Subclasses implement `has_live_content()`,
@@ -1115,6 +1132,7 @@ class VectorLayer(LiveRenderedLayer):
 class AdjustmentLayer(Layer):
     _LAYER_TAG = "adjustment"
     _PIXEL_ACCESS = "none"
+    SETTINGS_LAYER = True
 
     def __init__(self, name: str, width: int, height: int, fill_color: QColor = None):
         super().__init__(name, width, height, fill_color)
@@ -1252,6 +1270,7 @@ def _resample_coverage(frac, view_transform, width: int, height: int, smooth: bo
 class FillLayer(Layer):
     _LAYER_TAG = "fill"
     _PIXEL_ACCESS = "rasterize"
+    SETTINGS_LAYER = True
 
     def __init__(self, name: str, width: int, height: int, fill_color: QColor = None):
         super().__init__(name, width, height, fill_color)

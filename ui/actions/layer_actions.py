@@ -337,7 +337,7 @@ class LayerActionsMixin:
     def _new_smart_object(self):
         layer = self._document.get_active_layer()
         from core.layer import SmartObjectLayer
-        if not layer or isinstance(layer, SmartObjectLayer):
+        if not layer or not layer.CAN_BE_SMART_OBJECT:
             return
         self._push_history(tr("history.new_smart_object"))
         layer = self._document.replace_layer(layer, layer.convert_to(SmartObjectLayer))
@@ -360,7 +360,7 @@ class LayerActionsMixin:
     def _rasterize_layer(self):
         from core.layer import RasterLayer
         layer = self._document.get_active_layer()
-        if not layer or type(layer) is RasterLayer:
+        if not layer or not layer.rasterizable:
             return
         self._push_history(tr("history.rasterize_layer"))
         pixels = layer.rasterized_image(self._document)
