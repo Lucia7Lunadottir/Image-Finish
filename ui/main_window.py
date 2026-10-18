@@ -1,7 +1,7 @@
 from PyQt6.QtWidgets import (QMainWindow, QWidget, QHBoxLayout, QVBoxLayout, QMenu, QStatusBar,
     QMessageBox, QTabWidget, QStackedWidget)
 from PyQt6.QtCore import Qt, QPoint, QPointF
-from PyQt6.QtGui import QAction, QColor
+from PyQt6.QtGui import QAction
 
 from ui.canvas_widget       import CanvasWidget
 from ui.document_controller import DocumentController
@@ -151,28 +151,7 @@ class MainWindow(QMainWindow,
         self._panel_manager = PanelManager(self)
         self._build_menu_bar()
 
-        # Connect panel signals
-        self._history_panel.jump_requested.connect(self._history_jump)
-        self._navigator_panel.zoom_changed.connect(self._on_nav_zoom)
-        self._swatches_panel.fg_color_selected.connect(self._color_panel.set_fg)
-        self._swatches_panel.bg_color_selected.connect(self._color_panel.set_bg)
-        self._swatches_panel.add_swatch_requested.connect(
-            lambda: self._swatches_panel.add_swatch(self._color_panel._fg))
-        self._character_panel.option_changed.connect(self._on_opt_changed)
-        self._paragraph_panel.option_changed.connect(self._on_opt_changed)
-        self._glyphs_panel.char_inserted.connect(self._on_glyph_inserted)
-        self._actions_panel.action_requested.connect(self._on_action_requested)
-        self._tool_presets_panel.save_requested.connect(self._on_preset_save_requested)
-        self._tool_presets_panel.preset_selected.connect(self._on_preset_selected)
-        self._brushes_panel.brush_selected.connect(self._on_brush_selected)
-        self._paths_panel.make_selection_requested.connect(self._path_make_selection)
-        self._paths_panel.fill_path_requested.connect(self._path_fill)
-        self._paths_panel.stroke_path_requested.connect(self._path_stroke)
-        self._paths_panel.delete_path_requested.connect(self._path_delete)
-        self._paths_panel.new_path_requested.connect(self._path_new)
-        self._paths_panel.rename_path_requested.connect(self._path_rename)
-        self._properties_panel.transform_changed.connect(self._on_transform_changed)
-        self._properties_panel.align_requested.connect(self._do_align_layer)
+        self._wire_panel_signals()
 
         from ui.welcome_panel import WelcomePanel
         self._welcome_panel = WelcomePanel()
@@ -223,108 +202,148 @@ class MainWindow(QMainWindow,
                 self._canvas._shape_overlay.refresh_items()
 
     # ================================================================= Signals
+    @staticmethod
+    def _connect_all(connections):
+        for signal, slot in connections:
+            signal.connect(slot)
+
+    def _wire_panel_signals(self):
+        """The dockable panels → window handlers (right after the panels
+        are built, before the workspace layout is restored)."""
+        cp, paths = self._color_panel, self._paths_panel
+        self._connect_all([
+            (self._history_panel.jump_requested,            self._history_jump),
+            (self._navigator_panel.zoom_changed,            self._on_nav_zoom),
+            (self._swatches_panel.fg_color_selected,        cp.set_fg),
+            (self._swatches_panel.bg_color_selected,        cp.set_bg),
+            (self._swatches_panel.add_swatch_requested,     lambda: self._swatches_panel.add_swatch(cp._fg)),
+            (self._character_panel.option_changed,          self._on_opt_changed),
+            (self._paragraph_panel.option_changed,          self._on_opt_changed),
+            (self._glyphs_panel.char_inserted,              self._on_glyph_inserted),
+            (self._actions_panel.action_requested,          self._on_action_requested),
+            (self._tool_presets_panel.save_requested,       self._on_preset_save_requested),
+            (self._tool_presets_panel.preset_selected,      self._on_preset_selected),
+            (self._brushes_panel.brush_selected,            self._on_brush_selected),
+            (paths.make_selection_requested,                self._path_make_selection),
+            (paths.fill_path_requested,                     self._path_fill),
+            (paths.stroke_path_requested,                   self._path_stroke),
+            (paths.delete_path_requested,                   self._path_delete),
+            (paths.new_path_requested,                      self._path_new),
+            (paths.rename_path_requested,                   self._path_rename),
+            (self._properties_panel.transform_changed,      self._on_transform_changed),
+            (self._properties_panel.align_requested,        self._do_align_layer),
+        ])
+
     def _wire_signals(self):
-        self._toolbar.tool_selected.connect(self._activate_tool)
-        self._color_panel.fg_changed.connect(self._on_fg_changed)
-        self._color_panel.bg_changed.connect(self._on_bg_changed)
-        self._opts_bar.option_changed.connect(self._on_opt_changed)
-        self._opts_bar.apply_styles_requested.connect(self._apply_text_styles)
-        self._opts_bar.apply_crop_requested.connect(self._on_apply_crop_requested)
-        self._layers_panel.layer_selected.connect(self._on_layer_selected_wrap)
-        self._layers_panel.layer_added.connect(self._add_layer)
-        self._layers_panel.layer_duplicated.connect(self._duplicate_layer)
-        self._layers_panel.layer_deleted.connect(self._delete_layer)
-        self._layers_panel.layer_renamed.connect(self._rename_layer)
-        self._layers_panel.layer_expanded_toggled.connect(self._on_layer_expanded_toggled)
-        self._layers_panel.layer_moved.connect(self._move_layer_exact)
-        self._layers_panel.layer_moved_up.connect(self._layer_up)
-        self._layers_panel.layer_moved_down.connect(self._layer_down)
-        self._layers_panel.layer_visibility.connect(self._on_layer_visibility)
-        self._layers_panel.layer_opacity.connect(self._on_layer_opacity)
-        if hasattr(self._layers_panel, "layer_lock_changed"):
-            self._layers_panel.layer_lock_changed.connect(self._on_layer_lock_changed)
-        if hasattr(self._layers_panel, "layer_grouped"):
-            self._layers_panel.layer_grouped.connect(self._group_layer)
-            self._layers_panel.layer_linked.connect(self._link_layer)
-        if hasattr(self._layers_panel, "layer_blend_mode"):
-            self._layers_panel.layer_blend_mode.connect(self._on_layer_blend_mode)
-        if hasattr(self._layers_panel, "layer_target_changed"):
-            self._layers_panel.layer_target_changed.connect(self._on_layer_target_changed)
-            if hasattr(self._layers_panel, "layer_mask_toggled"):
-                self._layers_panel.layer_mask_toggled.connect(self._on_layer_mask_toggled)
-            self._layers_panel.layer_add_mask.connect(self._add_mask)
-            self._layers_panel.layer_delete_mask.connect(self._delete_mask)
-            self._layers_panel.layer_apply_mask.connect(self._apply_mask)
-            if hasattr(self._layers_panel, "layer_invert_mask"):
-                self._layers_panel.layer_invert_mask.connect(self._invert_mask)
-        if hasattr(self._layers_panel, "layer_add_vector_mask"):
-            self._layers_panel.layer_add_vector_mask.connect(self._add_vector_mask)
-            self._layers_panel.layer_delete_vector_mask.connect(self._delete_vector_mask)
-            self._layers_panel.layer_vmask_toggled.connect(self._on_layer_vmask_toggled)
-        if hasattr(self._layers_panel, "layer_clipping_toggled"):
-            self._layers_panel.layer_clipping_toggled.connect(self._on_layer_clipping_toggled)
-        self._layers_panel.layer_merged_down.connect(self._merge_down)
-        self._layers_panel.layer_flatten.connect(self._flatten)
-        self._layers_panel.layer_edit.connect(self._on_edit_layer)
-        self._layers_panel.layer_smart_object.connect(self._new_smart_object)
-        self._layers_panel.layer_rasterize.connect(self._rasterize_layer)
-        if hasattr(self._layers_panel, "layer_export_png"):
-            self._layers_panel.layer_export_png.connect(self._export_layer_png)
-        self._layers_panel.layer_styles_requested.connect(self._open_layer_styles)
-        if hasattr(self._layers_panel, "layer_clear_smart_filters"):
-            self._layers_panel.layer_clear_smart_filters.connect(self._clear_smart_filters)
-        self._channels_panel.channel_changed.connect(self._on_channel_changed)
-        self._channels_panel.save_requested.connect(self._save_selection)
-        self._channels_panel.load_requested.connect(self._load_selection_btn)
-        self._channels_panel.delete_requested.connect(self._delete_alpha_channel)
+        """Toolbar, options bar, colours, Layers and Channels → handlers."""
+        lp, ch = self._layers_panel, self._channels_panel
+        self._connect_all([
+            (self._toolbar.tool_selected,           self._activate_tool),
+            (self._color_panel.fg_changed,          self._on_fg_changed),
+            (self._color_panel.bg_changed,          self._on_bg_changed),
+            (self._opts_bar.option_changed,         self._on_opt_changed),
+            (self._opts_bar.apply_styles_requested, self._apply_text_styles),
+            (self._opts_bar.apply_crop_requested,   self._on_apply_crop_requested),
+
+            (lp.layer_selected,            self._on_layer_selected_wrap),
+            (lp.layer_added,               self._add_layer),
+            (lp.layer_duplicated,          self._duplicate_layer),
+            (lp.layer_deleted,             self._delete_layer),
+            (lp.layer_renamed,             self._rename_layer),
+            (lp.layer_expanded_toggled,    self._on_layer_expanded_toggled),
+            (lp.layer_moved,               self._move_layer_exact),
+            (lp.layer_moved_up,            self._layer_up),
+            (lp.layer_moved_down,          self._layer_down),
+            (lp.layer_visibility,          self._on_layer_visibility),
+            (lp.layer_opacity,             self._on_layer_opacity),
+            (lp.layer_lock_changed,        self._on_layer_lock_changed),
+            (lp.layer_grouped,             self._group_layer),
+            (lp.layer_linked,              self._link_layer),
+            (lp.layer_blend_mode,          self._on_layer_blend_mode),
+            (lp.layer_target_changed,      self._on_layer_target_changed),
+            (lp.layer_mask_toggled,        self._on_layer_mask_toggled),
+            (lp.layer_add_mask,            self._add_mask),
+            (lp.layer_delete_mask,         self._delete_mask),
+            (lp.layer_apply_mask,          self._apply_mask),
+            (lp.layer_invert_mask,         self._invert_mask),
+            (lp.layer_add_vector_mask,     self._add_vector_mask),
+            (lp.layer_delete_vector_mask,  self._delete_vector_mask),
+            (lp.layer_vmask_toggled,       self._on_layer_vmask_toggled),
+            (lp.layer_clipping_toggled,    self._on_layer_clipping_toggled),
+            (lp.layer_merged_down,         self._merge_down),
+            (lp.layer_flatten,             self._flatten),
+            (lp.layer_edit,                self._on_edit_layer),
+            (lp.layer_smart_object,        self._new_smart_object),
+            (lp.layer_rasterize,           self._rasterize_layer),
+            (lp.layer_export_png,          self._export_layer_png),
+            (lp.layer_styles_requested,    self._open_layer_styles),
+            (lp.layer_clear_smart_filters, self._clear_smart_filters),
+
+            (ch.channel_changed,  self._on_channel_changed),
+            (ch.save_requested,   self._save_selection),
+            (ch.load_requested,   self._load_selection_btn),
+            (ch.delete_requested, self._delete_alpha_channel),
+        ])
 
     def _add_tab(self, doc, title, filepath=None):
+        """Open `doc` in a new tab and make it current."""
+        canvas = self._new_canvas(doc, filepath)
+        self._connect_canvas(canvas)
+        self._doc_tabs.setCurrentIndex(self._doc_tabs.addTab(canvas, title))
+        self._center_stack.setCurrentIndex(1)
+        self._resync_cursor_later(canvas)
+        page = self._opts_bar.page_for(self._active_tool_name)
+        if page and hasattr(page, "update_from_opts"):
+            page.update_from_opts(canvas.tool_opts)
+        return canvas
+
+    def _new_canvas(self, doc, filepath):
+        """A canvas for `doc` with its own history; tool settings and
+        colours carry over from the open tabs (or this session's options
+        when it's the first one)."""
+        from core.history import HistoryManager
         canvas = CanvasWidget()
         canvas.set_document(doc)
-        from core.history import HistoryManager
         canvas.history = HistoryManager()
         doc.history = canvas.history
         canvas.filepath = filepath
-        if hasattr(self, "_doc_tabs") and self._doc_tabs.count() > 0:
-            fc = self._doc_tabs.widget(0)
-            canvas.tool_opts = dict(fc.tool_opts)
-            canvas.fg_color = fc.fg_color
-            canvas.bg_color = fc.bg_color
-        else:
-            cp = getattr(self, "_color_panel", None)
-            canvas.fg_color = getattr(cp, "_fg", QColor(0, 0, 0))
-            canvas.bg_color = getattr(cp, "_bg", QColor(255, 255, 255))
-            canvas.tool_opts.update(getattr(self, "_session_tool_opts", {}))
         canvas.is_modified = False
-        canvas.document_changed.connect(self._on_doc_changed)
-        canvas.pixels_changed.connect(self._on_pixels_changed)
-        canvas.pixels_changed.connect(lambda: setattr(canvas, "is_modified", True))
-        canvas.view_changed.connect(self._update_status)
-        canvas.color_picked.connect(self._color_panel.set_fg)
-        canvas.tool_state_changed.connect(self._opts_bar.update_tool_state)
-        if hasattr(self, "_info_panel"):
-            canvas.cursor_info.connect(self._info_panel.update_info)
-        tool = self._tools.get(self._active_tool_name)
-        canvas.active_tool = tool
+        if self._doc_tabs.count() > 0:
+            first = self._doc_tabs.widget(0)
+            canvas.tool_opts = dict(first.tool_opts)
+            canvas.fg_color, canvas.bg_color = first.fg_color, first.bg_color
+        else:
+            canvas.fg_color = self._color_panel._fg
+            canvas.bg_color = self._color_panel._bg
+            canvas.tool_opts.update(getattr(self, "_session_tool_opts", {}))
+        canvas.active_tool = self._tools.get(self._active_tool_name)
+        return canvas
+
+    def _connect_canvas(self, canvas):
+        self._connect_all([
+            (canvas.document_changed,   self._on_doc_changed),
+            (canvas.pixels_changed,     self._on_pixels_changed),
+            (canvas.pixels_changed,     lambda: setattr(canvas, "is_modified", True)),
+            (canvas.view_changed,       self._update_status),
+            (canvas.color_picked,       self._color_panel.set_fg),
+            (canvas.tool_state_changed, self._opts_bar.update_tool_state),
+            (canvas.cursor_info,        self._info_panel.update_info),
+        ])
         self._connect_text_session(canvas)
-        idx = self._doc_tabs.addTab(canvas, title)
-        self._doc_tabs.setCurrentIndex(idx)
-        if hasattr(self, "_center_stack"):
-            self._center_stack.setCurrentIndex(1)
-        # The Welcome screen's recent-file thumbnails set PointingHandCursor
-        # on themselves; swapping them out for the canvas at the same screen
-        # position doesn't happen via a mouse move, so nothing tells Qt (and
-        # the Wayland compositor underneath it) to re-poll which widget is
-        # now under the pointer — the thumbnail's hand cursor visually stays
-        # put. Just calling canvas.setCursor() isn't enough to fix that: Qt
-        # only forwards a cursor change to the platform for the widget it
-        # currently considers "entered", and that bookkeeping is normally
-        # only updated by a real mouse-move reaching the window. Posting a
-        # synthetic MouseMove at the pointer's actual current position forces
-        # Qt to re-run its own hit-testing and hand the canvas its hover/
-        # cursor state for real, instead of just poking canvas's cursor
-        # property from the outside. Deferred via singleShot so it runs once
-        # the stack-switch above has actually been applied.
+
+    @staticmethod
+    def _resync_cursor_later(canvas):
+        """The Welcome screen's recent-file thumbnails set PointingHandCursor
+        on themselves; swapping them out for the canvas at the same screen
+        position doesn't happen via a mouse move, so nothing tells Qt (and
+        the Wayland compositor underneath it) to re-poll which widget is
+        now under the pointer — the thumbnail's hand cursor visually stays
+        put. Just calling canvas.setCursor() isn't enough: Qt only forwards
+        a cursor change to the platform for the widget it currently
+        considers "entered", and that bookkeeping is normally only updated
+        by a real mouse-move reaching the window. A synthetic MouseMove at
+        the pointer's actual position, once the stack switch has been
+        applied, makes Qt re-run its own hit-testing."""
         canvas._update_cursor()
 
         def _resync_cursor():
@@ -349,11 +368,6 @@ class MainWindow(QMainWindow,
         resync_timer.timeout.connect(_resync_cursor)
         resync_timer.timeout.connect(resync_timer.deleteLater)
         resync_timer.start(0)
-        # Sync tool options bar with canvas defaults
-        page = self._opts_bar.page_for(self._active_tool_name)
-        if page and hasattr(page, "update_from_opts"):
-            page.update_from_opts(canvas.tool_opts)
-        return canvas
 
     def _close_tab(self, index: int):
         canvas = self._doc_tabs.widget(index)

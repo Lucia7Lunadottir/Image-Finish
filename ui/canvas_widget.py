@@ -11,18 +11,14 @@ from PyQt6.QtCore import Qt, QPoint, QPointF, QRect, QTimer, pyqtSignal
 from PyQt6.QtGui import (QPainter, QColor, QPixmap, QBrush, QPen, QImage, QCursor, QInputDevice,
     QPainterPath)
 
-from tools.other_tools import (SelectTool, CropTool, ShapesTool,
-                               HandTool, ZoomTool, RotateViewTool, GradientTool, PerspectiveCropTool)
+from tools.other_tools import HandTool, ZoomTool, RotateViewTool
 from core.brush_symmetry import BrushSymmetry
 from ui.canvas_cursors import BrushCursorOverlay, selection_cursor, selection_mode
 from ui.canvas_guides import GuideDrag
 from ui.canvas_hires import HiresView
 from ui.overlay_renderers import (
     draw_grid, draw_guides, draw_rulers, draw_artboard_frames, draw_slices, draw_symmetry_axes, draw_selection,
-    draw_subtract_drag, draw_lasso_preview, draw_transform_preview,
-    draw_brush_stroke, draw_crop_preview, draw_perspective_crop,
-    draw_shapes_preview, draw_gradient_preview, draw_artboard_preview,
-    draw_clone_stamp, draw_measurements,
+    draw_tool_previews,
 )
 
 
@@ -259,7 +255,7 @@ class CanvasWidget(QOpenGLWidget):
             self._in_effect_stroke = True
             if hasattr(self.active_tool, "_stroke_preview_active"):
                 self.active_tool._stroke_preview_active = True
-        except Exception as e:
+        except Exception:
             logger.exception("Effect cache safety catch")
             self._effect_bg_cache = None
             self._in_effect_stroke = False
@@ -396,28 +392,7 @@ class CanvasWidget(QOpenGLWidget):
                 
             draw_artboard_frames(painter, doc=self.document, pan=self._pan, zoom=self.zoom)
 
-            # Guarded rendering of custom tool overlays
-            if self.active_tool and hasattr(self.active_tool, "draw_overlays"):
-                try:
-                    painter.save()
-                    painter.translate(self._pan)
-                    painter.scale(self.zoom, self.zoom)
-                    
-                    old_hovers = {}
-                    if not getattr(self, "_is_mouse_in", True):
-                        for attr in ["hover_pos", "_hover_pos", "current_pos", "_current_pos", "preview_end", "_preview_end"]:
-                            if hasattr(self.active_tool, attr):
-                                old_hovers[attr] = getattr(self.active_tool, attr)
-                                setattr(self.active_tool, attr, None)
-                                
-                    self.active_tool.draw_overlays(painter, max(1.0, 1.0 / self.zoom), self.document)
-                    
-                    for attr, val in old_hovers.items():
-                        setattr(self.active_tool, attr, val)
-                        
-                    painter.restore()
-                except Exception as e:
-                    logger.exception("Tool overlay rendering error in %s", getattr(self.active_tool, "name", "?"))
+            self._paint_tool_overlays(painter)
 
             if self._show_brush_cursor and not self._panning and not self._space:
                 self._brush_cursor.paint(
@@ -429,8 +404,24 @@ class CanvasWidget(QOpenGLWidget):
                 draw_rulers(painter, width=self.width(), height=self.height(), pan=self._pan, zoom=self.zoom)
 
             painter.end()
-        except Exception as ce:
+        except Exception:
             logger.exception("Critical canvas paint loop failure")
+
+    def _paint_tool_overlays(self, painter: QPainter):
+        """The active tool's handles and guides, in document space."""
+        tool = self.active_tool
+        if tool is None or not hasattr(tool, "draw_overlays"):
+            return
+        tool.pointer_inside = self._is_mouse_in
+        painter.save()
+        try:
+            painter.translate(self._pan)
+            painter.scale(self.zoom, self.zoom)
+            tool.draw_overlays(painter, max(1.0, 1.0 / self.zoom), self.document)
+        except Exception:
+            logger.exception("Tool overlay rendering error in %s", getattr(tool, "name", "?"))
+        finally:
+            painter.restore()
 
     def _draw_composite_cpu(self, painter: QPainter, display_img: QImage):
         painter.save()
@@ -510,7 +501,6 @@ class CanvasWidget(QOpenGLWidget):
         _pan, _zoom = self._pan, self.zoom
         _doc, _tool = self.document, self.active_tool
         _opts = self.tool_opts
-        _tname = getattr(_tool, "name", "")
 
         draw_grid(painter, doc=_doc, pan=_pan, zoom=_zoom)
         draw_guides(painter, doc=_doc, pan=_pan, zoom=_zoom,
@@ -526,32 +516,23 @@ class CanvasWidget(QOpenGLWidget):
                            tool_opts=_opts, brush_tool=getattr(_tool, "BRUSH_CURSOR", False))
         draw_selection(painter, doc=_doc, pan=_pan, zoom=_zoom,
                        march_offset=self._march_offset)
-        draw_subtract_drag(painter, active_tool=_tool, pan=_pan, zoom=_zoom,
-                           SelectTool=SelectTool)
-        draw_lasso_preview(painter, active_tool=_tool, pan=_pan, zoom=_zoom,
-                           is_mouse_in=getattr(self, "_is_mouse_in", True))
-        draw_transform_preview(painter, active_tool=_tool, pan=_pan, zoom=_zoom)
-        draw_brush_stroke(painter, active_tool=_tool, tool_opts=_opts,
-                          pan=_pan, zoom=_zoom)
-        draw_crop_preview(painter, active_tool=_tool, tool_opts=_opts,
-                          pan=_pan, zoom=_zoom, doc=_doc, CropTool=CropTool)
-        draw_perspective_crop(painter, active_tool=_tool, tool_opts=_opts,
-                              pan=_pan, zoom=_zoom, doc=_doc,
-                              PerspectiveCropTool=PerspectiveCropTool)
-        draw_shapes_preview(painter, active_tool=_tool, tool_opts=_opts,
-                            fg_color=self.fg_color, pan=_pan, zoom=_zoom,
-                            ShapesTool=ShapesTool)
-        draw_gradient_preview(painter, active_tool=_tool, pan=_pan, zoom=_zoom,
-                              GradientTool=GradientTool)
-        draw_artboard_preview(painter, active_tool=_tool, pan=_pan, zoom=_zoom)
-        draw_clone_stamp(painter, active_tool=_tool, pan=_pan, zoom=_zoom)
-        draw_measurements(painter, active_tool=_tool, pan=_pan, zoom=_zoom,
-                          composite_cache=self._composite_cache,
-                          to_widget_fn=self.to_widget)
+        draw_tool_previews(painter, active_tool=_tool, tool_opts=_opts, fg_color=self.fg_color,
+                           pan=_pan, zoom=_zoom, doc=_doc, is_mouse_in=self._is_mouse_in,
+                           composite_cache=self._composite_cache, to_widget_fn=self.to_widget)
         try:
             self._text_session.paint(painter)
         except Exception:
             logger.exception("Text editor overlay paint failed")
+
+    def _active_layer_pixel(self, x: int, y: int) -> QColor:
+        """The active layer's own pixel at document point (x, y) (Info panel)."""
+        layer = self.document.get_active_layer()
+        if layer is None or layer.image is None:
+            return QColor(0, 0, 0, 0)
+        lx, ly = x - layer.offset.x(), y - layer.offset.y()
+        if 0 <= lx < layer.image.width() and 0 <= ly < layer.image.height():
+            return layer.image.pixelColor(lx, ly)
+        return QColor(0, 0, 0, 0)
 
     def _update_brush_region(self, pos: QPointF):
         mirror_x = bool(self.tool_opts.get("brush_mirror_x", False))
@@ -774,8 +755,7 @@ class CanvasWidget(QOpenGLWidget):
 
             if self._show_brush_cursor:
                 self._update_brush_region(ev.position())
-            elif isinstance(self.active_tool, (SelectTool, ShapesTool, RotateViewTool, GradientTool)) or (
-                    self.active_tool and hasattr(self.active_tool, "sub_drag_path")):
+            elif getattr(self.active_tool, "REPAINT_ON_HOVER", False):
                 self.update()
 
             if (ev.buttons() & Qt.MouseButton.LeftButton and self._stroke_in_progress and self.active_tool):
@@ -804,8 +784,6 @@ class CanvasWidget(QOpenGLWidget):
                 else:
                     self.update()
                 self.pixels_changed.emit()
-                
-                self._move_counter = getattr(self, "_move_counter", 0) + 1
             else:
                 if self.active_tool and hasattr(self.active_tool, "on_hover"):
                     try:
@@ -820,12 +798,7 @@ class CanvasWidget(QOpenGLWidget):
                 dp = self.to_doc(ev.position())
                 cx, cy = dp.x(), dp.y()
                 if 0 <= cx < self.document.width and 0 <= cy < self.document.height:
-                    layer = self.document.get_active_layer()
-                    if layer and 0 <= cx < layer.image.width() and 0 <= cy < layer.image.height():
-                        color = layer.image.pixelColor(cx, cy)
-                    else:
-                        color = QColor(0, 0, 0, 0)
-                    self.cursor_info.emit(cx, cy, color)
+                    self.cursor_info.emit(cx, cy, self._active_layer_pixel(cx, cy))
         except Exception:
             logger.exception("Critical mouse move error")
 
@@ -1012,7 +985,6 @@ class CanvasWidget(QOpenGLWidget):
                 self.setCursor(Qt.CursorShape.CrossCursor)
                 return
 
-            tool_name = getattr(self.active_tool, "name", "") if self.active_tool else ""
             # The temporary Alt-eyedropper keeps the brush's own blank-cursor
             # + circle-guide look instead of switching to a real CrossCursor:
             # some window managers only redraw the system cursor icon on the

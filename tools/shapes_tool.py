@@ -19,6 +19,7 @@ class ShapesTool(BaseTool):
     canvas. Once a shape layer exists, resizing/moving it is owned by a
     real scene object — see `ui/shape_scene_overlay.py::ShapeLayerItem` —
     not by hit-testing raw mouse coordinates against a stored rect here."""
+    REPAINT_ON_HOVER = True
 
     name = "Shapes"
     icon = "🔷"

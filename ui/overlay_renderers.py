@@ -10,6 +10,12 @@ from PyQt6.QtGui import (QPainter, QColor, QPen, QBrush, QPainterPath,
                          QPolygonF, QTransform)
 
 from core.app_logging import get_logger
+from tools.crop_tool import CropTool
+from tools.gradient_tool import GradientTool
+from tools.measure_tools import ColorSamplerTool, RulerTool
+from tools.perspective_crop_tool import PerspectiveCropTool
+from tools.select_tool import SelectTool
+from tools.shapes_tool import ShapesTool
 from ui import theme
 
 logger = get_logger("overlays")
@@ -150,7 +156,6 @@ def draw_symmetry_axes(painter, *, doc, pan, zoom, tool_opts, brush_tool):
     painter.save()
     painter.translate(pan)
     painter.scale(zoom, zoom)
-    pw = 1.0 / zoom
     pen1 = QPen(QColor(0, 0, 0, 100), 3)
     pen1.setCosmetic(True)
     pen2 = QPen(QColor(100, 200, 255, 180), 1)
@@ -211,7 +216,7 @@ def draw_selection(painter, *, doc, pan, zoom, march_offset):
     painter.restore()
 
 
-def draw_subtract_drag(painter, *, active_tool, pan, zoom, SelectTool):
+def draw_subtract_drag(painter, *, active_tool, pan, zoom):
     if active_tool and hasattr(active_tool, "sub_drag_path"):
         try:
             sub_p = active_tool.sub_drag_path()
@@ -345,7 +350,7 @@ def draw_brush_stroke(painter, *, active_tool, tool_opts, pan, zoom):
         logger.debug("Overlay draw failed", exc_info=True)
 
 
-def draw_crop_preview(painter, *, active_tool, tool_opts, pan, zoom, doc, CropTool):
+def draw_crop_preview(painter, *, active_tool, tool_opts, pan, zoom, doc):
     if not isinstance(active_tool, CropTool) or not active_tool.pending_rect:
         return
     try:
@@ -428,7 +433,7 @@ def draw_crop_preview(painter, *, active_tool, tool_opts, pan, zoom, doc, CropTo
         logger.debug("Overlay draw failed", exc_info=True)
 
 
-def draw_perspective_crop(painter, *, active_tool, tool_opts, pan, zoom, doc, PerspectiveCropTool):
+def draw_perspective_crop(painter, *, active_tool, tool_opts, pan, zoom, doc):
     if not isinstance(active_tool, PerspectiveCropTool):
         return
     try:
@@ -509,7 +514,7 @@ def draw_perspective_crop(painter, *, active_tool, tool_opts, pan, zoom, doc, Pe
         logger.debug("Overlay draw failed", exc_info=True)
 
 
-def draw_shapes_preview(painter, *, active_tool, tool_opts, fg_color, pan, zoom, ShapesTool):
+def draw_shapes_preview(painter, *, active_tool, tool_opts, fg_color, pan, zoom):
     """The new-shape creation drag, rendered through the same ShapeSpec as
     the finished layer (fill, stroke style, alignment, radii — everything
     the options bar sets), so what you drag is exactly what you get."""
@@ -540,7 +545,7 @@ def draw_shapes_preview(painter, *, active_tool, tool_opts, fg_color, pan, zoom,
         logger.debug("Overlay draw failed", exc_info=True)
 
 
-def draw_gradient_preview(painter, *, active_tool, pan, zoom, GradientTool):
+def draw_gradient_preview(painter, *, active_tool, pan, zoom):
     if not isinstance(active_tool, GradientTool):
         return
     try:
@@ -617,11 +622,6 @@ def draw_clone_stamp(painter, *, active_tool, pan, zoom):
 
 
 def draw_measurements(painter, *, active_tool, pan, zoom, composite_cache, to_widget_fn):
-    try:
-        from tools.measure_tools import ColorSamplerTool, RulerTool
-    except ImportError:
-        return
-
     if isinstance(active_tool, ColorSamplerTool):
         painter.save()
         painter.translate(pan)
@@ -694,3 +694,25 @@ def draw_measurements(painter, *, active_tool, pan, zoom, composite_cache, to_wi
                 painter.setPen(QColor(255, 255, 255))
                 painter.drawText(tr_rect, Qt.AlignmentFlag.AlignCenter, text)
             painter.restore()
+
+
+def draw_tool_previews(painter, *, active_tool, tool_opts, fg_color, pan, zoom, doc,
+                       is_mouse_in, composite_cache, to_widget_fn):
+    """What the active tool shows of its own work in progress (drag
+    rectangles, lasso, floating transform, stroke, crop, shape, gradient,
+    measurements), bottom to top. Each renderer draws only for a tool that
+    provides its preview."""
+    if active_tool is None:
+        return
+    view = dict(active_tool=active_tool, pan=pan, zoom=zoom)
+    draw_subtract_drag(painter, **view)
+    draw_lasso_preview(painter, **view, is_mouse_in=is_mouse_in)
+    draw_transform_preview(painter, **view)
+    draw_brush_stroke(painter, **view, tool_opts=tool_opts)
+    draw_crop_preview(painter, **view, tool_opts=tool_opts, doc=doc)
+    draw_perspective_crop(painter, **view, tool_opts=tool_opts, doc=doc)
+    draw_shapes_preview(painter, **view, tool_opts=tool_opts, fg_color=fg_color)
+    draw_gradient_preview(painter, **view)
+    draw_artboard_preview(painter, **view)
+    draw_clone_stamp(painter, **view)
+    draw_measurements(painter, **view, composite_cache=composite_cache, to_widget_fn=to_widget_fn)

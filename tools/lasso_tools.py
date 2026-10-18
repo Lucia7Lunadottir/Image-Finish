@@ -155,7 +155,7 @@ class MagneticLassoTool(PolygonalLassoTool):
             self.points.append(QPointF(snap_pos))
 
     def draw_overlays(self, painter, pw, doc):
-        if self.current_pos:
+        if self.current_pos and self.pointer_inside:
             from PyQt6.QtGui import QPen
             r = self._last_width
             painter.setPen(QPen(QColor(0, 0, 0, 150), pw))

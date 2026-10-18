@@ -12,6 +12,7 @@ class SelectTool(BaseTool):
       - Ctrl+Alt+drag             -> intersect
       - Drag INSIDE selection     -> move selection outline
     """
+    REPAINT_ON_HOVER = True
     SELECTION_CURSOR = True
     name = "Select"
     icon = "⬜"

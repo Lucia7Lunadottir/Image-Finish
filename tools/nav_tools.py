@@ -27,6 +27,7 @@ class ZoomTool(BaseTool):
 
 
 class RotateViewTool(BaseTool):
+    REPAINT_ON_HOVER = True
     name     = "RotateView"
     icon     = "🔄"
     shortcut = ""

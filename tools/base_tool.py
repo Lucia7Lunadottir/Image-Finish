@@ -32,6 +32,11 @@ class BaseTool(ABC):
     ALT_PICKS_SOURCE: bool = False
     # Brush outline always a plain hard circle, whatever the tip settings.
     PLAIN_BRUSH_CURSOR: bool = False
+    # Canvas repaints on every hover move (live preview following the cursor).
+    REPAINT_ON_HOVER: bool = False
+    # Set by the canvas before draw_overlays: False while the pointer is
+    # outside it, so previews that follow the cursor aren't left hanging.
+    pointer_inside: bool = True
 
     def on_press(self, pos: QPoint, doc, fg: QColor, bg: QColor, opts: dict):
         """Called on mouse button press."""

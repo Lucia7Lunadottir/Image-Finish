@@ -59,7 +59,7 @@ class BasePenTool(BaseTool):
         if not nodes: return
         
         path = self._build_path(wp)
-        if getattr(self, 'name', '') == 'Pen' and self.current_pos and not wp.get('closed') and getattr(self, 'dragging_idx', -1) == -1:
+        if getattr(self, 'name', '') == 'Pen' and self.current_pos and self.pointer_inside and not wp.get('closed') and getattr(self, 'dragging_idx', -1) == -1:
             n0 = nodes[-1]
             path.cubicTo(n0['c2'], self.current_pos, self.current_pos)
 

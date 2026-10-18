@@ -243,6 +243,7 @@ class QuickSelectionTool(AbstractSelectionTool):
 
 class ObjectSelectionTool(AbstractSelectionTool):
     """Object Selection tool (bounding box)."""
+    REPAINT_ON_HOVER = True
     SELECTION_CURSOR = True
     name = "ObjectSelection"
     icon_name = "box-selection.svg"
