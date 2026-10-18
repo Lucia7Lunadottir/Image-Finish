@@ -109,7 +109,7 @@ class ShapeActionsMixin:
             return
         if layer is None or not hasattr(layer, "has_vector_geometry") or not layer.has_vector_geometry():
             return
-        page = self._opts_bar._pages.get("Shapes") if hasattr(self, "_opts_bar") else None
+        page = self._opts_bar.page_for("Shapes") if hasattr(self, "_opts_bar") else None
         if page is None or not hasattr(page, "update_from_opts"):
             return
         a = layer.appearance()

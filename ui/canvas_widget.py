@@ -722,10 +722,10 @@ class CanvasWidget(QOpenGLWidget):
         """Undo snapshot taken before a stroke (pixels are shared
         copy-on-write, see Document.snapshot_layers)."""
         from core.history import HistoryState, clone_work_path
-        from ui.toolbar import ToolBar
+        from ui.tool_catalog import tool_title
         doc = self.document
         return HistoryState(
-            description=ToolBar.tool_title(tool_name),
+            description=tool_title(tool_name),
             layers_snapshot=doc.snapshot_layers(),
             active_layer_index=doc.active_layer_index,
             doc_width=doc.width,
@@ -883,8 +883,8 @@ class CanvasWidget(QOpenGLWidget):
     def _report_tool_failure(self, ms: int):
         win = self.window()
         if hasattr(win, "_status"):
-            from ui.toolbar import ToolBar
-            win._status.showMessage(tr("err.tool_failed", tool=ToolBar.tool_title(getattr(self.active_tool, "name", ""))), ms)
+            from ui.tool_catalog import tool_title
+            win._status.showMessage(tr("err.tool_failed", tool=tool_title(getattr(self.active_tool, "name", ""))), ms)
 
     def enterEvent(self, ev):
         self._is_mouse_in = True

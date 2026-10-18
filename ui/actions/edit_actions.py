@@ -38,14 +38,7 @@ class EditActionsMixin:
         if session is not None and session.is_active():
             getattr(session, which)()
             return True
-        tool = self._canvas.active_tool
-        if getattr(tool, "is_transforming", False):
-            tool.cancel_transform(self._document)
-            self._canvas_refresh()
-            if hasattr(self, "_opts_bar"):
-                self._opts_bar.update_tool_state(None)
-            return True
-        return False
+        return self._cancel_transform()
 
     def _restore_history_state(self, state):
         """Put the document back to a history snapshot."""
@@ -80,9 +73,9 @@ class EditActionsMixin:
             return
             
         tool = self._canvas.active_tool
-        if self._active_tool_name == "Move" and hasattr(tool, "is_transforming") and tool.is_transforming:
-            is_float = getattr(tool, "_is_floating", False)
-            tool.cancel_transform(self._document)
+        if getattr(tool, "is_transforming", False):
+            is_float = tool.is_floating
+            self._cancel_transform()
             self._push_history(tr("history.clear_layer"))
             if is_float:
                 sel = self._document.selection
@@ -367,8 +360,7 @@ class EditActionsMixin:
         self._refresh_layers()
 
     def _cut(self):
-        if hasattr(self, "_commit_move_transform"):
-            self._commit_move_transform()
+        self._commit_transforms()
         self._copy()
         layer = self._document and self._document.get_active_layer()
         if not layer:
@@ -385,8 +377,7 @@ class EditActionsMixin:
             self._canvas_refresh()
 
     def _copy(self):
-        if hasattr(self, "_commit_move_transform"):
-            self._commit_move_transform()
+        self._commit_transforms()
         layer = self._document and self._document.get_active_layer()
         if not layer:
             return
@@ -492,22 +483,25 @@ class EditActionsMixin:
         p.end()
         self._canvas_refresh()
 
-    def _make_history_state(self, description: str, modified_index: int | None = None) -> HistoryState:
-        """Snapshot the current document. Pass `modified_index` when the
-        operation touches a single layer: unmodified layers then share
-        their QImage with the live document, which keeps undo memory flat."""
+    def _make_history_state(self, description: str, modified_index: int | None = None,
+                            doc=None) -> HistoryState:
+        """Snapshot the current document (or `doc`). Pass `modified_index`
+        when the operation touches a single layer: unmodified layers then
+        share their QImage with the live document, which keeps undo memory
+        flat."""
         from core.history import clone_work_path
+        doc = doc if doc is not None else self._document
         return HistoryState(
             description=description,
-            layers_snapshot=self._document.snapshot_layers(modified_index=modified_index),
-            active_layer_index=self._document.active_layer_index,
-            doc_width=self._document.width,
-            doc_height=self._document.height,
-            selection_snapshot=QPainterPath(self._document.selection) if self._document.selection else None,
-            work_path_snapshot=clone_work_path(getattr(self._document, "work_path", None)),
-            alpha_channels_snapshot=list(getattr(self._document, "alpha_channels", [])),
-            color_mode_snapshot=getattr(self._document, "color_mode", "RGB"),
-            bit_depth_snapshot=getattr(self._document, "bit_depth", 8)
+            layers_snapshot=doc.snapshot_layers(modified_index=modified_index),
+            active_layer_index=doc.active_layer_index,
+            doc_width=doc.width,
+            doc_height=doc.height,
+            selection_snapshot=QPainterPath(doc.selection) if doc.selection else None,
+            work_path_snapshot=clone_work_path(getattr(doc, "work_path", None)),
+            alpha_channels_snapshot=list(getattr(doc, "alpha_channels", [])),
+            color_mode_snapshot=getattr(doc, "color_mode", "RGB"),
+            bit_depth_snapshot=getattr(doc, "bit_depth", 8)
         )
 
     def _push_history(self, description: str, modified_index: int | None = None):
@@ -554,7 +548,7 @@ class EditActionsMixin:
         os.makedirs(target_dir, exist_ok=True)
         path = os.path.join(target_dir, f"{name}.png")
         brush_img.save(path)
-        brush_page = self._opts_bar._pages.get("Brush")
+        brush_page = self._opts_bar.page_for("Brush")
         if hasattr(brush_page, "add_custom_brush"): brush_page.add_custom_brush(path, name)
 
     @require_document
@@ -570,7 +564,7 @@ class EditActionsMixin:
         os.makedirs(target_dir, exist_ok=True)
         path = os.path.join(target_dir, f"{name}.png")
         img.save(path)
-        pat_page = self._opts_bar._pages.get("PatternStamp")
+        pat_page = self._opts_bar.page_for("PatternStamp")
         if hasattr(pat_page, "add_custom_pattern"): pat_page.add_custom_pattern(path, name)
 
     @require_document
@@ -590,5 +584,5 @@ class EditActionsMixin:
         path = os.path.join(target_dir, f"{name}.json")
         data = [{"type": int(e.type.value) if hasattr(e.type, 'value') else int(e.type), "x": e.x, "y": e.y} for i in range(doc.selection.elementCount()) for e in [doc.selection.elementAt(i)]]
         with open(path, "w") as f: json.dump(data, f)
-        shapes_page = self._opts_bar._pages.get("Shapes")
+        shapes_page = self._opts_bar.page_for("Shapes")
         if hasattr(shapes_page, "add_custom_shape"): shapes_page.add_custom_shape(path, name)

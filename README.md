@@ -81,9 +81,10 @@ linuxshop/
 ### Add a new tool
 1. Create `tools/my_tool.py` extending `BaseTool`
 2. Implement `on_press`, `on_move`, `on_release`
-3. Add to `_build_tool_registry()` in `ui/main_window.py`
-4. Add a button entry in `ui/toolbar.py`
-5. Optionally add an options page in `ui/tool_options_bar.py`
+3. Add one `ToolSpec` line to `TOOL_GROUPS` in `ui/tool_catalog.py`
+   (class, icon, shortcut, title key, options page) — the window, toolbar
+   and options bar all read it from there
+4. Add the `tool.<key>` string to every file in `locales/`
 
 ### Add a new filter / effect
 Add a menu action in `MainWindow._build_menu_bar()` and implement it

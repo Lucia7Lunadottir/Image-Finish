@@ -192,6 +192,9 @@ class _BaseTypeTool(BaseTool):
         self._drag_start = None
         self._drag_end = None
 
+    def attach(self, window):
+        self._parent_widget = window
+
     def _session(self):
         canvas = getattr(self._parent_widget, "_canvas", None)
         return getattr(canvas, "_text_session", None) if canvas is not None else None
@@ -325,6 +328,9 @@ class _BaseTypeMaskTool(BaseTool):
 
     def __init__(self):
         self._parent_widget = None
+
+    def attach(self, window):
+        self._parent_widget = window
 
     def on_press(self, pos, doc, fg, bg, opts):
         dlg = _TextDialog("", opts, None, self._parent_widget)

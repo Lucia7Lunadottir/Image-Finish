@@ -45,6 +45,10 @@ class BaseTool(ABC):
         """Called on mouse button release."""
         pass
 
+    def attach(self, window) -> None:
+        """Called once by the main window that owns the tool (tools that
+        open dialogs or reach the canvas keep it)."""
+
     def cursor(self) -> Qt.CursorShape:
         return Qt.CursorShape.CrossCursor
 

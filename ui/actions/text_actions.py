@@ -106,7 +106,7 @@ class TextActionsMixin:
         if canvas is None:
             return
         canvas.tool_opts.update(opts)
-        page = self._opts_bar._pages.get("Text") if hasattr(self, "_opts_bar") else None
+        page = self._opts_bar.page_for("Text") if hasattr(self, "_opts_bar") else None
         if page is not None and hasattr(page, "update_from_opts"):
             page.update_from_opts(canvas.tool_opts)
         if hasattr(page, "set_editing"):
@@ -123,7 +123,7 @@ class TextActionsMixin:
             self._sync_text_panels(session.options_at_cursor())
 
     def _on_text_session_finished(self):
-        page = self._opts_bar._pages.get("Text") if hasattr(self, "_opts_bar") else None
+        page = self._opts_bar.page_for("Text") if hasattr(self, "_opts_bar") else None
         if page is not None and hasattr(page, "set_editing"):
             page.set_editing(False)
         self._refresh_layers()

@@ -206,7 +206,7 @@ def test_clicking_a_shapes_body_also_syncs_the_options_bar(main_window):
     item1.mousePressEvent(_FakeMouseEvent(QPointF(15, 15)))
     item1.mouseReleaseEvent(_FakeMouseEvent(QPointF(15, 15)))
 
-    page = w._opts_bar._pages["Shapes"]
+    page = w._opts_bar.page_for("Shapes")
     assert page._radius_sps[0].value() == layer1.shape_data["corner_radius"]
     assert page._radius_sps[0].value() != 17  # not left over from layer2
 

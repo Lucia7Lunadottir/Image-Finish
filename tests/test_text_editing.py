@@ -293,7 +293,7 @@ def test_panels_follow_the_caret(main_window):
     session.anchor, session.cursor = 6, 10
     w._on_opt_changed("font_bold", True)
     session._set_cursor(8, False)
-    page = w._opts_bar._pages["Text"]
+    page = w._opts_bar.page_for("Text")
     assert page._btn_b.isChecked()
     session._set_cursor(2, False)
     assert not page._btn_b.isChecked()
@@ -472,7 +472,7 @@ def test_paragraph_settings_are_per_paragraph(main_window):
     session.anchor, session.cursor = 0, len(session.data.text)
     w._on_opt_changed("para_space_before", 12)
     assert all(p.space_before == 12 for p in session.data.paragraphs)
-    page = w._opts_bar._pages["Text"]
+    page = w._opts_bar.page_for("Text")
     session._set_cursor(len("first\nsec"), False)
     assert w._canvas.tool_opts["text_align"] == "right"     # panels follow the caret's paragraph
 

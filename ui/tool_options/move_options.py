@@ -1,13 +1,20 @@
-from PyQt6.QtWidgets import QPushButton, QLabel, QHBoxLayout, QWidget, QDoubleSpinBox
+from PyQt6.QtWidgets import QPushButton, QLabel, QHBoxLayout, QWidget, QDoubleSpinBox, QCheckBox
 from .base_options import BaseOptions
 from core.locale import tr
 
 from ui import theme
 
 class MoveOptions(BaseOptions):
-    def __init__(self, hint_key="opts.move_hint", parent=None):
+    """Hint + Apply/Cancel for the transform tools; `numeric` (Move) adds
+    Auto-select, the align buttons and the numeric Transform fields."""
+
+    def __init__(self, hint_key="opts.move_hint", numeric=False, parent=None):
         super().__init__(parent)
         self._hint_key = hint_key
+        if numeric:
+            self._auto_cb = QCheckBox(tr("opts.move.auto_select"))
+            self._auto_cb.stateChanged.connect(lambda v: self.option_changed.emit("move_auto_select", bool(v)))
+            self.layout.addWidget(self._auto_cb)
         self._hint_lbl = QLabel(tr(self._hint_key))
         theme.apply_style(self._hint_lbl, lambda: f"color: {theme.SUBTEXT}; font-size: 12px; font-weight: bold;")
         self.layout.addWidget(self._hint_lbl)
@@ -15,7 +22,7 @@ class MoveOptions(BaseOptions):
         self.layout.addSpacing(20)
         self._updating = False
 
-        if "move_hint" in hint_key:
+        if numeric:
             self._align_widget = QWidget()
             align_layout = QHBoxLayout(self._align_widget)
             align_layout.setContentsMargins(0, 0, 0, 0)
@@ -127,6 +134,8 @@ class MoveOptions(BaseOptions):
         self._apply_btn.setText("✔ " + tr("opts.apply"))
         self._cancel_btn.setText("✖ " + tr("opts.cancel"))
         
+        if hasattr(self, "_auto_cb"):
+            self._auto_cb.setText(tr("opts.move.auto_select"))
         if hasattr(self, "_btn_al"):
             self._btn_al.setToolTip(tr("opts.align.left"))
             self._btn_ac.setToolTip(tr("opts.align.center_h"))

@@ -371,7 +371,7 @@ class LayerActionsMixin:
         self._canvas_refresh()
 
     def _on_layer_selected_wrap(self, index: int):
-        self._commit_move_transform()
+        self._commit_transforms()
         self._commit_text_edit_if_active()
         if hasattr(self, "_on_layer_selected"):
             self._on_layer_selected(index)

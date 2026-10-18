@@ -352,7 +352,7 @@ def test_selecting_a_pen_layer_syncs_its_stroke_settings(main_window):
                         "stroke_width": 7, "stroke_align": "inside"}
     w._activate_tool("Shapes")
     w._sync_shape_options_from_layer(layer)
-    page = w._opts_bar._pages["Shapes"]
+    page = w._opts_bar.page_for("Shapes")
     assert page._stroke_sp.value() == 7
     assert page._stroke_align.value() == "inside"
 

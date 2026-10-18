@@ -7,6 +7,8 @@ from ui.canvas_widget       import CanvasWidget
 from ui.document_controller import DocumentController
 from ui.toolbar          import ToolBar
 from ui.tool_options_bar import ToolOptionsBar
+from ui.tool_catalog import build_tools, tool_title
+from tools.transform_base import TransformTool
 
 from ui.actions.file_actions       import FileActionsMixin
 from ui.actions.edit_actions       import EditActionsMixin
@@ -26,100 +28,6 @@ from core.app_logging import get_logger
 from core.locale import tr
 
 logger = get_logger("main_window")
-
-
-# ── Tool registry ──────────────────────────────────────────────────────────────
-def _build_tool_registry(text_parent):
-    from tools.brush_tool   import (BrushTool, EraserTool, CloneStampTool, PatternStampTool,
-                                    PencilTool, ColorReplacementTool, MixerBrushTool, HistoryBrushTool)
-    from tools.fill_tool    import FillTool
-    from tools.effect_tools import BlurTool, SharpenTool, SmudgeTool, DodgeTool, BurnTool, SpongeTool
-    from tools.other_tools  import (SelectTool, MoveTool, EyedropperTool,
-                                    EllipticalSelectTool,
-                                    CropTool, TextTool, ShapesTool,
-                                    VerticalTypeTool, HorizontalTypeMaskTool,
-                                    VerticalTypeMaskTool,
-                                    HandTool, ZoomTool, RotateViewTool,
-                                    GradientTool, PerspectiveCropTool)
-    from tools.lasso_tools import LassoTool, PolygonalLassoTool, MagneticLassoTool
-    from tools.measure_tools import ColorSamplerTool, RulerTool
-    from tools.advanced_erasers import MagicEraserTool, BackgroundEraserTool
-    from tools.magic_wand_tool import MagicWandTool, QuickSelectionTool, ObjectSelectionTool
-    from tools.artboard_tool import ArtboardTool
-    from tools.warp_tool import WarpTool
-    from tools.puppet_warp_tool import PuppetWarpTool
-    from tools.perspective_warp_tool import PerspectiveWarpTool
-    from tools.slice_tool import SliceTool
-    from tools.patch_tool import PatchTool, SpotHealingTool, HealingBrushTool, RedEyeTool
-    from tools.pen_tool import (PenTool, FreeformPenTool, CurvaturePenTool, 
-                                AddAnchorPointTool, DeleteAnchorPointTool, ConvertPointTool,
-                                PathSelectionTool, DirectSelectionTool)
-    from tools.frame_tool import FrameTool
-
-    text = TextTool();  text._parent_widget  = text_parent
-    textv = VerticalTypeTool(); textv._parent_widget = text_parent
-    texthm = HorizontalTypeMaskTool(); texthm._parent_widget = text_parent
-    textvm = VerticalTypeMaskTool();   textvm._parent_widget = text_parent
-    return {
-        "Brush":      BrushTool(),
-        "Eraser":           EraserTool(),
-        "BackgroundEraser": BackgroundEraserTool(),
-        "MagicEraser":      MagicEraserTool(),
-        "CloneStamp":       CloneStampTool(),
-        "PatternStamp":     PatternStampTool(),
-        "Pencil":           PencilTool(),
-        "ColorReplacement": ColorReplacementTool(),
-        "MixerBrush":       MixerBrushTool(),
-        "HistoryBrush":     HistoryBrushTool(),
-        "Fill":       FillTool(),
-        "Blur":       BlurTool(),
-        "Sharpen":    SharpenTool(),
-        "Smudge":     SmudgeTool(),
-        "Dodge":      DodgeTool(),
-        "Burn":       BurnTool(),
-        "Sponge":     SpongeTool(),
-        "Select":     SelectTool(),
-        "EllipseSelect": EllipticalSelectTool(),
-        "Move":       MoveTool(),
-        "Warp":       WarpTool(),
-        "PuppetWarp": PuppetWarpTool(),
-        "PerspectiveWarp": PerspectiveWarpTool(),
-        "Artboard":   ArtboardTool(),
-        "Eyedropper": EyedropperTool(),
-        "ColorSampler": ColorSamplerTool(),
-        "Ruler":      RulerTool(),
-        "Crop":       CropTool(),
-        "Perspective Crop": PerspectiveCropTool(),
-        "Slice":      SliceTool(),
-        "SpotHealing":SpotHealingTool(),
-        "HealingBrush":HealingBrushTool(),
-        "Patch":      PatchTool(),
-        "RedEye":     RedEyeTool(),
-        "Text":       text,
-        "Pen":        PenTool(),
-        "FreeformPen":FreeformPenTool(),
-        "CurvaturePen":CurvaturePenTool(),
-        "AddAnchor":  AddAnchorPointTool(),
-        "DeleteAnchor":DeleteAnchorPointTool(),
-        "ConvertPoint":ConvertPointTool(),
-        "PathSelection":PathSelectionTool(),
-        "DirectSelection":DirectSelectionTool(),
-        "Frame":      FrameTool(),
-        "TextV":      textv,
-        "TextHMask":  texthm,
-        "TextVMask":  textvm,
-        "Shapes":     ShapesTool(),
-        "Gradient":   GradientTool(),
-        "Hand":       HandTool(),
-        "Zoom":       ZoomTool(),
-        "RotateView": RotateViewTool(),
-        "Lasso":          LassoTool(),
-        "PolygonalLasso": PolygonalLassoTool(),
-        "MagneticLasso":  MagneticLassoTool(),
-        "MagicWand": MagicWandTool(),
-        "QuickSelection": QuickSelectionTool(),
-        "ObjectSelection": ObjectSelectionTool(),
-    }
 
 
 # ── Main window ────────────────────────────────────────────────────────────────
@@ -182,7 +90,7 @@ class MainWindow(QMainWindow,
         self._load_recent_files()
 
         self.setAcceptDrops(True)
-        self._tools    = _build_tool_registry(self)
+        self._tools    = build_tools(self)
         self._active_tool_name = "Brush"
 
         self._all_acts:  list[tuple[str, QAction]] = []
@@ -442,7 +350,7 @@ class MainWindow(QMainWindow,
         resync_timer.timeout.connect(resync_timer.deleteLater)
         resync_timer.start(0)
         # Sync tool options bar with canvas defaults
-        page = self._opts_bar._pages.get(self._active_tool_name)
+        page = self._opts_bar.page_for(self._active_tool_name)
         if page and hasattr(page, "update_from_opts"):
             page.update_from_opts(canvas.tool_opts)
         return canvas
@@ -517,58 +425,45 @@ class MainWindow(QMainWindow,
             self._brushes_panel.refresh(self._canvas)
 
     # ================================================================= Tools
-    def _commit_move_transform(self):
-        for t_name in ["Move", "Warp", "PuppetWarp", "PerspectiveWarp"]:
-            tool = self._tools.get(t_name)
-            if tool and getattr(tool, "is_transforming", False):
-                # Temporarily restore original layer and selection state for a clean snapshot
-                layer = self._document.get_active_layer()
-                tmp_img, tmp_off, tmp_sel = None, None, None
-                kind_geometry = False
-                tmp_kids = []
-                if layer and hasattr(tool, "_layer_backup") and tool._layer_backup is not None:
-                    for kid_data in getattr(tool, "_linked_children", []):
-                        kid = kid_data["layer"]
-                        tmp_kids.append((kid, QPoint(kid.offset)))
-                        kid.offset = kid_data["backup_offset"]
-                        
-                    tmp_img = layer.image
-                    tmp_off = layer.offset
-                    tmp_sel = self._document.selection
-                    # Per-kind geometry the drag/Transform panel already
-                    # moved live (artboard rect, frame rect): back to the
-                    # original for the snapshot, re-applied right after.
-                    kind_geometry = t_name == "Move" and getattr(tool, "_original_rect", None) is not None
-                    if kind_geometry:
-                        layer.move_tool_cancel_extra(tool._original_rect)
-                    layer.image = tool._layer_backup
-                    layer.offset = tool._offset_backup
-                    if getattr(tool, "_sel_origin", None):
-                        self._document.selection = tool._sel_origin
+    def _commit_transforms(self):
+        """Bake every open transform session (Move/Warp/...), one history
+        step each, into the document it was started on."""
+        for tool in self._tools.values():
+            if isinstance(tool, TransformTool) and tool.is_transforming:
+                self._commit_transform(tool)
 
-                pre_state = self._make_history_state(tr("tool.warp") if t_name == "Warp" else tr("tool.move"))
-                
-                # Restore the "cut" version back for the final compositing
-                if layer and tmp_img is not None:
-                    layer.image = tmp_img
-                    layer.offset = tmp_off
-                    self._document.selection = tmp_sel
-                    if kind_geometry:
-                        layer.move_tool_set_params_extra(tool._total_transform, tool._original_rect)
-                        
-                for kid, old_off in tmp_kids:
-                    kid.offset = old_off
+    def _commit_transform(self, tool: TransformTool):
+        doc = tool.document
+        canvas = next((self._doc_tabs.widget(i) for i in range(self._doc_tabs.count())
+                       if self._doc_tabs.widget(i).document is doc), None)
+        if canvas is None:            # its tab was closed meanwhile
+            tool.cancel_transform(doc)
+            return
+        with tool.original_state(doc):
+            pre_state = self._make_history_state(tool_title(tool.name), doc=doc)
+        old_size = (doc.width, doc.height)
+        tool.apply_transform(doc)
+        canvas.history.push(pre_state)
+        if (doc.width, doc.height) != old_size:
+            canvas.reset_zoom()
+        canvas.update()
+        if canvas is self._canvas:
+            self._canvas_refresh()
 
-                old_w, old_h = self._document.width, self._document.height
-                tool.apply_transform(self._document)
-                self._history.push(pre_state)
-                if self._document.width != old_w or self._document.height != old_h:
-                    self._canvas.reset_zoom()
-                self._canvas_refresh()
+    def _cancel_transform(self) -> bool:
+        """Esc / Cancel / Ctrl+Z during a transform: put everything back.
+        False when the active tool has no transform open."""
+        tool = self._canvas.active_tool if self._canvas else None
+        if not (isinstance(tool, TransformTool) and tool.is_transforming):
+            return False
+        tool.cancel_transform(tool.document)
+        self._canvas_refresh()
+        self._opts_bar.update_tool_state(None)
+        return True
 
     def _activate_tool(self, name: str):
-        if self._active_tool_name in ("Move", "Warp") and name != self._active_tool_name:
-            self._commit_move_transform()
+        if name != self._active_tool_name:
+            self._commit_transforms()
 
         if name != self._active_tool_name and hasattr(self, "_doc_tabs"):
             # Tool buttons deliberately don't take keyboard focus (so
@@ -603,7 +498,7 @@ class MainWindow(QMainWindow,
         if hasattr(self, "_doc_tabs") and self._doc_tabs.count() > 0:
             canvas = self._doc_tabs.currentWidget()
             if canvas and hasattr(canvas, "tool_opts"):
-                page = self._opts_bar._pages.get(name)
+                page = self._opts_bar.page_for(name)
                 if page and hasattr(page, "update_from_opts"):
                     page.update_from_opts(canvas.tool_opts)
         self._opts_bar.update_tool_state(None)
@@ -724,14 +619,10 @@ class MainWindow(QMainWindow,
                 self._apply_crop()
             elif self._active_tool_name == "Perspective Crop":
                 self._apply_perspective_crop()
-            elif self._active_tool_name in ("Move", "Warp", "PuppetWarp", "PerspectiveWarp"):
-                self._commit_move_transform()
+            else:
+                self._commit_transforms()
         elif e.key() == Qt.Key.Key_Escape:
-            if self._active_tool_name in ("Move", "Warp", "PuppetWarp", "PerspectiveWarp"):
-                tool = self._canvas.active_tool
-                if hasattr(tool, "is_transforming") and tool.is_transforming:
-                    tool.cancel_transform(self._document)
-                    self._canvas_refresh()
+            self._cancel_transform()
         super().keyPressEvent(e)
         
     def dragEnterEvent(self, ev):

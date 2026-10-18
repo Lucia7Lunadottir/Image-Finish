@@ -51,14 +51,10 @@ class OptionActionsMixin:
             self._canvas_refresh()
 
     def _opt_cmd_move_apply(self, _value):
-        self._commit_move_transform()
+        self._commit_transforms()
 
     def _opt_cmd_move_cancel(self, _value):
-        tool = self._canvas.active_tool
-        if getattr(tool, "is_transforming", False):
-            tool.cancel_transform(self._document)
-            self._canvas_refresh()
-            self._opts_bar.update_tool_state(None)
+        self._cancel_transform()
 
     def _opt_cmd_pen_action(self, action_name):
         tool = self._canvas.active_tool
@@ -121,7 +117,7 @@ class OptionActionsMixin:
             self._character_panel.refresh(self._canvas)
         if hasattr(self, "_paragraph_panel"):
             self._paragraph_panel.refresh(self._canvas)
-        text_page = self._opts_bar._pages.get("Text") if hasattr(self, "_opts_bar") else None
+        text_page = self._opts_bar.page_for("Text") if hasattr(self, "_opts_bar") else None
         if text_page is not None and hasattr(text_page, "update_from_opts"):
             text_page.update_from_opts(canvas.tool_opts)
         # tool_opts is stored above, but nothing here ever asked the canvas

@@ -188,8 +188,8 @@ def test_brush_cursor_overlay_paints(qapp, tool_name, opts):
     from PyQt6.QtCore import QPointF
     from PyQt6.QtGui import QImage, QPainter
     from ui.canvas_cursors import BrushCursorOverlay
-    from ui.main_window import _build_tool_registry
-    tool = _build_tool_registry(None)[tool_name]
+    from ui.tool_catalog import build_tools
+    tool = build_tools(None)[tool_name]
     img = QImage(200, 200, QImage.Format.Format_ARGB32_Premultiplied)
     img.fill(0)
     p = QPainter(img)

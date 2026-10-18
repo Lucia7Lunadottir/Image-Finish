@@ -113,7 +113,7 @@ def test_undo_of_a_frame_move_restores_its_rect(main_window, mocked_dialogs):
     tool.on_move(QPoint(55, 30), doc, QColor(), QColor(), opts)
     r = frame.frame_data["rect"]
     assert (round(r.x()), round(r.y())) == (35, 15)          # follows the drag live
-    w._commit_move_transform()
+    w._commit_transforms()
     r = doc.layers[0].frame_data["rect"]
     assert (round(r.x()), round(r.y())) == (35, 15)
     w._undo()
@@ -133,7 +133,7 @@ def test_artboard_move_undo_still_restores_its_rect(main_window, mocked_dialogs)
     opts = {"_zoom": 1.0, "_ctrl": True}
     tool.on_press(QPoint(50, 40), doc, QColor(), QColor(), opts)
     tool.on_move(QPoint(60, 40), doc, QColor(), QColor(), opts)
-    w._commit_move_transform()
+    w._commit_transforms()
     w._undo()
     restored = next(l for l in w._document.layers if isinstance(l, ArtboardLayer))
     assert restored.artboard_rect == QRect(20, 20, 60, 40)
@@ -158,7 +158,7 @@ def test_undo_of_a_numeric_frame_transform_restores_its_rect(main_window, mocked
     p = dict(tool.get_transform_params())
     p["x"] += 30
     tool.set_transform_params(doc, p)
-    w._commit_move_transform()
+    w._commit_transforms()
     assert round(w._document.layers[0].frame_data["rect"].x()) == 50
     w._undo()
     assert round(w._document.layers[0].frame_data["rect"].x()) == 20

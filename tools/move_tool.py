@@ -1,41 +1,82 @@
 import math
 from PyQt6.QtCore import QPoint, QPointF, QRectF, Qt
 from PyQt6.QtGui import QColor, QPainter, QImage, QTransform, QPen, QPolygonF
-from tools.base_tool import BaseTool
-from core.layer import TextLayer
+from tools.transform_base import TransformTool, bake_transform
 
 
-class MoveTool(BaseTool):
+class MoveTool(TransformTool):
+    """Free transform: move, scale, rotate, skew/distort (Ctrl) by the
+    bounding-box handles, or numerically from the options bar."""
     name = "Move"
     icon = "✋"
     shortcut = "V"
     modifies_canvas_on_move = True
+    # Moves shapes, text and groups as they are — no rasterizing.
+    PIXEL_OP = None
+    AUTO_SELECT = True
+    MOVES_CONTAINERS = True
 
     def __init__(self):
-        super().__init__()
-        self.is_transforming = False
-        self._target_layer = None
-        self._mode = None
         self._hover_mode = None
+        super().__init__()
+
+    def _clear_tool_state(self):
+        self._mode = None
         self._start_pos = None
-        
-        self._layer_backup = None
-        self._offset_backup = None
-        
-        self._original_rect = None
-        self._original_img = None
-        self._original_offset = None
-        self._sel_origin = None
-        
+        self._original_rect = None     # per-kind geometry rect (artboard, frame)
         self._total_transform = QTransform()
         self._base_transform = QTransform()
-        self._bounds = QRectF()
-        self._is_floating = False
-        self._is_text_layer = False
-        self._linked_children = []
         self._start_poly = []
         self._smart_guides = []
         self._snap_targets = []
+
+    def _reset_state(self):
+        if getattr(self, "_target_layer", None) is not None:
+            self._target_layer._live_edit_hidden = False
+        super()._reset_state()
+
+    def _begin(self, layer, doc) -> bool:
+        # VectorLayer renders shape_data/path_style live, regardless of what's
+        # in .image, so hiding .image (_hide_layer) doesn't hide those layers;
+        # the layer is told to contribute nothing to the composite for the
+        # duration of the drag instead (_reset_state clears it).
+        layer._live_edit_hidden = True
+        if getattr(doc, "snap_to_layers", True):
+            self._snap_targets = [r for r in (l.snap_rect() for l in doc.layers
+                                              if l is not layer and l.visible)
+                                  if not r.isEmpty()]
+        if layer.is_container:
+            self._linked_children = [{"layer": kid, "backup_offset": QPoint(kid.offset)}
+                                     for kid in doc.descendants(layer)]
+        link_id = getattr(layer, "link_id", None)
+        if link_id:
+            for l in doc.layers:
+                if (l is not layer and getattr(l, "link_id", None) == link_id
+                        and not any(k["layer"] is l for k in self._linked_children)):
+                    self._linked_children.append({"layer": l, "backup_offset": QPoint(l.offset)})
+        return super()._begin(layer, doc)
+
+    def _lift_layer(self, layer, doc):
+        if layer.is_container:
+            self._bounds = layer.move_tool_container_bounds(self._linked_children)
+            self._original_img = QImage(1, 1, QImage.Format.Format_ARGB32)
+        else:
+            self._bounds = layer.move_tool_bounds()
+            self._original_img = layer.image.copy()
+            self._hide_layer(layer)
+        self._original_rect = self._bounds.toRect()
+        self._original_offset = QPoint(layer.offset)
+
+    def _restore_extra(self, layer):
+        if self._original_rect is not None:
+            layer.move_tool_cancel_extra(self._original_rect)
+
+    def _reapply_extra(self, layer):
+        if self._original_rect is not None:
+            layer.move_tool_set_params_extra(self._total_transform, self._original_rect)
+
+    def _after_floating_bake(self, doc):
+        pass   # the selection already follows the piece; it stays
 
     def _get_handle_hit(self, pos: QPointF, opts: dict):
         if self._bounds.isEmpty(): return 'move'
@@ -80,89 +121,12 @@ class MoveTool(BaseTool):
         return 'move'
 
     def on_press(self, pos, doc, fg, bg, opts):
-        if not self.is_transforming and opts.get("move_auto_select", False):
-            for i in range(len(doc.layers) - 1, -1, -1):
-                l = doc.layers[i]
-                if l.visible and not l.locked and l.hit_test(pos):
-                    doc.active_layer_index = i
-                    break
-                            
+        self._auto_select(pos, doc, opts)
         layer = doc.get_active_layer()
-        if not layer or layer.locked: return
-        
-        sel = doc.selection
-        has_sel = sel and not sel.isEmpty()
-        if getattr(layer, "lock_position", False) and not has_sel: return
-        if getattr(layer, "lock_pixels", False) and has_sel: return
-
-        if not self.is_transforming:
-            self.is_transforming = True
-            self._target_layer = layer
-            # VectorLayer._get_source_image renders shape_data/path_style
-            # live now, straight from the layer, regardless of what's in
-            # .image — so the old "swap .image for a 1x1 blank to hide the
-            # original while floating_preview() shows the live drag on top"
-            # trick (below) no longer hides anything for these layers. Tell
-            # the layer directly to contribute nothing to the composite for
-            # the duration of the drag instead; _reset_state() clears it.
-            layer._live_edit_hidden = True
-            self._layer_backup = layer.image.copy()
-            self._offset_backup = QPoint(layer.offset)
-            self._total_transform = QTransform()
-            self._linked_children = []
-            
-            self._snap_targets = []
-            if getattr(doc, "snap_to_layers", True):
-                for l in doc.layers:
-                    if l is layer or not l.visible: continue
-                    lr = l.snap_rect()
-                    if not lr.isEmpty():
-                        self._snap_targets.append(lr)
-            
-            if layer.is_container:
-                for kid in doc.descendants(layer):
-                    self._linked_children.append({"layer": kid, "backup_offset": QPoint(kid.offset)})
-
-            link_id = getattr(layer, "link_id", None)
-            if link_id:
-                for l in doc.layers:
-                    if getattr(l, "link_id", None) == link_id and l != layer:
-                        if not any(k["layer"] == l for k in self._linked_children):
-                            self._linked_children.append({"layer": l, "backup_offset": QPoint(l.offset)})
-
-            sel = doc.selection
-            if layer._is_container:
-                self._is_floating = False
-                self._bounds = layer.move_tool_container_bounds(self._linked_children)
-                self._original_rect = self._bounds.toRect()
-                self._original_img = QImage(1, 1, QImage.Format.Format_ARGB32)
-                self._original_offset = layer.offset
-                self._sel_origin = None
-
-            elif sel and not sel.isEmpty():
-                from tools.tool_utils import cut_floating_selection
-                self._is_floating = True
-                self._bounds = sel.boundingRect()
-
-                original_img, original_offset, sel_origin, ok = cut_floating_selection(layer, sel)
-                if not ok:
-                    self.is_transforming = False
-                    return
-                self._original_img = original_img
-                self._original_offset = original_offset
-                self._sel_origin = sel_origin
-
-            else:
-                self._is_floating = False
-                self._is_text_layer = isinstance(layer, TextLayer)
-                self._bounds = layer.move_tool_bounds()
-                self._original_rect = self._bounds.toRect()
-                self._original_img = layer.image.copy()
-                self._original_offset = layer.offset
-                self._sel_origin = None
-                layer.image = QImage(1, 1, QImage.Format.Format_ARGB32)
-                layer.image.fill(Qt.GlobalColor.transparent)
-
+        if not self._can_transform(layer, doc):
+            return
+        if not self.is_transforming and not self._begin(layer, doc):
+            return
         self._base_transform = QTransform(self._total_transform)
         self._start_pos = QPointF(pos)
         orig_poly = QPolygonF([self._bounds.topLeft(), self._bounds.topRight(), self._bounds.bottomRight(), self._bounds.bottomLeft()])
@@ -333,7 +297,6 @@ class MoveTool(BaseTool):
         else:
             inv_base, ok = self._base_transform.inverted()
             if ok:
-                local_start = inv_base.map(self._start_pos)
                 local_pos = inv_base.map(pos_f)
                 
                 b = self._bounds
@@ -396,9 +359,7 @@ class MoveTool(BaseTool):
                 doc.selection = final_t.map(self._sel_origin)
                 
             if self._mode == 'move':
-                dx, dy = final_t.dx(), final_t.dy()
-                for kid_data in self._linked_children:
-                    kid_data["layer"].offset = kid_data["backup_offset"] + QPoint(int(dx), int(dy))
+                self._set_children_offset(QPoint(int(final_t.dx()), int(final_t.dy())))
 
     def on_hover(self, pos: QPoint, doc, fg, bg, opts):
         if self.is_transforming:
@@ -464,11 +425,6 @@ class MoveTool(BaseTool):
         handle_border_pen.setCosmetic(True)
         painter.setPen(handle_border_pen)
         
-        # Set fixed handle radius in screen pixels (e.g., 3.5 pixels from center)
-        # We counter the global painter transformation matrix by dividing by pw
-        # Note: pw in CanvasWidget is passed as 1.0 / zoom
-        s = 3.5
-        
         handles = [
             pts[0], (pts[0]+pts[1])/2, pts[1], (pts[1]+pts[2])/2,
             pts[2], (pts[2]+pts[3])/2, pts[3], (pts[3]+pts[0])/2
@@ -501,64 +457,15 @@ class MoveTool(BaseTool):
             painter.restore()
             
         painter.restore()
-            
-        painter.restore()
-        
-    def apply_transform(self, doc):
-        if not self.is_transforming: return
-        layer = self._target_layer
-        if not layer: return
-        
+
+    def _bake(self, doc, layer):
         final_t = self._total_transform
-        
-        dx, dy = final_t.dx(), final_t.dy()
-        for kid_data in getattr(self, "_linked_children", []):
-            kid_data["layer"].offset = kid_data["backup_offset"] + QPoint(int(dx), int(dy))
-            
-        handled = layer.move_tool_apply_extra(doc, final_t, self._original_rect, self._original_img)
-        if not handled:
-            if not final_t.isIdentity():
-                src_rect = QRectF(0, 0, self._original_img.width(), self._original_img.height())
-                doc_transform = QTransform().translate(self._original_offset.x(), self._original_offset.y()) * final_t
-                mapped_rect = doc_transform.mapRect(src_rect)
+        self._set_children_offset(QPoint(int(final_t.dx()), int(final_t.dy())))
+        if layer.move_tool_apply_extra(doc, final_t, self._original_rect, self._original_img):
+            return
+        img, offset = bake_transform(self._original_img, self._original_offset, final_t)
+        self._place(layer, img, offset)
 
-                new_w, new_h = int(math.ceil(mapped_rect.width())), int(math.ceil(mapped_rect.height()))
-                if new_w > 0 and new_h > 0:
-                    new_img = QImage(new_w, new_h, QImage.Format.Format_ARGB32_Premultiplied)
-                    new_img.fill(Qt.GlobalColor.transparent)
-                    p = QPainter(new_img)
-                    p.setRenderHint(QPainter.RenderHint.SmoothPixmapTransform)
-                    p.setRenderHint(QPainter.RenderHint.Antialiasing)
-                    local_transform = doc_transform * QTransform().translate(-mapped_rect.left(), -mapped_rect.top())
-                    p.setTransform(local_transform)
-                    p.drawImage(0, 0, self._original_img)
-                    p.end()
-                    self._original_img = new_img
-                    self._original_offset = QPoint(int(mapped_rect.left()), int(mapped_rect.top()))
-
-            if self._is_floating:
-                p = QPainter(layer.image)
-                p.drawImage(self._original_offset, self._original_img)
-                p.end()
-            else:
-                layer.image = self._original_img
-                layer.offset = self._original_offset
-
-        self._reset_state()
-
-    def cancel_transform(self, doc):
-        if not self.is_transforming: return
-        layer = self._target_layer
-        if layer and self._layer_backup is not None:
-            layer.image = self._layer_backup
-            layer.offset = self._offset_backup
-            layer.move_tool_cancel_extra(self._original_rect)
-            if self._sel_origin: doc.selection = self._sel_origin
-            
-        for kid_data in getattr(self, "_linked_children", []):
-            kid_data["layer"].offset = kid_data["backup_offset"]
-        self._reset_state()
-        
     def get_transform_params(self):
         if not self.is_transforming: return None
         from core.layer import decompose_transform
@@ -595,30 +502,7 @@ class MoveTool(BaseTool):
         if not handled and self._is_floating and self._sel_origin:
             doc.selection = self._total_transform.map(self._sel_origin)
             
-        dx, dy = self._total_transform.dx(), self._total_transform.dy()
-        for kid_data in getattr(self, "_linked_children", []):
-            kid_data["layer"].offset = kid_data["backup_offset"] + QPoint(int(dx), int(dy))
-
-    def _reset_state(self):
-        if self._target_layer is not None:
-            self._target_layer._live_edit_hidden = False
-        self.is_transforming = False
-        self._target_layer = None
-        self._layer_backup = None
-        self._offset_backup = None
-        self._original_rect = None
-        self._original_img = None
-        self._sel_origin = None
-        self._linked_children = []
-        self._total_transform = QTransform()
-        self._base_transform = QTransform()
-        self._bounds = QRectF()
-        self._mode = None
-        self._start_poly = []
-        self._smart_guides = []
-        self._is_text_layer = False
-
-    def needs_history_push(self): return False
+        self._set_children_offset(QPoint(int(self._total_transform.dx()), int(self._total_transform.dy())))
 
     def cursor(self):
         if not self.is_transforming: return Qt.CursorShape.SizeAllCursor

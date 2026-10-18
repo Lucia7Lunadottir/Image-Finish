@@ -13,13 +13,13 @@ def _bar(main_window, width, tool):
     bar = w._opts_bar
     bar._fit_current()
     QApplication.processEvents()
-    return bar, bar._overflow._entries(bar._pages[tool])
+    return bar, bar._overflow._entries(bar.page_for(tool))
 
 
 def test_narrow_window_overflows_and_wide_window_restores(main_window):
     bar, entries = _bar(main_window, 1000, "Brush")
     assert entries.overflowed and bar._overflow.button.isVisible()
-    bar._overflow.fit(bar._pages["Brush"], 5000)
+    bar._overflow.fit(bar.page_for("Brush"), 5000)
     assert not entries.overflowed and not bar._overflow.button.isVisible()
 
 
@@ -54,7 +54,7 @@ def test_overflowed_controls_still_work(main_window):
 
 def test_shape_kind_change_refits(main_window):
     bar, entries = _bar(main_window, 1200, "Shapes")
-    page = bar._pages["Shapes"]
+    page = bar.page_for("Shapes")
     page._combo.setCurrentIndex(page._SHAPE_VALUES.index("rounded_rect"))   # shows 4 radius fields
     QApplication.processEvents()
     QApplication.processEvents()

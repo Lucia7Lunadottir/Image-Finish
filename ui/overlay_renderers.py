@@ -311,8 +311,8 @@ def draw_transform_preview(painter, *, active_tool, pan, zoom):
             painter.save()
             painter.translate(pan)
             painter.scale(zoom, zoom)
-            from tools.warp_tool import WarpTool
-            WarpTool.draw_warp_patches(painter, src_img, patches, fast)
+            from tools.transform_base import MeshWarpTool
+            MeshWarpTool.draw_warp_patches(painter, src_img, patches, fast)
             painter.restore()
         else:
             img, tl = fp
