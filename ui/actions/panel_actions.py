@@ -125,9 +125,10 @@ class PanelActionsMixin:
         self._properties_panel.refresh(self._canvas)
 
     def _on_brush_selected(self, mask: str):
-        if self._canvas:
-            self._canvas.tool_opts["brush_mask"] = mask
-            self._opts_bar.update_tool_state({"brush_mask": mask})
+        # Through the option handler: every open document, the options bar
+        # list and this session's defaults follow (it used to set only the
+        # current canvas, and the options bar kept showing the old tip).
+        self._on_opt_changed("brush_mask", mask)
 
     def _on_preset_save_requested(self, name: str):
         if self._canvas:

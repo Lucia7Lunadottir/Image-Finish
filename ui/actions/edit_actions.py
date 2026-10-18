@@ -520,7 +520,6 @@ class EditActionsMixin:
     @require_document
     def _define_brush(self):
         from PyQt6.QtWidgets import QInputDialog
-        import os
         import numpy as np
         from PyQt6.QtGui import QImage, QPainter
         img = self._get_define_image()
@@ -543,13 +542,8 @@ class EditActionsMixin:
         brush_img.fill(0)
         b_arr = qimage_argb_view(brush_img, writable=True)[:, :side, :]
         b_arr[..., 3] = ((255 - luma) * orig_alpha).astype(np.uint8)
-        base_dir = os.path.dirname(os.path.dirname(os.path.abspath(__file__)))
-        target_dir = os.path.join(base_dir, "brushes")
-        os.makedirs(target_dir, exist_ok=True)
-        path = os.path.join(target_dir, f"{name}.png")
-        brush_img.save(path)
-        brush_page = self._opts_bar.page_for("Brush")
-        if hasattr(brush_page, "add_custom_brush"): brush_page.add_custom_brush(path, name)
+        from ui.brush_widgets import tip_library
+        self._on_opt_changed("brush_mask", tip_library().add_image(name, brush_img))
 
     @require_document
     def _define_pattern(self):

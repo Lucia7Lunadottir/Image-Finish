@@ -117,9 +117,14 @@ class OptionActionsMixin:
             self._character_panel.refresh(self._canvas)
         if hasattr(self, "_paragraph_panel"):
             self._paragraph_panel.refresh(self._canvas)
-        text_page = self._opts_bar.page_for("Text") if hasattr(self, "_opts_bar") else None
-        if text_page is not None and hasattr(text_page, "update_from_opts"):
-            text_page.update_from_opts(canvas.tool_opts)
+        # Same for the brush settings: options bar, Brushes panel and the
+        # right-click brush picker all edit them.
+        for page_tool in ("Text", "Brush"):
+            page = self._opts_bar.page_for(page_tool) if hasattr(self, "_opts_bar") else None
+            if page is not None and hasattr(page, "update_from_opts"):
+                page.update_from_opts(canvas.tool_opts)
+        if hasattr(self, "_brushes_panel"):
+            self._brushes_panel.refresh(canvas)
         # tool_opts is stored above, but nothing here ever asked the canvas
         # to actually repaint — the live text-edit preview (which reads
         # tool_opts fresh every paintGL() frame) only looked live before

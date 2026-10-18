@@ -154,14 +154,55 @@ def test_crop_menu_cancel(main_window, mocked_dialogs):
     assert tool.pending_rect is None
 
 
-def test_brush_panel_sets_size_beyond_slider(main_window, mocked_dialogs):
-    from ui.canvas_context_menu import BrushQuickPanel
+def test_brush_picker_edits_follow_everywhere(main_window, mocked_dialogs):
+    """The picker writes through the option handler: every open document,
+    the options bar and the Brushes panel show the same brush."""
+    from ui.brush_picker import BrushPicker
     w = main_window
     c = _open(w)
     w._activate_tool("Brush")
-    panel = BrushQuickPanel(w, c.tool_opts)
-    panel._size[1].setValue(800)
+    picker = build_canvas_menu(MenuContext(w, c, c.document, c.active_tool, QPoint(15, 15)), w)
+    assert isinstance(picker, BrushPicker)
+    picker._size.spin.setValue(800)                              # past the slider's 500
     assert c.tool_opts["brush_size"] == 800
-    assert panel._size[1].value() == 800                        # not clamped by the slider
-    panel._hard[0].setValue(40)
+    assert picker._size.slider.value() == 500 and picker._size.value() == 800
+    picker._hardness.slider.setValue(40)
     assert c.tool_opts["brush_hardness"] == pytest.approx(0.4)
+    page = w._opts_bar.page_for("Brush")
+    assert page._size.value() == 800 and page._hardness.value() == 40
+    tip = next(t.value for t in __import__("ui.brush_widgets", fromlist=["x"]).tip_library().tips()
+               if t.value == "square")
+    picker._grid._on_click(tip)
+    assert c.tool_opts["brush_mask"] == "square"
+    assert page._mask_combo.currentData() == "square"
+    assert w._brushes_panel._grid.current() == "square"
+
+
+def test_brush_picker_pins_outline_while_open(main_window, mocked_dialogs):
+    w = main_window
+    c = _open(w)
+    w._activate_tool("Brush")
+    picker = build_canvas_menu(MenuContext(w, c, c.document, c.active_tool, QPoint(15, 15)), w)
+    picker.exec(QPoint(10, 10))
+    assert c._brush_outline_at is not None
+    picker.close()
+    assert c._brush_outline_at is None
+
+
+def test_brushes_panel_selection_reaches_options_bar(main_window, mocked_dialogs):
+    """Picking a tip in the Brushes panel used to change only the current
+    canvas — the options bar kept showing the old tip."""
+    w = main_window
+    c = _open(w)
+    w._brushes_panel.brush_selected.emit("scatter")
+    assert c.tool_opts["brush_mask"] == "scatter"
+    assert w._opts_bar.page_for("Brush")._mask_combo.currentData() == "scatter"
+
+
+def test_every_tip_lists_the_same_everywhere(main_window):
+    from ui.brush_widgets import tip_library
+    w = main_window
+    values = [t.value for t in tip_library().tips()]
+    combo = w._opts_bar.page_for("Brush")._mask_combo
+    assert [combo.itemData(i) for i in range(combo.count() - 1)] == values   # last: "Load…"
+    assert [t.value for t in w._brushes_panel._grid._thumbs] == values

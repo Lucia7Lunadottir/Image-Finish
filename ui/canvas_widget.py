@@ -106,6 +106,7 @@ class CanvasWidget(QOpenGLWidget):
         self._show_brush_cursor: bool = True
         self._brush_cursor = BrushCursorOverlay()
         self._is_mouse_in: bool = False
+        self._brush_outline_at: QPointF | None = None   # pinned by the brush picker
 
         self._composite_cache: QImage | None = None
         self._cache_dirty: bool = True
@@ -275,6 +276,13 @@ class CanvasWidget(QOpenGLWidget):
     def zoom_out(self):
         self._apply_zoom(1 / 1.25, self.rect().center())
 
+    def pin_brush_outline(self, widget_pos: QPointF | None):
+        """Keep the brush outline drawn at `widget_pos` even though the
+        pointer is elsewhere (over the brush picker); None = follow the
+        pointer again."""
+        self._brush_outline_at = QPointF(widget_pos) if widget_pos is not None else None
+        self.update()
+
     def zoom_actual_size(self):
         """100 %: one document pixel per screen pixel."""
         self._apply_zoom(1.0 / self.zoom, self.rect().center())
@@ -399,10 +407,13 @@ class CanvasWidget(QOpenGLWidget):
 
             self._paint_tool_overlays(painter)
 
-            if self._show_brush_cursor and not self._panning and not self._space:
+            outline_at = self._brush_outline_at
+            if outline_at is None and self._show_brush_cursor and not self._panning and not self._space:
+                outline_at = self._mouse_pos
+            if outline_at is not None:
                 self._brush_cursor.paint(
                     painter, tool=self.active_tool, opts=self.tool_opts, zoom=self.zoom,
-                    mouse=self._mouse_pos, to_doc=self.to_doc, to_widget=self.to_widget,
+                    mouse=outline_at, to_doc=self.to_doc, to_widget=self.to_widget,
                     doc_size=(self.document.width, self.document.height))
 
             if self.show_rulers:

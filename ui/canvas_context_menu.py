@@ -11,9 +11,8 @@ write a `CanvasMenu` subclass and register it in `_MENUS`.
 """
 from dataclasses import dataclass
 
-from PyQt6.QtCore import QPoint, Qt
-from PyQt6.QtWidgets import (QHBoxLayout, QLabel, QMenu, QSlider, QSpinBox, QVBoxLayout,
-                             QWidget, QWidgetAction)
+from PyQt6.QtCore import QPoint, QPointF
+from PyQt6.QtWidgets import QMenu
 
 from core.locale import tr
 
@@ -34,6 +33,13 @@ class MenuContext:
 
 class CanvasMenu:
     """One kind of right-click menu."""
+
+    def popup(self, ctx: MenuContext, parent):
+        """The widget to show (its `exec(global_pos)` opens it), or None
+        when there is nothing to offer. Default: a QMenu from `fill`."""
+        menu = QMenu(parent)
+        self.fill(menu, ctx)
+        return menu if not menu.isEmpty() else None
 
     def fill(self, menu: QMenu, ctx: MenuContext) -> None:
         raise NotImplementedError
@@ -111,12 +117,11 @@ class MoveMenu(CanvasMenu):
 
 
 class BrushMenu(CanvasMenu):
-    """Size and hardness right under the pointer (Photoshop's brush picker)."""
+    """Photoshop's Brush Preset Picker: size, hardness, angle, preview, tips."""
 
-    def fill(self, menu, ctx):
-        action = QWidgetAction(menu)
-        action.setDefaultWidget(BrushQuickPanel(ctx.win, ctx.canvas.tool_opts))
-        menu.addAction(action)
+    def popup(self, ctx, parent):
+        from ui.brush_picker import BrushPicker
+        return BrushPicker(ctx.win, ctx.canvas, ctx.canvas.to_widget(QPointF(ctx.doc_pos)), parent)
 
 
 class PathMenu(CanvasMenu):
@@ -171,66 +176,12 @@ _MENUS: dict[str, CanvasMenu] = {
 _TRANSFORM = TransformMenu()
 
 
-def build_canvas_menu(ctx: MenuContext, parent=None) -> QMenu | None:
-    """The menu for a right click, or None when the tool offers none."""
+def build_canvas_menu(ctx: MenuContext, parent=None):
+    """What a right click opens (a QMenu, or the brush picker — both open
+    with `exec(global_pos)`), or None when the tool offers nothing."""
     from tools.transform_base import TransformTool
     if isinstance(ctx.tool, TransformTool) and ctx.tool.is_transforming:
         kind = _TRANSFORM
     else:
         kind = _MENUS.get(getattr(ctx.tool, "CONTEXT_MENU", None))
-    if kind is None:
-        return None
-    menu = QMenu(parent)
-    kind.fill(menu, ctx)
-    return menu if not menu.isEmpty() else None
-
-
-class BrushQuickPanel(QWidget):
-    """Size and hardness sliders writing through the window's option
-    handler, so the options bar and every open document follow."""
-
-    _SIZE_SLIDER_MAX = 500
-
-    def __init__(self, win, opts: dict, parent=None):
-        super().__init__(parent)
-        self._win = win
-        lay = QVBoxLayout(self)
-        lay.setContentsMargins(10, 8, 10, 8)
-        self._size = self._row(lay, "opts.size", 1, 5000, int(opts.get("brush_size", 10)), "")
-        self._hard = self._row(lay, "opts.hardness", 0, 100,
-                               int(round(opts.get("brush_hardness", 1.0) * 100)), "%")
-        self._size[1].valueChanged.connect(lambda v: self._set("brush_size", v))
-        self._hard[1].valueChanged.connect(lambda v: self._set("brush_hardness", v / 100.0))
-
-    def _row(self, lay, key, lo, hi, value, suffix):
-        row = QHBoxLayout()
-        row.addWidget(QLabel(tr(key)))
-        slider = QSlider(Qt.Orientation.Horizontal)
-        slider.setRange(lo, min(hi, self._SIZE_SLIDER_MAX))
-        slider.setMinimumWidth(160)
-        spin = QSpinBox()
-        spin.setRange(lo, hi)
-        spin.setSuffix(suffix)
-        spin.setValue(value)
-        slider.setValue(value)
-        slider.valueChanged.connect(spin.setValue)
-        spin.valueChanged.connect(lambda v: self._follow(slider, v))
-        row.addWidget(slider)
-        row.addWidget(spin)
-        lay.addLayout(row)
-        return slider, spin
-
-    @staticmethod
-    def _follow(slider, value):
-        """The spin box goes past the slider's range; the slider just pins
-        at its end without echoing that back into the spin box."""
-        slider.blockSignals(True)
-        slider.setValue(min(value, slider.maximum()))
-        slider.blockSignals(False)
-
-    def _set(self, key, value):
-        self._win._on_opt_changed(key, value)
-        page = self._win._opts_bar.page_for(self._win._active_tool_name)
-        canvas = self._win._canvas
-        if page is not None and hasattr(page, "update_from_opts") and canvas is not None:
-            page.update_from_opts(canvas.tool_opts)
+    return kind.popup(ctx, parent) if kind is not None else None

@@ -1,90 +1,12 @@
 import os
 import math, random
 import numpy as np
-from PyQt6.QtGui import (QPainter, QColor, QPen, QRadialGradient, QBrush,
+from PyQt6.QtGui import (QPainter, QColor, QPen, QBrush,
                          QImage, QPixmap, QTransform)
-from PyQt6.QtCore import QPoint, QPointF, Qt, QRect
+from PyQt6.QtCore import QPoint, Qt, QRect
 from tools.base_tool import BaseTool
 from core.brush_symmetry import BrushSymmetry
-
-
-def _make_brush_stamp(size: int, hardness: float, mask: str) -> QImage:
-    """
-    Returns a QImage (size x size ARGB32) brush stamp.
-    Alpha channel defines the shape: 255 = full paint, 0 = empty.
-
-    mask:
-      round   - circular with softness based on hardness
-      square  - square
-      scatter - circular with noise at edges
-    """
-    s = max(2, size)
-    img = QImage(s, s, QImage.Format.Format_ARGB32)
-    img.fill(Qt.GlobalColor.transparent)
-
-    p = QPainter(img)
-    p.setRenderHint(QPainter.RenderHint.Antialiasing)
-    cx, cy, r = s / 2, s / 2, s / 2 - 0.5
-
-    if mask == "square":
-        margin = int(s * (1 - hardness) * 0.3)
-        inner = QRect(margin, margin, s - 2 * margin, s - 2 * margin)
-        p.fillRect(img.rect(), Qt.GlobalColor.transparent)
-        p.setBrush(QBrush(QColor(0, 0, 0, 255)))
-        p.setPen(Qt.PenStyle.NoPen)
-        p.drawRoundedRect(inner, margin * 0.5, margin * 0.5)
-
-    elif mask == "scatter":
-        # Base: soft circle, edges: random splashes
-        grad = QRadialGradient(cx, cy, r)
-        inner_stop = max(0.0, min(1.0, hardness))
-        grad.setColorAt(0,          QColor(0, 0, 0, 255))
-        grad.setColorAt(inner_stop, QColor(0, 0, 0, 255))
-        grad.setColorAt(1.0,        QColor(0, 0, 0, 0))
-        p.setBrush(grad)
-        p.setPen(Qt.PenStyle.NoPen)
-        p.drawEllipse(QPointF(cx, cy), r, r)
-        # Add random splatter outside
-        p.setBrush(QBrush(QColor(0, 0, 0, 180)))
-        rng = random.Random(size)   # deterministic seed
-        for _ in range(int(s * 0.4)):
-            angle = rng.uniform(0, 2 * math.pi)
-            dist  = rng.uniform(r * 0.6, r * 1.3)
-            sx = cx + math.cos(angle) * dist
-            sy = cy + math.sin(angle) * dist
-            dr = rng.uniform(0.5, max(1, s * 0.04))
-            p.drawEllipse(QPointF(sx, sy), dr, dr)
-
-    else:  # round (default)
-        grad = QRadialGradient(cx, cy, r)
-        inner_stop = max(0.0, min(0.99, hardness))
-
-        # Common start for all round brushes
-        grad.setColorAt(0, QColor(0, 0, 0, 255))
-        grad.setColorAt(inner_stop, QColor(0, 0, 0, 255))
-
-        # Smoother, quadratic falloff for soft brushes feels more natural
-        if inner_stop < 0.1:  # Apply to very soft brushes (hardness < 10%)
-            # Approximation of y=(1-x)^2 curve from inner_stop to 1.0
-            span = 1.0 - inner_stop
-            if span > 0:
-                # y = (1 - (x-is)/span)^2. We start from t=0.25
-                for i in range(1, 5):
-                    t = i / 4.0
-                    x = inner_stop + t * span
-                    y = (1.0 - t)**2
-                    grad.setColorAt(x, QColor(0, 0, 0, int(255 * y)))
-            else:  # this case is inner_stop >= 1, but for safety
-                grad.setColorAt(1.0, QColor(0, 0, 0, 0))
-        else:  # Original linear falloff for harder brushes
-            grad.setColorAt(1.0, QColor(0, 0, 0, 0))
-
-        p.setBrush(grad)
-        p.setPen(Qt.PenStyle.NoPen)
-        p.drawEllipse(QPointF(cx, cy), r, r)
-
-    p.end()
-    return img
+from core.brush_tips import tip_stamp
 
 
 class BrushTool(BaseTool):
@@ -257,43 +179,12 @@ class BrushTool(BaseTool):
         """
         Returns a brush stamp, using cache.
         """
-        actual_mask = mask
-        if isinstance(actual_mask, QPixmap):
-            actual_mask = actual_mask.toImage()
-        elif isinstance(actual_mask, str) and actual_mask not in ("round", "square", "scatter"):
-            tmp = QImage(actual_mask)
-            if not tmp.isNull():
-                actual_mask = tmp
-
+        actual_mask = mask.toImage() if isinstance(mask, QPixmap) else mask
         cache_key = id(actual_mask) if isinstance(actual_mask, QImage) else actual_mask
         full_key = (size, hardness, cache_key)
-
         if full_key in self._stamp_cache:
             return self._stamp_cache[full_key]
-
-        if isinstance(actual_mask, QImage) and not actual_mask.isNull():
-            # For custom brushes, the mask is a QImage. Scale it to brush size.
-            # Ignore aspect ratio so it fits the square stamp area.
-            stamp = actual_mask.scaled(size, size, Qt.AspectRatioMode.IgnoreAspectRatio, Qt.TransformationMode.SmoothTransformation)
-            
-            # If the brush has no transparency (e.g. black-and-white source),
-            # it will draw as a solid square. Extract alpha from luminance!
-            if not stamp.hasAlphaChannel():
-                stamp = stamp.convertToFormat(QImage.Format.Format_ARGB32)
-                import numpy as np
-                from core.pixel_buffer import qimage_argb_view
-                arr = qimage_argb_view(stamp, writable=True)
-
-                # Compute luminance. Dark = brush, white = background.
-                luma = (arr[..., 2]*0.299 + arr[..., 1]*0.587 + arr[..., 0]*0.114).astype(np.uint8)
-                
-                # Create alpha channel from inverted luminance
-                arr[..., 3] = 255 - luma
-                # Set base color to black (it will be colorized during painting)
-                arr[..., 0:3] = 0
-        else:
-            # For standard brushes ("round", "square") generate the stamp.
-            stamp = _make_brush_stamp(size, hardness, actual_mask)
+        stamp = tip_stamp(size, hardness, actual_mask)
 
         # Limit cache to avoid memory bloat with dynamic sizes
         if len(self._stamp_cache) > 50:

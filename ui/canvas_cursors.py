@@ -137,8 +137,8 @@ class BrushCursorOverlay:
             tip = tip.toImage()
         elif isinstance(tip, str):
             if tip == "scatter":
-                from tools.brush_tool import _make_brush_stamp
-                tip = _make_brush_stamp(size, hard, "scatter")
+                from core.brush_tips import tip_stamp
+                tip = tip_stamp(size, hard, "scatter")
             elif tip not in ("round", "square"):
                 img = QImage(tip)
                 if not img.isNull():
