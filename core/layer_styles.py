@@ -1,7 +1,7 @@
 import os
 import math
 import numpy as np
-from PyQt6.QtGui import QImage, QPainter, QColor, QBrush, QPixmap, QTransform
+from PyQt6.QtGui import QImage, QPainter, QPainterPath, QColor, QBrush, QPixmap, QTransform
 from PyQt6.QtCore import QPoint, QRectF, Qt
 
 
@@ -92,7 +92,8 @@ def layer_styles_padding(styles: dict) -> int:
     return int(math.ceil(pad)) + 4
 
 
-def _blend_overlay(img: QImage, brush: QBrush, blend_mode: str, opacity: float) -> QImage:
+def _blend_overlay(img: QImage, brush: QBrush, blend_mode: str, opacity: float,
+                   area: QPainterPath | None = None) -> QImage:
     """An overlay style (colour / gradient / pattern) the way Photoshop
     applies it: the overlay's colour is blended into the layer's colour with
     `blend_mode` at `opacity` %, and the layer keeps its own transparency.
@@ -101,7 +102,8 @@ def _blend_overlay(img: QImage, brush: QBrush, blend_mode: str, opacity: float) 
     where the layer is transparent, and clipping to the layer (SourceAtop,
     which the old code used) replaced the chosen mode with plain Normal. So:
     blend onto an opaque copy of the layer's colours, then put the layer's
-    alpha back."""
+    alpha back. `area` limits it to a region (Edit > Stroke with Preserve
+    Transparency); by default the whole image."""
     from core.pixel_buffer import qimage_argb_view
     w = img.width()
     straight = img.convertToFormat(QImage.Format.Format_ARGB32)
@@ -112,7 +114,11 @@ def _blend_overlay(img: QImage, brush: QBrush, blend_mode: str, opacity: float) 
     p = QPainter(opaque)
     p.setCompositionMode(_get_comp_mode(blend_mode))
     p.setOpacity(max(0.0, min(1.0, opacity / 100.0)))
-    p.fillRect(opaque.rect(), brush)
+    if area is None:
+        p.fillRect(opaque.rect(), brush)
+    else:
+        p.setRenderHint(QPainter.RenderHint.Antialiasing)
+        p.fillPath(area, brush)
     p.end()
     out = opaque.convertToFormat(QImage.Format.Format_ARGB32)
     qimage_argb_view(out, writable=True)[:, :w, 3] = alpha

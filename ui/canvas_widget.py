@@ -15,6 +15,7 @@ from tools.other_tools import HandTool, ZoomTool, RotateViewTool
 from core.brush_symmetry import BrushSymmetry
 from ui.canvas_cursors import BrushCursorOverlay, selection_cursor, selection_mode
 from ui.canvas_guides import GuideDrag
+from ui.canvas_resize_handles import CanvasResizeHandles
 from ui.canvas_hires import HiresView
 from ui.overlay_renderers import (
     draw_grid, draw_guides, draw_rulers, draw_artboard_frames, draw_slices, draw_symmetry_axes, draw_selection,
@@ -31,6 +32,8 @@ class CanvasWidget(QOpenGLWidget):
     cursor_info      = pyqtSignal(int, int, QColor)  # doc x, doc y, pixel color
     view_changed     = pyqtSignal()  # zoom/pan changed (status bar, navigator)
     context_menu_requested = pyqtSignal(QPoint, QPoint)  # right click: doc pos, global pos
+    option_change_requested = pyqtSignal(str, object)    # e.g. brush size from the keyboard
+    canvas_resize_requested = pyqtSignal(int, int)       # edge handles dropped: new width, height
 
     def __init__(self, parent=None):
         super().__init__(parent)
@@ -131,6 +134,9 @@ class CanvasWidget(QOpenGLWidget):
 
         self.show_rulers: bool = False
         self._guides = GuideDrag(self)
+        self._resize_handles = CanvasResizeHandles(
+            self, lambda w, h: self.canvas_resize_requested.emit(w, h))
+        self._over_resize_handle = False
 
         self._march_offset: int = 0
         self._march_timer: QTimer | None = None
@@ -406,6 +412,7 @@ class CanvasWidget(QOpenGLWidget):
             draw_artboard_frames(painter, doc=self.document, pan=self._pan, zoom=self.zoom)
 
             self._paint_tool_overlays(painter)
+            self._resize_handles.paint(painter)
 
             outline_at = self._brush_outline_at
             if outline_at is None and self._show_brush_cursor and not self._panning and not self._space:
@@ -596,7 +603,7 @@ class CanvasWidget(QOpenGLWidget):
         if not self.document:
             return
         try:
-            if self._guides.press(ev):
+            if self._guides.press(ev) or self._resize_handles.press(ev):
                 return
             self._store_modifiers(ev)
             if self._press_pan_or_view_tool(ev):
@@ -754,8 +761,14 @@ class CanvasWidget(QOpenGLWidget):
                 self._set_symmetry_center(self.to_doc(ev.position()))
                 return
 
-            if self._guides.move(ev):
+            if self._guides.move(ev) or self._resize_handles.move(ev):
                 return
+            over = not ev.buttons() and self._resize_handles.hit(ev.position()) is not None
+            if over or self._over_resize_handle:
+                self._over_resize_handle = over
+                self._update_cursor()
+                if over:
+                    return
 
             if self._panning and self._pan_last is not None:
                 delta = ev.position() - self._pan_last
@@ -833,7 +846,7 @@ class CanvasWidget(QOpenGLWidget):
                 self._dragging_sym_center = False
                 self._update_cursor()
                 return
-            if self._guides.release(ev):
+            if self._guides.release(ev) or self._resize_handles.release(ev):
                 return
             if ev.button() == Qt.MouseButton.MiddleButton or (self._panning and ev.button() == Qt.MouseButton.LeftButton):
                 self._panning = False
@@ -949,25 +962,51 @@ class CanvasWidget(QOpenGLWidget):
         if k == Qt.Key.Key_Space and not ev.isAutoRepeat():
             self._space = True
             self._update_cursor()
+        elif self._brush_size_key(ev):
+            self._step_brush_size(self._brush_size_key(ev))
         elif k == Qt.Key.Key_Plus or k == Qt.Key.Key_Equal:
             self.zoom_in()
         elif k == Qt.Key.Key_Minus:
             self.zoom_out()
         elif k == Qt.Key.Key_0:
             self.reset_zoom()
-        elif k == Qt.Key.Key_BracketLeft:
-            new_size = max(1, self.tool_opts.get("brush_size", 10) - 2)
-            self.tool_opts["brush_size"] = new_size
-            self.update()
-        elif k == Qt.Key.Key_BracketRight:
-            new_size = min(500, self.tool_opts.get("brush_size", 10) + 2)
-            self.tool_opts["brush_size"] = new_size
-            self.update()
         elif k in (Qt.Key.Key_Control, Qt.Key.Key_Shift, Qt.Key.Key_Alt):
             self._update_cursor()
             super().keyPressEvent(ev)
         else:
             super().keyPressEvent(ev)
+
+    # X11/evdev scan codes of [ and ] — the same physical keys in any
+    # layout (on a Russian one Qt reports them as Х and Ъ).
+    _SCAN_BRACKET = {34: -1, 35: +1}
+
+    def _brush_size_key(self, ev) -> int:
+        """-1 / +1 when `ev` is a brush-size key for a brush-like tool:
+        [ ] (Photoshop) or Ctrl + keypad −/+ (Paint); else 0."""
+        if not getattr(self.active_tool, "BRUSH_CURSOR", False):
+            return 0
+        mods = ev.modifiers()
+        if mods & Qt.KeyboardModifier.KeypadModifier and mods & Qt.KeyboardModifier.ControlModifier:
+            return {Qt.Key.Key_Plus: 1, Qt.Key.Key_Minus: -1}.get(Qt.Key(ev.key()), 0)
+        if mods & (Qt.KeyboardModifier.ControlModifier | Qt.KeyboardModifier.AltModifier):
+            return 0
+        by_key = {Qt.Key.Key_BracketLeft: -1, Qt.Key.Key_BracketRight: 1}.get(Qt.Key(ev.key()), 0)
+        return by_key or self._SCAN_BRACKET.get(ev.nativeScanCode(), 0)
+
+    def _step_brush_size(self, direction: int):
+        from core.brush_size_steps import step_size
+        new = step_size(self.tool_opts.get("brush_size", 10), direction)
+        self.option_change_requested.emit("brush_size", new)
+        self._update_brush_region(self._mouse_pos)
+        self.update()
+
+    def event(self, ev):
+        # Ctrl + keypad +/− would otherwise be taken by View > Zoom In/Out's
+        # shortcut before reaching keyPressEvent.
+        if ev.type() == ev.Type.ShortcutOverride and self._brush_size_key(ev):
+            ev.accept()
+            return True
+        return super().event(ev)
 
     def keyReleaseEvent(self, ev):
         k = ev.key()
@@ -1006,6 +1045,12 @@ class CanvasWidget(QOpenGLWidget):
             if getattr(self, "_dragging_sym_center", False):
                 self._show_brush_cursor = False
                 self.setCursor(Qt.CursorShape.CrossCursor)
+                return
+
+            handle_cursor = self._resize_handles.cursor_at(self._mouse_pos)
+            if handle_cursor is not None:
+                self._show_brush_cursor = False
+                self.setCursor(handle_cursor)
                 return
 
             # The temporary Alt-eyedropper keeps the brush's own blank-cursor

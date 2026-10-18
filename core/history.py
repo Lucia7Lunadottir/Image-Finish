@@ -4,16 +4,18 @@ from PyQt6.QtGui import QPainterPath
 from PyQt6.QtCore import QPointF
 
 
+def _clone_nodes(nodes) -> list:
+    return [{"p": QPointF(n["p"]), "c1": QPointF(n["c1"]), "c2": QPointF(n["c2"])} for n in nodes]
+
+
 def clone_work_path(wp: dict | None) -> dict:
+    """Deep copy of a work path, its finished components included."""
     if not wp: return {"nodes": [], "closed": False}
-    nodes = []
-    for n in wp.get("nodes", []):
-        nodes.append({
-            "p": QPointF(n["p"]),
-            "c1": QPointF(n["c1"]),
-            "c2": QPointF(n["c2"])
-        })
-    return {"nodes": nodes, "closed": wp.get("closed", False)}
+    clone = {"nodes": _clone_nodes(wp.get("nodes", [])), "closed": wp.get("closed", False)}
+    if wp.get("subpaths"):
+        clone["subpaths"] = [{"nodes": _clone_nodes(c["nodes"]), "closed": c.get("closed", False)}
+                             for c in wp["subpaths"]]
+    return clone
 
 
 @dataclass

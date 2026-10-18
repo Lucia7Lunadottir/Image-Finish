@@ -503,6 +503,48 @@ class Document:
             else:
                 self.layers.append(layer.copy(deep_image=False))
 
+    # ------------------------------------------------------------ Canvas size
+    def resize_canvas(self, width: int, height: int, fill_color: QColor | None = None):
+        """New canvas size, the image anchored at the top-left (Image >
+        Canvas Size, the canvas edge handles). Layer pixels are kept, even
+        beyond a smaller canvas; layers grow to cover a bigger one. An
+        opaque background layer gets the new area in `fill_color` (as in
+        Photoshop and Paint), every other layer leaves it transparent."""
+        width, height = max(1, int(width)), max(1, int(height))
+        background = self._opaque_background()
+        for layer in self.layers:
+            if layer.is_container or layer.image is None:
+                continue
+            need_w = max(layer.image.width(), width - layer.offset.x())
+            need_h = max(layer.image.height(), height - layer.offset.y())
+            if need_w <= layer.image.width() and need_h <= layer.image.height():
+                continue
+            grown = QImage(need_w, need_h, QImage.Format.Format_ARGB32_Premultiplied)
+            grown.fill(fill_color if layer is background and fill_color is not None
+                       else Qt.GlobalColor.transparent)
+            p = QPainter(grown)
+            p.setCompositionMode(QPainter.CompositionMode.CompositionMode_Source)
+            p.drawImage(0, 0, layer.image)
+            p.end()
+            layer.image = grown
+        self.width, self.height = width, height
+        self.invalidate_composite()
+
+    def _opaque_background(self):
+        """The bottom layer when it is a plain raster layer covering the
+        whole canvas with no transparency — the one a canvas extension
+        fills with the background colour."""
+        if not self.layers:
+            return None
+        layer = self.layers[0]
+        if type(layer) is not RasterLayer or not layer.offset.isNull():
+            return None
+        img = layer.image
+        if img is None or img.width() < self.width or img.height() < self.height:
+            return None
+        arr = _qimage_argb_view(img, writable=False)[:self.height, :self.width, 3]
+        return layer if arr.min() == 255 else None
+
     # ------------------------------------------------------------------- Crop
     def apply_crop(self, rect: QRect):
         if rect.isEmpty():

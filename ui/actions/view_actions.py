@@ -155,6 +155,8 @@ class ViewActionsMixin:
         self._apply_language()
 
     def _apply_language(self):
+        from ui.qt_translations import install_qt_translator
+        install_qt_translator(locale_current())
         for key, act in self._all_acts:
             act.setText(tr(key))
         for key, menu in self._all_menus:

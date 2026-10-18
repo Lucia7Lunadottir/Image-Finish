@@ -1,5 +1,5 @@
 from PyQt6.QtCore import Qt, QPointF
-from PyQt6.QtGui import QPainter, QImage, QPolygonF, QColor
+from PyQt6.QtGui import QImage, QPolygonF, QColor
 from core.locale import tr
 from core.layer import RasterLayer
 from ui.document_controller import require_document
@@ -56,23 +56,21 @@ class ImageActionsMixin:
         dlg._width_spin.setValue(self._document.width)
         dlg._height_spin.setValue(self._document.height)
         if dlg.exec():
-            self._push_history(tr("history.resize_canvas"))
-            new_w, new_h = dlg.get_width(), dlg.get_height()
-            for layer in self._document.layers:
-                lw, lh = layer.image.width(), layer.image.height()
-                if new_w > lw or new_h > lh:
-                    new_img = QImage(max(new_w, lw), max(new_h, lh),
-                                     QImage.Format.Format_ARGB32_Premultiplied)
-                    new_img.fill(Qt.GlobalColor.transparent)
-                    p = QPainter(new_img)
-                    p.drawImage(0, 0, layer.image)
-                    p.end()
-                    layer.image = new_img
-            self._document.width  = new_w
-            self._document.height = new_h
-            self._canvas_refresh()
+            self._resize_canvas_to(dlg.get_width(), dlg.get_height())
             self._canvas.reset_zoom()
-            self._refresh_layers()
+
+    @require_document
+    def _resize_canvas_to(self, width: int, height: int):
+        """Canvas size with the image at the top-left; the background's new
+        area in the background colour."""
+        doc = self._document
+        if (width, height) == (doc.width, doc.height):
+            return
+        self._push_history(tr("history.resize_canvas"))
+        doc.resize_canvas(width, height, self._canvas.bg_color)
+        self._canvas_refresh()
+        self._refresh_layers()
+        self._update_status()
 
     @require_document
     def _apply_crop(self):

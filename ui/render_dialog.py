@@ -223,21 +223,10 @@ class Frame(_PainterMode):
 
 def _work_path_or_default(work_path, w, h):
     """The Pen tool's work path as a QPainterPath, or a vertical line."""
-    nodes = work_path.get("nodes", [])
-    path = QPainterPath()
+    from tools.pen_tool import build_bezier_path, has_path
     try:
-        if nodes:
-            if isinstance(nodes[0], dict) and 'p' in nodes[0]:
-                path.moveTo(nodes[0]['p'])
-                for i in range(1, len(nodes)):
-                    path.cubicTo(nodes[i - 1]['c2'], nodes[i]['c1'], nodes[i]['p'])
-                if work_path.get("closed", False) and len(nodes) > 1:
-                    path.cubicTo(nodes[-1]['c2'], nodes[0]['c1'], nodes[0]['p'])
-            elif hasattr(nodes[0], 'x'):
-                path.moveTo(nodes[0])
-                for pt in nodes[1:]:
-                    path.lineTo(pt)
-            return path
+        if has_path(work_path):
+            return build_bezier_path(work_path)
     except Exception as e:
         logger.warning("Flame path parsing error: %s", e)
     path = QPainterPath()

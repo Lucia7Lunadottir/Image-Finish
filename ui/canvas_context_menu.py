@@ -82,6 +82,7 @@ class SelectionMenu(CanvasMenu):
             self._add(menu, "menu.modify.feather", lambda: w._modify_selection("feather"))
             self._add(menu, "menu.select_and_mask", w._select_and_mask)
             self._add(menu, "menu.save_selection", w._save_selection)
+            self._add(menu, "menu.make_work_path", w._make_work_path)
             menu.addSeparator()
             self._add(menu, "menu.layer_via_copy", w._layer_via_copy)
             self._add(menu, "menu.layer_via_cut", w._layer_via_cut)
@@ -96,6 +97,7 @@ class SelectionMenu(CanvasMenu):
         menu.addSeparator()
         self._add(menu, "menu.fill_fg", w._fill_fg)
         self._add(menu, "menu.fill_bg", w._fill_bg)
+        self._add(menu, "menu.stroke", w._stroke_selection, ctx.has_selection)
 
 
 class MoveMenu(CanvasMenu):
@@ -130,7 +132,8 @@ class PathMenu(CanvasMenu):
     def fill(self, menu, ctx):
         w = ctx.win
         wp = getattr(ctx.doc, "work_path", None) or {}
-        has_path = bool(wp.get("nodes"))
+        from tools.pen_tool import has_path as _has_path
+        has_path = _has_path(wp)
         self._add(menu, "paths.make_sel", lambda: w._path_make_selection(wp), has_path)
         self._add(menu, "paths.fill", lambda: w._path_fill(wp), has_path)
         self._add(menu, "paths.stroke", lambda: w._path_stroke(wp), has_path)

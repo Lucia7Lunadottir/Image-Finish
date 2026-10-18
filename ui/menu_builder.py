@@ -71,6 +71,7 @@ def build_menu_bar(win) -> None:
     edit_m.addSeparator()
     win._act(edit_m, "menu.fill_fg", win._fill_fg, QKeySequence("Alt+Delete"))
     win._act(edit_m, "menu.fill_bg", win._fill_bg, QKeySequence("Ctrl+Delete"))
+    win._act(edit_m, "menu.stroke", win._stroke_selection)
 
     # Image
     img_m  = win._menu(mb, "menu.image")

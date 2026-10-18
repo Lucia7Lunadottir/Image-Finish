@@ -106,6 +106,34 @@ class EditActionsMixin:
         self._canvas_refresh()
 
     @require_document
+    def _stroke_selection(self):
+        """Edit > Stroke…: a band of colour along the selection edge."""
+        from core.selection_stroke import stroke_selection
+        from ui.actions.pixel_target import pixel_layer_for_edit
+        from ui.stroke_dialog import StrokeDialog, StrokeSettings
+        sel = self._document.selection
+        if sel is None or sel.isEmpty():
+            self._status.showMessage(tr("err.no_selection"), 4000)
+            return
+        # Last settings, but the colour starts as the foreground (Photoshop).
+        settings = getattr(self, "_stroke_settings", None) or StrokeSettings()
+        settings.color = QColor(self._canvas.fg_color)
+        dlg = StrokeDialog(settings, self)
+        if not dlg.exec():
+            return
+        self._stroke_settings = s = dlg.settings()
+        layer = pixel_layer_for_edit(self, "paint")
+        if layer is None:
+            return
+        self._push_history(tr("history.stroke"))
+        layer.image = stroke_selection(
+            layer.image, layer.offset, self._document.selection, width=s.width, color=s.color,
+            location=s.location, blend_mode=s.blend_mode, opacity=s.opacity,
+            preserve_transparency=s.preserve_transparency)
+        self._canvas_refresh()
+        self._refresh_layers()
+
+    @require_document
     def _deselect(self):
         # Save the current selection for the Reselect function
         if self._document.selection and not self._document.selection.isEmpty():

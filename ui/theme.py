@@ -165,8 +165,30 @@ _saved = load_saved_theme()
 set_theme(_saved if _saved in (*PALETTES, "custom") else "dark")
 
 
+def _qss_image(name: str, svg: str) -> str:
+    """Write an SVG the stylesheet points at (coloured for the current
+    theme) and return it as a QSS url() — absolute, so it doesn't depend
+    on the directory the app was started from."""
+    import os
+    import tempfile
+    folder = os.path.join(tempfile.gettempdir(), f"imagefinish-qss-{os.getuid()}")
+    os.makedirs(folder, exist_ok=True)
+    path = os.path.join(folder, f"{name}-{_current_name}.svg")
+    with open(path, "w", encoding="utf-8") as f:
+        f.write(svg)
+    return 'url("' + path.replace("\\", "/") + '")'
+
+
 def build_stylesheet() -> str:
     """The application-wide QSS, generated from the palette above."""
+    arrow_down = _qss_image("arrow-down", (
+        '<svg xmlns="http://www.w3.org/2000/svg" width="10" height="6">'
+        f'<path d="M1 1 L5 5 L9 1" stroke="{TEXT}" stroke-width="1.8" fill="none" '
+        'stroke-linecap="round" stroke-linejoin="round"/></svg>'))
+    check = _qss_image("check", (
+        '<svg xmlns="http://www.w3.org/2000/svg" width="12" height="12">'
+        '<path d="M2.5 6.3 L5 8.8 L9.6 3.4" stroke="#ffffff" stroke-width="2" fill="none" '
+        'stroke-linecap="round" stroke-linejoin="round"/></svg>'))
     return f"""
 /* ───────────────────────── Global ───────────────────────── */
 QMainWindow, QDialog {{
@@ -212,6 +234,61 @@ QMenu::item:selected {{
 QMenu::item:disabled {{
     color: {MUTED};
     background-color: transparent;
+}}
+QCheckBox {{
+    spacing: 6px;
+    background-color: transparent;
+}}
+QCheckBox::indicator {{
+    width: 14px;
+    height: 14px;
+    border: 1px solid {SURFACE2};
+    border-radius: 3px;
+    background-color: {SURFACE0};
+}}
+QCheckBox::indicator:hover {{
+    border-color: {ACCENT_LIGHT};
+}}
+QCheckBox::indicator:checked {{
+    background-color: {ACCENT};
+    border-color: {ACCENT};
+    image: {check};
+}}
+QCheckBox::indicator:disabled {{
+    background-color: {MANTLE};
+    border-color: {SURFACE1};
+}}
+QCheckBox::indicator:checked:disabled {{
+    background-color: {SURFACE2};
+    border-color: {SURFACE2};
+}}
+QCheckBox:disabled {{
+    color: {MUTED};
+}}
+QRadioButton {{
+    spacing: 6px;
+    background-color: transparent;
+}}
+QRadioButton::indicator {{
+    width: 14px;
+    height: 14px;
+    border: 1px solid {SURFACE2};
+    border-radius: 8px;
+    background-color: {SURFACE0};
+}}
+QRadioButton::indicator:hover {{
+    border-color: {ACCENT_LIGHT};
+}}
+QRadioButton::indicator:checked {{
+    border: 4px solid {ACCENT};
+    background-color: #ffffff;
+}}
+QRadioButton::indicator:disabled {{
+    background-color: {MANTLE};
+    border-color: {SURFACE1};
+}}
+QRadioButton:disabled {{
+    color: {MUTED};
 }}
 QMenu::separator {{
     height: 1px;
@@ -307,7 +384,7 @@ QComboBox::drop-down {{
     border-radius: 0 3px 3px 0;
 }}
 QComboBox::down-arrow {{
-    image: url(ui/arrow_down.svg);
+    image: {arrow_down};
     width: 10px;
     height: 6px;
 }}

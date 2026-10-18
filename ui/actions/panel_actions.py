@@ -163,15 +163,13 @@ class PanelActionsMixin:
             return None
         if wp is None or isinstance(wp, bool):     # bool: a clicked() signal's arg
             wp = self._selected_path_dict()
-        return wp if wp and wp.get("nodes") else None
+        from tools.pen_tool import has_path
+        return wp if has_path(wp) else None
 
     @staticmethod
     def _path_shape(wp):
         from tools.pen_tool import build_bezier_path
-        path = build_bezier_path(wp)
-        if wp.get("closed"):
-            path.closeSubpath()
-        return path
+        return build_bezier_path(wp)
 
     def _path_make_selection(self, wp=None):
         wp = self._path_payload(wp)
@@ -227,6 +225,32 @@ class PanelActionsMixin:
         self._paths_panel.refresh(self._canvas)
         self._canvas_refresh()
 
+    def _make_work_path(self):
+        """Make Work Path from the selection (tolerance in px, as in
+        Photoshop); the selection is turned into the path."""
+        from PyQt6.QtWidgets import QInputDialog
+        from core.path_from_selection import selection_to_work_path
+        from tools.pen_tool import has_path
+        doc = self._document
+        sel = doc.selection if doc else None
+        if sel is None or sel.isEmpty():
+            if doc:
+                self._status.showMessage(tr("err.no_selection"), 4000)
+            return
+        tol, ok = QInputDialog.getDouble(self, tr("dlg.work_path.title"), tr("dlg.work_path.tolerance"),
+                                         getattr(self, "_work_path_tolerance", 2.0), 0.5, 10.0, 1)
+        if not ok:
+            return
+        self._work_path_tolerance = tol
+        wp = selection_to_work_path(sel, tol)
+        if not has_path(wp):
+            return
+        self._push_history(tr("history.make_work_path"))
+        doc.work_path = wp
+        doc.selection = None
+        self._paths_panel.refresh(self._canvas)
+        self._canvas_refresh()
+
     def _path_new(self):
         """Promotes the current (ephemeral) work path into a permanent,
         named entry in doc.saved_paths, then clears work_path — matching
@@ -234,7 +258,8 @@ class PanelActionsMixin:
         if not self._document:
             return
         wp = getattr(self._document, "work_path", None)
-        if not wp or not wp.get("nodes"):
+        from tools.pen_tool import has_path
+        if not has_path(wp):
             return
         from core.history import clone_work_path
         self._push_history(tr("history.new_path"))

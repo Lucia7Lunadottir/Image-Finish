@@ -50,6 +50,7 @@ class PathsPanel(QWidget):
     stroke_path_requested    = pyqtSignal()
     delete_path_requested    = pyqtSignal()
     new_path_requested        = pyqtSignal()
+    from_selection_requested  = pyqtSignal()
     rename_path_requested     = pyqtSignal(int, str)  # (saved_paths index, new name)
 
     def __init__(self, parent=None):
@@ -85,9 +86,10 @@ class PathsPanel(QWidget):
         self._btn_fill   = QPushButton()
         self._btn_stroke = QPushButton()
         self._btn_delete = QPushButton()
+        self._btn_from_sel = QPushButton()
 
         for i, btn in enumerate((self._btn_new, self._btn_sel, self._btn_fill,
-                                 self._btn_stroke, self._btn_delete)):
+                                 self._btn_stroke, self._btn_delete, self._btn_from_sel)):
             theme.apply_style(btn, BTN_STYLE)
             btn.setFixedHeight(26)
             btn.setMinimumWidth(40)
@@ -98,6 +100,7 @@ class PathsPanel(QWidget):
         self._btn_fill.clicked.connect(self._on_fill)
         self._btn_stroke.clicked.connect(self._on_stroke)
         self._btn_delete.clicked.connect(self._on_delete)
+        self._btn_from_sel.clicked.connect(self.from_selection_requested)
 
         layout.addWidget(btn_bar)
 
@@ -131,8 +134,8 @@ class PathsPanel(QWidget):
         except Exception:
             saved_paths = []
 
-        work_nodes = work_path.get("nodes", []) if isinstance(work_path, dict) else []
-        self._has_work_path = bool(work_nodes)
+        from tools.pen_tool import has_path
+        self._has_work_path = has_path(work_path) if isinstance(work_path, dict) else False
         self._num_saved = len(saved_paths) if isinstance(saved_paths, list) else 0
 
         row_to_select = None
@@ -170,6 +173,8 @@ class PathsPanel(QWidget):
         self._btn_fill.setText(_tr_or("paths.fill", "Fill Path"))
         self._btn_stroke.setText(_tr_or("paths.stroke", "Stroke Path"))
         self._btn_delete.setText(_tr_or("paths.delete", "Delete Path"))
+        self._btn_from_sel.setText(tr("paths.from_selection"))
+        self._btn_from_sel.setToolTip(tr("menu.make_work_path"))
 
     # ----------------------------------------------------------------- private
 

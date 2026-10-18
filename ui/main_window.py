@@ -90,6 +90,9 @@ class MainWindow(QMainWindow,
         self._load_recent_files()
 
         self.setAcceptDrops(True)
+        from core.locale import current as current_language
+        from ui.qt_translations import install_qt_translator
+        install_qt_translator(current_language())
         self._tools    = build_tools(self)
         self._active_tool_name = "Brush"
 
@@ -230,6 +233,7 @@ class MainWindow(QMainWindow,
             (paths.delete_path_requested,                   self._path_delete),
             (paths.new_path_requested,                      self._path_new),
             (paths.rename_path_requested,                   self._path_rename),
+            (paths.from_selection_requested,                self._make_work_path),
             (self._properties_panel.transform_changed,      self._on_transform_changed),
             (self._properties_panel.align_requested,        self._do_align_layer),
         ])
@@ -329,6 +333,8 @@ class MainWindow(QMainWindow,
             (canvas.tool_state_changed, self._opts_bar.update_tool_state),
             (canvas.cursor_info,        self._info_panel.update_info),
             (canvas.context_menu_requested, lambda pos, gpos: self._show_canvas_menu(canvas, pos, gpos)),
+            (canvas.option_change_requested, self._on_opt_changed),
+            (canvas.canvas_resize_requested, self._resize_canvas_to),
         ])
         self._connect_text_session(canvas)
 
