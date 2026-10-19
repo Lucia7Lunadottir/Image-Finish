@@ -528,6 +528,58 @@ class Document:
         self.width, self.height = width, height
         self.invalidate_composite()
 
+    def extend_canvas(self, left: int, top: int, right: int, bottom: int,
+                      fill_color: QColor | None = None):
+        """Grow (positive) or shrink (negative) the canvas on each side —
+        the canvas edge handles on all four sides. Left / top changes move
+        the whole document's content with them (every layer by its own
+        rules, see Layer.shift_for_canvas; guides, slices, selection and
+        paths too), then the size changes as in resize_canvas. An opaque
+        background gets the new area in `fill_color` on every side."""
+        left, top, right, bottom = int(left), int(top), int(right), int(bottom)
+        width = max(1, self.width + left + right)
+        height = max(1, self.height + top + bottom)
+        if left or top:
+            background = self._opaque_background()
+            for layer in self._all_layers_including_quick_mask():
+                if layer is background and left >= 0 and top >= 0:
+                    self._pad_background(layer, left, top, fill_color)
+                else:
+                    layer.shift_for_canvas(left, top)
+            self._shift_document_marks(left, top)
+        self.resize_canvas(width, height, fill_color)
+
+    @staticmethod
+    def _pad_background(layer: Layer, dx: int, dy: int, fill_color: QColor | None):
+        """The opaque background stays a plain full-canvas layer at (0, 0):
+        its pixels move right/down inside a bigger image, the new strip in
+        the background colour."""
+        from core.layer import shifted_mask
+        img = layer.image
+        grown = QImage(img.width() + dx, img.height() + dy, QImage.Format.Format_ARGB32_Premultiplied)
+        grown.fill(fill_color if fill_color is not None else Qt.GlobalColor.transparent)
+        p = QPainter(grown)
+        p.setCompositionMode(QPainter.CompositionMode.CompositionMode_Source)
+        p.drawImage(dx, dy, img)
+        p.end()
+        layer.image = grown
+        if layer.mask is not None:
+            layer.mask = shifted_mask(layer.mask, dx, dy)
+        layer._shift_vector_mask(dx, dy)
+
+    def _shift_document_marks(self, dx: int, dy: int):
+        """What belongs to the document rather than a layer: guides,
+        slices, the selection, the work path and saved paths."""
+        from core.path_model import translate_path
+        self.guides_v = [g + dx for g in self.guides_v]
+        self.guides_h = [g + dy for g in self.guides_h]
+        self.slices = [QRect(r).translated(dx, dy) for r in self.slices]
+        if self.selection is not None:
+            self.selection = self.selection.translated(dx, dy)
+        translate_path(getattr(self, "work_path", None), dx, dy)
+        for path in getattr(self, "saved_paths", []):
+            translate_path(path, dx, dy)
+
     def _opaque_background(self):
         """The bottom layer when it is a plain raster layer covering the
         whole canvas with no transparency — the one a canvas extension

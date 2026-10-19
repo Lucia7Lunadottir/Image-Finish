@@ -320,9 +320,7 @@
   "status.info":   "  {w} × {h} px  |  Zoom : {z}%  |  Calque : {layer}",
 
   "dlg.open_image":    "Ouvrir une image",
-  "dlg.open_filter":   "ImageFinish (*.imfn);;Photoshop (*.psd *.psb);;Images (*.png *.jpg *.jpeg *.bmp *.webp *.tiff);;Tous les fichiers (*)",
   "dlg.save_as":       "Enregistrer sous",
-  "dlg.save_filter":   "ImageFinish (*.imfn);;PNG (*.png);;JPEG (*.jpg *.jpeg);;WebP (*.webp);;TIFF (*.tiff);;BMP (*.bmp);;Tous les fichiers (*)",
   "dlg.export_png":    "Exportation PNG",
   "dlg.export_slices": "Choisir le dossier de destination",
   "dlg.define_name":        "Nom :",
@@ -1087,7 +1085,6 @@
   "opts.shape.path_op.exclude": "Exclure le chevauchement",
   "menu.open_as_layer": "Ouvrir comme calque…",
   "dlg.open_image_as_layer": "Ouvrir une image comme calque",
-  "dlg.open_filter_images": "Images (*.png *.jpg *.jpeg *.bmp *.webp *.tiff);;Tous les fichiers (*)",
   "dlg.unsaved_title": "Modifications non enregistrées",
   "dlg.unsaved_msg": "« {name} » contient des modifications non enregistrées.\nEnregistrer avant de fermer ?",
   "history.add_text": "Ajouter du texte",
@@ -1206,5 +1203,12 @@
   "warp.style.fisheye": "Œil de poisson",
   "warp.style.inflate": "Gonflement",
   "warp.style.squeeze": "Compression",
-  "warp.style.twist": "Torsion"
+  "warp.style.twist": "Torsion",
+  "dlg.filter.supported": "Tous les fichiers pris en charge",
+  "dlg.filter.all_files": "Tous les fichiers",
+  "dlg.export_quality_title": "Options {format}",
+  "dlg.export_quality": "Qualité",
+  "err.unsupported_format": "Ce type de fichier ne peut pas être enregistré",
+  "status.psd_saved_notes": "PSD : enregistrés en pixels (texte, formes, fonds) : {raster} ; non enregistrés (calques de réglage) : {skipped}",
+  "char.font_style": "Style de police"
 }

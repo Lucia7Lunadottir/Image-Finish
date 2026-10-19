@@ -313,6 +313,23 @@ class Layer:
         return None
 
     # ------------------------------------------------------------------
+    # ── canvas growing on the left / top (Document.extend_canvas) ─────
+    def shift_for_canvas(self, dx: int, dy: int) -> None:
+        """Move this layer's content by (dx, dy) document pixels because
+        the canvas grew (or shrank) on its left / top edge. Pixel content
+        (and the layer mask, which lives in the layer's own coordinates)
+        moves with the offset, so nothing is cut off; the document-space
+        vector mask is translated."""
+        if self.is_container:
+            return
+        self.offset = QPoint(self.offset.x() + dx, self.offset.y() + dy)
+        self._shift_vector_mask(dx, dy)
+
+    def _shift_vector_mask(self, dx: int, dy: int) -> None:
+        vm = getattr(self, "vector_mask", None)
+        if vm is not None:
+            self.vector_mask = vm.translated(dx, dy)
+
     def sharper_when_zoomed(self) -> bool:
         """Whether Document.render_view (drawing at screen resolution) shows
         this layer sharper than the magnified document composite. Pixel
@@ -921,6 +938,19 @@ class TextLayer(LiveRenderedLayer):
         pad = effects_padding(c[1])
         return text_transform(c[1]).mapRect(r.adjusted(-pad, -pad, pad, pad))
 
+    def shift_for_canvas(self, dx: int, dy: int) -> None:
+        """The text's position is document data; the thumbnail (and with it
+        the offset, and the layer mask placed at it) follows on rebake."""
+        data = self.data()
+        if data is None:
+            super().shift_for_canvas(dx, dy)
+            return
+        data.x += dx
+        data.y += dy
+        self.set_data(data)
+        self._shift_vector_mask(dx, dy)
+        self.rebake_thumbnail()
+
     def rebake_thumbnail(self) -> None:
         """Tight bake: the image covers just the text, placed at offset
         (the text's own position lives in text_data, not in the offset)."""
@@ -1035,6 +1065,19 @@ class VectorLayer(LiveRenderedLayer):
             self.path_nodes = path_to_work_path(self.vector_mask or QPainterPath())
             self._path_nodes_mask = self.vector_mask
         return self.path_nodes
+
+    def shift_for_canvas(self, dx: int, dy: int) -> None:
+        """shape_data is drawn at the offset (moves with it); a Pen path is
+        document-space (moves with the vector mask) — and its nodes move
+        too, so open ends and path operations survive."""
+        nodes = self.path_nodes if self._path_nodes_valid() else None
+        super().shift_for_canvas(dx, dy)
+        if nodes is not None:
+            from core.path_model import translate_path
+            translate_path(nodes, dx, dy)
+            self.update_path()
+        if self.has_vector_geometry():
+            self.rebake_thumbnail()
 
     def update_path(self) -> None:
         """Rebuild `vector_mask` from the (edited) `path_nodes`. A new path
@@ -1182,7 +1225,30 @@ class VectorLayer(LiveRenderedLayer):
                             QImage.Format.Format_ARGB32_Premultiplied)
 
 
-class AdjustmentLayer(Layer):
+def shifted_mask(mask: QImage, dx: int, dy: int) -> QImage:
+    """A document-space mask moved by (dx, dy); the area it newly covers
+    reveals (white), like the part of a canvas a mask never covered."""
+    w, h = mask.width() + max(0, dx), mask.height() + max(0, dy)
+    out = QImage(w, h, QImage.Format.Format_ARGB32_Premultiplied)
+    out.fill(QColor(255, 255, 255))
+    p = QPainter(out)
+    p.setCompositionMode(QPainter.CompositionMode.CompositionMode_Source)
+    p.drawImage(dx, dy, mask)
+    p.end()
+    return out
+
+
+class _CanvasCoveringLayer(Layer):
+    """Fill and adjustment layers cover the whole canvas whatever its size:
+    when the canvas grows on the left / top only their masks move."""
+
+    def shift_for_canvas(self, dx: int, dy: int) -> None:
+        self._shift_vector_mask(dx, dy)
+        if getattr(self, "mask", None) is not None:
+            self.mask = shifted_mask(self.mask, dx, dy)
+
+
+class AdjustmentLayer(_CanvasCoveringLayer):
     _LAYER_TAG = "adjustment"
     _PIXEL_ACCESS = "none"
     SETTINGS_LAYER = True
@@ -1320,7 +1386,7 @@ def _resample_coverage(frac, view_transform, width: int, height: int, smooth: bo
     return darr[:height, :width, 3].astype(np.float32) / 255.0
 
 
-class FillLayer(Layer):
+class FillLayer(_CanvasCoveringLayer):
     _LAYER_TAG = "fill"
     _PIXEL_ACCESS = "rasterize"
     SETTINGS_LAYER = True
@@ -1476,6 +1542,12 @@ class FrameLayer(Layer):
 
     def _from_dict_extra(self, d):
         self.frame_data = d.get("frame_data")
+
+    def shift_for_canvas(self, dx: int, dy: int) -> None:
+        super().shift_for_canvas(dx, dy)
+        fd = self.frame_data
+        if fd and fd.get("rect") is not None:
+            fd["rect"] = QRectF(fd["rect"]).translated(dx, dy)
 
     def render_into(self, ctx, layer_artboard_rect, is_clipping, next_clipping):
         from core.blend_modes import composition_mode as _get_composition_mode

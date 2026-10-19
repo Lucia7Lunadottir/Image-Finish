@@ -320,9 +320,7 @@
   "status.info":   "  {w} × {h} px  |  Zoom: {z}%  |  Capa: {layer}",
 
   "dlg.open_image":    "Abrir imagen",
-  "dlg.open_filter":   "ImageFinish (*.imfn);;Photoshop (*.psd *.psb);;Imágenes (*.png *.jpg *.jpeg *.bmp *.webp *.tiff);;Todos los archivos (*)",
   "dlg.save_as":       "Guardar como",
-  "dlg.save_filter":   "ImageFinish (*.imfn);;PNG (*.png);;JPEG (*.jpg *.jpeg);;WebP (*.webp);;TIFF (*.tiff);;BMP (*.bmp);;Todos los archivos (*)",
   "dlg.export_png":    "Exportar PNG",
   "dlg.export_slices": "Seleccionar carpeta de destino",
   "dlg.define_name":        "Nombre:",
@@ -1087,7 +1085,6 @@
   "opts.shape.path_op.exclude": "Excluir superposición",
   "menu.open_as_layer": "Abrir como capa…",
   "dlg.open_image_as_layer": "Abrir imagen como capa",
-  "dlg.open_filter_images": "Imágenes (*.png *.jpg *.jpeg *.bmp *.webp *.tiff);;Todos los archivos (*)",
   "dlg.unsaved_title": "Cambios sin guardar",
   "dlg.unsaved_msg": "'{name}' tiene cambios sin guardar.\n¿Guardar antes de cerrar?",
   "history.add_text": "Añadir texto",
@@ -1206,5 +1203,12 @@
   "warp.style.fisheye": "Ojo de pez",
   "warp.style.inflate": "Inflar",
   "warp.style.squeeze": "Comprimir",
-  "warp.style.twist": "Giro"
+  "warp.style.twist": "Giro",
+  "dlg.filter.supported": "Todos los archivos compatibles",
+  "dlg.filter.all_files": "Todos los archivos",
+  "dlg.export_quality_title": "Opciones de {format}",
+  "dlg.export_quality": "Calidad",
+  "err.unsupported_format": "Este tipo de archivo no se puede guardar",
+  "status.psd_saved_notes": "PSD: guardadas como píxeles (texto, formas, rellenos): {raster}; no guardadas (capas de ajuste): {skipped}",
+  "char.font_style": "Estilo de fuente"
 }

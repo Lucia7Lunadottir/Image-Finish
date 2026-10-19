@@ -320,9 +320,7 @@
   "status.info":   "  {w} × {h} px  |  Zoom: {z}%  |  Camada: {layer}",
 
   "dlg.open_image":    "Abrir imagem",
-  "dlg.open_filter":   "ImageFinish (*.imfn);;Photoshop (*.psd *.psb);;Imagens (*.png *.jpg *.jpeg *.bmp *.webp *.tiff);;Todos os arquivos (*)",
   "dlg.save_as":       "Salvar como",
-  "dlg.save_filter":   "ImageFinish (*.imfn);;PNG (*.png);;JPEG (*.jpg *.jpeg);;WebP (*.webp);;TIFF (*.tiff);;BMP (*.bmp);;Todos os arquivos (*)",
   "dlg.export_png":    "Exportar PNG",
   "dlg.export_slices": "Selecionar pasta de destino",
   "dlg.define_name":        "Nome:",
@@ -1087,7 +1085,6 @@
   "opts.shape.path_op.exclude": "Excluir sobreposição",
   "menu.open_as_layer": "Abrir como camada…",
   "dlg.open_image_as_layer": "Abrir imagem como camada",
-  "dlg.open_filter_images": "Imagens (*.png *.jpg *.jpeg *.bmp *.webp *.tiff);;Todos os arquivos (*)",
   "dlg.unsaved_title": "Alterações não salvas",
   "dlg.unsaved_msg": "'{name}' tem alterações não salvas.\nSalvar antes de fechar?",
   "history.add_text": "Adicionar texto",
@@ -1206,5 +1203,12 @@
   "warp.style.fisheye": "Olho de peixe",
   "warp.style.inflate": "Inflar",
   "warp.style.squeeze": "Comprimir",
-  "warp.style.twist": "Torção"
+  "warp.style.twist": "Torção",
+  "dlg.filter.supported": "Todos os arquivos compatíveis",
+  "dlg.filter.all_files": "Todos os arquivos",
+  "dlg.export_quality_title": "Opções de {format}",
+  "dlg.export_quality": "Qualidade",
+  "err.unsupported_format": "Este tipo de arquivo não pode ser salvo",
+  "status.psd_saved_notes": "PSD: salvas como pixels (texto, formas, preenchimentos): {raster}; não salvas (camadas de ajuste): {skipped}",
+  "char.font_style": "Estilo da fonte"
 }

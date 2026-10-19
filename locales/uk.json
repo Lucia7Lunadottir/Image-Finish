@@ -320,9 +320,7 @@
   "status.info":   "  {w} × {h} пікс  |  Масштаб: {z}%  |  Шар: {layer}",
 
   "dlg.open_image":    "Відкрити зображення",
-  "dlg.open_filter":   "ImageFinish (*.imfn);;Photoshop (*.psd *.psb);;Зображення (*.png *.jpg *.jpeg *.bmp *.webp *.tiff);;Усі файли (*)",
   "dlg.save_as":       "Зберегти як",
-  "dlg.save_filter":   "ImageFinish (*.imfn);;PNG (*.png);;JPEG (*.jpg *.jpeg);;WebP (*.webp);;TIFF (*.tiff);;BMP (*.bmp);;Усі файли (*)",
   "dlg.export_png":    "Експорт PNG",
   "dlg.export_slices": "Оберіть папку для збереження",
   "dlg.define_name":        "Ім’я:",
@@ -1087,7 +1085,6 @@
   "opts.shape.path_op.exclude": "Виключити перетин",
   "menu.open_as_layer": "Відкрити як шар…",
   "dlg.open_image_as_layer": "Відкрити зображення як шар",
-  "dlg.open_filter_images": "Зображення (*.png *.jpg *.jpeg *.bmp *.webp *.tiff);;Усі файли (*)",
   "dlg.unsaved_title": "Незбережені зміни",
   "dlg.unsaved_msg": "«{name}» має незбережені зміни.\nЗберегти перед закриттям?",
   "history.add_text": "Додавання тексту",
@@ -1206,5 +1203,12 @@
   "warp.style.fisheye": "Риб'яче око",
   "warp.style.inflate": "Надутий",
   "warp.style.squeeze": "Стиснення",
-  "warp.style.twist": "Скручування"
+  "warp.style.twist": "Скручування",
+  "dlg.filter.supported": "Усі підтримувані файли",
+  "dlg.filter.all_files": "Усі файли",
+  "dlg.export_quality_title": "Параметри {format}",
+  "dlg.export_quality": "Якість",
+  "err.unsupported_format": "Цей тип файлу не можна зберегти",
+  "status.psd_saved_notes": "PSD: збережено як пікселі (текст, фігури, заливки): {raster}; не збережено (коригувальні шари): {skipped}",
+  "char.font_style": "Накреслення"
 }

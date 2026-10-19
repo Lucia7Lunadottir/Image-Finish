@@ -25,6 +25,9 @@ def _hex(c) -> str:
 @dataclass(frozen=True)
 class CharStyle:
     family: str = "Sans Serif"
+    # Font style within the family ("Light", "Condensed Bold"…, see
+    # core/font_catalog.py); "" = the family's plain style.
+    style: str = ""
     size: float = 24.0             # points
     bold: bool = False
     italic: bool = False
@@ -51,7 +54,7 @@ class CharStyle:
 
 # tool_opts / panel keys -> CharStyle field, and back.
 CHAR_OPTION_KEYS = {
-    "font_family": "family", "font_size": "size", "font_bold": "bold",
+    "font_family": "family", "font_style": "style", "font_size": "size", "font_bold": "bold",
     "font_italic": "italic", "font_underline": "underline", "font_strikeout": "strikeout",
     "text_color": "color", "font_tracking": "tracking",
     "font_baseline_shift": "baseline_shift", "font_caps": "caps",
@@ -192,7 +195,8 @@ class TextData:
                 return default
             return _hex(v)
         style = CharStyle(
-            family=d.get("font_family", "Sans Serif"), size=float(d.get("font_size", 24)),
+            family=d.get("font_family", "Sans Serif"), style=str(d.get("font_style", "") or ""),
+            size=float(d.get("font_size", 24)),
             bold=bool(d.get("font_bold", False)), italic=bool(d.get("font_italic", False)),
             underline=bool(d.get("font_underline", False)), strikeout=bool(d.get("font_strikeout", False)),
             color=col(d.get("text_color"), "#ff000000"), tracking=float(d.get("font_tracking", 0) or 0),

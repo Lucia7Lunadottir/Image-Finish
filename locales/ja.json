@@ -320,9 +320,7 @@
   "status.info":   "  {w} × {h} px  |  ズーム: {z}%  |  レイヤー: {layer}",
 
   "dlg.open_image":    "画像を開く",
-  "dlg.open_filter":   "ImageFinish (*.imfn);;Photoshop (*.psd *.psb);;画像ファイル (*.png *.jpg *.jpeg *.bmp *.webp *.tiff);;すべてのファイル (*)",
   "dlg.save_as":       "別名で保存",
-  "dlg.save_filter":   "ImageFinish (*.imfn);;PNG (*.png);;JPEG (*.jpg *.jpeg);;WebP (*.webp);;TIFF (*.tiff);;BMP (*.bmp);;すべてのファイル (*)",
   "dlg.export_png":    "PNG 書き出し",
   "dlg.export_slices": "保存先フォルダーを選択",
   "dlg.define_name":        "名前:",
@@ -1087,7 +1085,6 @@
   "opts.shape.path_op.exclude": "中マド",
   "menu.open_as_layer": "レイヤーとして開く…",
   "dlg.open_image_as_layer": "画像をレイヤーとして開く",
-  "dlg.open_filter_images": "画像 (*.png *.jpg *.jpeg *.bmp *.webp *.tiff);;すべてのファイル (*)",
   "dlg.unsaved_title": "未保存の変更",
   "dlg.unsaved_msg": "「{name}」には未保存の変更があります。\n閉じる前に保存しますか？",
   "history.add_text": "テキストを追加",
@@ -1206,5 +1203,12 @@
   "warp.style.fisheye": "魚眼レンズ",
   "warp.style.inflate": "拡大",
   "warp.style.squeeze": "絞り込み",
-  "warp.style.twist": "ひねり"
+  "warp.style.twist": "ひねり",
+  "dlg.filter.supported": "サポートされているすべてのファイル",
+  "dlg.filter.all_files": "すべてのファイル",
+  "dlg.export_quality_title": "{format} オプション",
+  "dlg.export_quality": "画質",
+  "err.unsupported_format": "この種類のファイルは保存できません",
+  "status.psd_saved_notes": "PSD: ピクセルとして保存（テキスト、シェイプ、塗りつぶし）: {raster}、保存されません（調整レイヤー）: {skipped}",
+  "char.font_style": "フォントスタイル"
 }

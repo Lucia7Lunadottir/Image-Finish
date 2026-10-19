@@ -320,9 +320,7 @@
   "status.info":   "  {w} × {h} px  |  Powiększenie: {z}%  |  Warstwa: {layer}",
 
   "dlg.open_image":    "Otwórz obraz",
-  "dlg.open_filter":   "ImageFinish (*.imfn);;Photoshop (*.psd *.psb);;Obrazy (*.png *.jpg *.jpeg *.bmp *.webp *.tiff);;Wszystkie pliki (*)",
   "dlg.save_as":       "Zapisz jako",
-  "dlg.save_filter":   "ImageFinish (*.imfn);;PNG (*.png);;JPEG (*.jpg *.jpeg);;WebP (*.webp);;TIFF (*.tiff);;BMP (*.bmp);;Wszystkie pliki (*)",
   "dlg.export_png":    "Eksport PNG",
   "dlg.export_slices": "Wybierz folder docelowy",
   "dlg.define_name":        "Nazwa:",
@@ -1087,7 +1085,6 @@
   "opts.shape.path_op.exclude": "Wyklucz nakładanie",
   "menu.open_as_layer": "Otwórz jako warstwę…",
   "dlg.open_image_as_layer": "Otwórz obraz jako warstwę",
-  "dlg.open_filter_images": "Obrazy (*.png *.jpg *.jpeg *.bmp *.webp *.tiff);;Wszystkie pliki (*)",
   "dlg.unsaved_title": "Niezapisane zmiany",
   "dlg.unsaved_msg": "„{name}” ma niezapisane zmiany.\nZapisać przed zamknięciem?",
   "history.add_text": "Dodanie tekstu",
@@ -1206,5 +1203,12 @@
   "warp.style.fisheye": "Rybie oko",
   "warp.style.inflate": "Nadmuchanie",
   "warp.style.squeeze": "Ściśnięcie",
-  "warp.style.twist": "Skręcenie"
+  "warp.style.twist": "Skręcenie",
+  "dlg.filter.supported": "Wszystkie obsługiwane pliki",
+  "dlg.filter.all_files": "Wszystkie pliki",
+  "dlg.export_quality_title": "Opcje {format}",
+  "dlg.export_quality": "Jakość",
+  "err.unsupported_format": "Tego typu pliku nie można zapisać",
+  "status.psd_saved_notes": "PSD: zapisane jako piksele (tekst, kształty, wypełnienia): {raster}; nie zapisane (warstwy dopasowania): {skipped}",
+  "char.font_style": "Styl czcionki"
 }

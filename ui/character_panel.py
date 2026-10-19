@@ -66,12 +66,14 @@ class CharacterPanel(QWidget):
         theme.apply_style(self._font_family_lbl, LABEL_STYLE)
         layout.addWidget(self._font_family_lbl)
 
-        self._font_combo = QFontComboBox()
+        from ui.font_picker import FontChoice
+        self._font = FontChoice(self.option_changed.emit)
+        self._font_combo = self._font.family_combo
         self._font_combo.setSizePolicy(QSizePolicy.Policy.Expanding, QSizePolicy.Policy.Fixed)
-        self._font_combo.currentFontChanged.connect(
-            lambda f: self.option_changed.emit("font_family", f.family())
-        )
         layout.addWidget(self._font_combo)
+        self._font.style_combo.setSizePolicy(QSizePolicy.Policy.Expanding, QSizePolicy.Policy.Fixed)
+        self._font.style_combo.setToolTip(tr("char.font_style"))
+        layout.addWidget(self._font.style_combo)
 
         # ---------- Size ----------
         size_row = QWidget()
@@ -274,11 +276,7 @@ class CharacterPanel(QWidget):
             return
         opts = getattr(canvas, "tool_opts", {})
 
-        self._font_combo.blockSignals(True)
-        family = opts.get("font_family", "Sans Serif")
-        font = QFont(family)
-        self._font_combo.setCurrentFont(font)
-        self._font_combo.blockSignals(False)
+        self._font.show(opts.get("font_family", "Sans Serif"), opts.get("font_style", ""))
 
         self._size_spin.blockSignals(True)
         self._size_spin.setValue(float(opts.get("font_size", 24)))
@@ -323,6 +321,7 @@ class CharacterPanel(QWidget):
     def retranslate(self):
         self._header_lbl.setText(tr("char.title"))
         self._font_family_lbl.setText(tr("char.family"))
+        self._font.style_combo.setToolTip(tr("char.font_style"))
         self._size_lbl.setText(tr("char.size"))
         self._tracking_lbl.setText(tr("char.tracking"))
         self._leading_lbl.setText(tr("char.leading"))

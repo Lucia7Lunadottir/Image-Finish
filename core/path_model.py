@@ -165,6 +165,14 @@ def clone_path(wp: dict | None) -> dict:
     return clone
 
 
+def translate_path(wp: dict | None, dx: float, dy: float) -> None:
+    """Move every node (and handle) of every component in place."""
+    for comp in path_components(wp):
+        for n in comp["nodes"]:
+            for key in ("p", "c1", "c2"):
+                n[key] = QPointF(n[key].x() + dx, n[key].y() + dy)
+
+
 # ── QPainterPath conversion ──────────────────────────────────────────────────
 
 def _append_component(path: QPainterPath, comp: dict) -> None:

@@ -320,9 +320,7 @@
   "status.info":   "  {w} × {h} Px  |  Zoom: {z}%  |  Ebene: {layer}",
 
   "dlg.open_image":    "Bild öffnen",
-  "dlg.open_filter":   "ImageFinish (*.imfn);;Photoshop (*.psd *.psb);;Bilder (*.png *.jpg *.jpeg *.bmp *.webp *.tiff);;Alle Dateien (*)",
   "dlg.save_as":       "Speichern unter",
-  "dlg.save_filter":   "ImageFinish (*.imfn);;PNG (*.png);;JPEG (*.jpg *.jpeg);;WebP (*.webp);;TIFF (*.tiff);;BMP (*.bmp);;Alle Dateien (*)",
   "dlg.export_png":    "PNG Export",
   "dlg.export_slices": "Zielordner wählen",
   "dlg.define_name":        "Name:",
@@ -1087,7 +1085,6 @@
   "opts.shape.path_op.exclude": "Überlappung ausschließen",
   "menu.open_as_layer": "Als Ebene öffnen…",
   "dlg.open_image_as_layer": "Bild als Ebene öffnen",
-  "dlg.open_filter_images": "Bilder (*.png *.jpg *.jpeg *.bmp *.webp *.tiff);;Alle Dateien (*)",
   "dlg.unsaved_title": "Ungespeicherte Änderungen",
   "dlg.unsaved_msg": "„{name}“ hat ungespeicherte Änderungen.\nVor dem Schließen speichern?",
   "history.add_text": "Text hinzufügen",
@@ -1206,5 +1203,12 @@
   "warp.style.fisheye": "Fischauge",
   "warp.style.inflate": "Aufblasen",
   "warp.style.squeeze": "Stauchen",
-  "warp.style.twist": "Wirbel"
+  "warp.style.twist": "Wirbel",
+  "dlg.filter.supported": "Alle unterstützten Dateien",
+  "dlg.filter.all_files": "Alle Dateien",
+  "dlg.export_quality_title": "{format}-Optionen",
+  "dlg.export_quality": "Qualität",
+  "err.unsupported_format": "Dieser Dateityp kann nicht gespeichert werden",
+  "status.psd_saved_notes": "PSD: als Pixel gespeichert (Text, Formen, Füllungen): {raster}; nicht gespeichert (Einstellungsebenen): {skipped}",
+  "char.font_style": "Schriftschnitt"
 }

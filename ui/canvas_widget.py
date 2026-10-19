@@ -33,7 +33,7 @@ class CanvasWidget(QOpenGLWidget):
     view_changed     = pyqtSignal()  # zoom/pan changed (status bar, navigator)
     context_menu_requested = pyqtSignal(QPoint, QPoint)  # right click: doc pos, global pos
     option_change_requested = pyqtSignal(str, object)    # e.g. brush size from the keyboard
-    canvas_resize_requested = pyqtSignal(int, int)       # edge handles dropped: new width, height
+    canvas_extend_requested = pyqtSignal(int, int, int, int)   # edge handles dropped: left, top, right, bottom
 
     def __init__(self, parent=None):
         super().__init__(parent)
@@ -138,7 +138,7 @@ class CanvasWidget(QOpenGLWidget):
         self.show_rulers: bool = False
         self._guides = GuideDrag(self)
         self._resize_handles = CanvasResizeHandles(
-            self, lambda w, h: self.canvas_resize_requested.emit(w, h))
+            self, lambda l, t, r, b: self.canvas_extend_requested.emit(l, t, r, b))
         self._over_resize_handle = False
 
         self._march_offset: int = 0

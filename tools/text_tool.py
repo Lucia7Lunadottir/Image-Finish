@@ -67,7 +67,8 @@ class _TextDialog(BaseDialog):
     def __init__(self, initial_text: str = "", opts: dict = None,
                  layer_name: str = None, parent=None):
         super().__init__(parent)
-        from PyQt6.QtWidgets import QFontComboBox, QSpinBox, QPushButton, QHBoxLayout
+        from PyQt6.QtWidgets import QSpinBox, QPushButton, QHBoxLayout
+        from ui.font_picker import FontChoice
         title = tr("text_dlg.edit_title", name=layer_name) if layer_name else tr("text_dlg.new_title")
         self.setWindowTitle(title)
         self.setMinimumWidth(500)
@@ -79,9 +80,9 @@ class _TextDialog(BaseDialog):
         font_row = QHBoxLayout()
         font_row.setSpacing(6)
 
-        self._font_combo = QFontComboBox()
-        self._font_combo.setFixedWidth(300)
-        self._font_combo.setCurrentFont(QFont(self._base_opts.get("font_family", "Sans Serif")))
+        self._font = FontChoice(lambda _key, _value: self._update_preview())
+        self._font_combo = self._font.family_combo
+        self._font_combo.setFixedWidth(260)
 
         self._size_sp = QSpinBox()
         self._size_sp.setRange(4, 500)
@@ -105,6 +106,7 @@ class _TextDialog(BaseDialog):
         self._btn_i.setFixedSize(28, 28)
 
         font_row.addWidget(self._font_combo)
+        font_row.addWidget(self._font.style_combo)
         font_row.addWidget(self._size_sp)
         font_row.addWidget(self._btn_b)
         font_row.addWidget(self._btn_i)
@@ -129,7 +131,9 @@ class _TextDialog(BaseDialog):
         btns.rejected.connect(self.reject)
         lo.addWidget(btns)
 
-        self._font_combo.currentFontChanged.connect(self._update_preview)
+        # The font pair already refreshes the preview through its emit.
+        self._font.show(self._base_opts.get("font_family", "Sans Serif"),
+                        self._base_opts.get("font_style", ""))
         self._size_sp.valueChanged.connect(self._update_preview)
         self._btn_b.toggled.connect(self._update_preview)
         self._btn_i.toggled.connect(self._update_preview)
@@ -140,7 +144,8 @@ class _TextDialog(BaseDialog):
 
     def _current_opts(self) -> dict:
         opts = dict(self._base_opts)
-        opts["font_family"] = self._font_combo.currentFont().family()
+        opts["font_family"] = self._font.family()
+        opts["font_style"]  = self._font.style()
         opts["font_size"]   = self._size_sp.value()
         opts["font_bold"]   = self._btn_b.isChecked()
         opts["font_italic"] = self._btn_i.isChecked()
@@ -161,7 +166,8 @@ class _TextDialog(BaseDialog):
 
     def get_font_opts(self) -> dict:
         return {
-            "font_family": self._font_combo.currentFont().family(),
+            "font_family": self._font.family(),
+            "font_style":  self._font.style(),
             "font_size":   self._size_sp.value(),
             "font_bold":   self._btn_b.isChecked(),
             "font_italic": self._btn_i.isChecked(),

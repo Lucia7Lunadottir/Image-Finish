@@ -345,7 +345,7 @@ class MainWindow(QMainWindow,
             (canvas.cursor_info,        self._info_panel.update_info),
             (canvas.context_menu_requested, lambda pos, gpos: self._show_canvas_menu(canvas, pos, gpos)),
             (canvas.option_change_requested, self._on_opt_changed),
-            (canvas.canvas_resize_requested, self._resize_canvas_to),
+            (canvas.canvas_extend_requested, self._extend_canvas),
         ])
         self._connect_text_session(canvas)
 

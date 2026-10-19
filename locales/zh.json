@@ -320,9 +320,7 @@
   "status.info":   "  {w} × {h} 像素  |  缩放: {z}%  |  图层: {layer}",
 
   "dlg.open_image":    "打开图像",
-  "dlg.open_filter":   "ImageFinish (*.imfn);;Photoshop (*.psd *.psb);;图像 (*.png *.jpg *.jpeg *.bmp *.webp *.tiff);;所有文件 (*)",
   "dlg.save_as":       "存储为",
-  "dlg.save_filter":   "ImageFinish (*.imfn);;PNG (*.png);;JPEG (*.jpg *.jpeg);;WebP (*.webp);;TIFF (*.tiff);;BMP (*.bmp);;所有文件 (*)",
   "dlg.export_png":    "导出 PNG",
   "dlg.export_slices": "选择保存文件夹",
   "dlg.define_name":        "名称:",
@@ -1087,7 +1085,6 @@
   "opts.shape.path_op.exclude": "排除重叠",
   "menu.open_as_layer": "作为图层打开…",
   "dlg.open_image_as_layer": "将图像作为图层打开",
-  "dlg.open_filter_images": "图像 (*.png *.jpg *.jpeg *.bmp *.webp *.tiff);;所有文件 (*)",
   "dlg.unsaved_title": "未保存的更改",
   "dlg.unsaved_msg": "“{name}”有未保存的更改。\n关闭前保存吗？",
   "history.add_text": "添加文本",
@@ -1206,5 +1203,12 @@
   "warp.style.fisheye": "鱼眼",
   "warp.style.inflate": "膨胀",
   "warp.style.squeeze": "挤压",
-  "warp.style.twist": "扭转"
+  "warp.style.twist": "扭转",
+  "dlg.filter.supported": "所有支持的文件",
+  "dlg.filter.all_files": "所有文件",
+  "dlg.export_quality_title": "{format} 选项",
+  "dlg.export_quality": "品质",
+  "err.unsupported_format": "无法保存此类型的文件",
+  "status.psd_saved_notes": "PSD：以像素保存（文字、形状、填充）：{raster}；未保存（调整图层）：{skipped}",
+  "char.font_style": "字体样式"
 }

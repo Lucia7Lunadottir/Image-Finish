@@ -4,6 +4,7 @@ from PyQt6.QtCore import QSettings
 from PyQt6.QtGui import QAction
 from PyQt6.QtWidgets import QFileDialog, QMessageBox
 from core.document import Document
+from core.image_formats import format_for_filter, format_for_path, open_filter, save_filter
 from core.locale import tr
 from ui.document_controller import require_document
 
@@ -22,7 +23,7 @@ class FileActionsMixin:
 
     def _open_file(self):
         path, _ = QFileDialog.getOpenFileName(
-            self, tr("dlg.open_image"), "", tr("dlg.open_filter"))
+            self, tr("dlg.open_image"), "", open_filter(tr("dlg.filter.supported"), tr("dlg.filter.all_files")))
         if path:
             self._open_file_path(path)
 
@@ -34,7 +35,8 @@ class FileActionsMixin:
         implemented the same way _paste() already adds clipboard content as
         a layer (centered on the canvas, no independent offset/transform)."""
         path, _ = QFileDialog.getOpenFileName(
-            self, tr("dlg.open_image_as_layer"), "", tr("dlg.open_filter_images"))
+            self, tr("dlg.open_image_as_layer"), "",
+            open_filter(tr("dlg.filter.supported"), tr("dlg.filter.all_files"), images_only=True))
         if not path:
             return
 
@@ -128,22 +130,34 @@ class FileActionsMixin:
     @require_document
     def _save(self):
         path = getattr(self, "_filepath", None)
-        if path and path.lower().endswith(_PSD_EXTENSIONS):
-            # PSD is import-only: save the layers as .imfn next to it instead
-            # of flattening them into a file Qt can't write anyway.
-            self._save_as(suggested_name=os.path.splitext(path)[0] + ".imfn")
-        elif path:
+        if path and format_for_path(path) is not None:
             self._do_save(path)
+        elif path:
+            # Opened from a format we read but can't write (GIF, camera RAW,
+            # SVG…): keep the layers in .imfn next to it.
+            self._save_as(suggested_name=os.path.splitext(path)[0] + ".imfn")
         else:
             self._save_as()
 
     @require_document
     def _save_as(self, *, suggested_name: str = "untitled.png"):
-        path, _ = QFileDialog.getSaveFileName(
-            self, tr("dlg.save_as"), suggested_name, tr("dlg.save_filter"))
-        if path:
-            self._filepath = path
-            self._do_save(path)
+        suggested_fmt = format_for_path(suggested_name)
+        path, selected = QFileDialog.getSaveFileName(
+            self, tr("dlg.save_as"), suggested_name, save_filter(),
+            suggested_fmt.filter if suggested_fmt else "")
+        if not path:
+            return
+        fmt = format_for_path(path)
+        if fmt is None:
+            # No (known) extension typed: the format picked in the dialog.
+            fmt = format_for_filter(selected) or format_for_path("x.png")
+            path = f"{path}.{fmt.default_extension}"
+        if fmt.lossy:
+            from ui.export_quality_dialog import ask_quality
+            if ask_quality(fmt, self) is None:
+                return
+        self._filepath = path
+        self._do_save(path)
 
     @require_document
     def _export_png(self):
@@ -158,12 +172,25 @@ class FileActionsMixin:
     def _do_save(self, path: str, flatten: bool = False):
         if hasattr(self, "_commit_text_edit_if_active"):
             self._commit_text_edit_if_active()
-        from core.serialization import save_document, save_image_atomic, SerializationError
+        from core.image_formats import write_flat_image
+        from core.serialization import save_document, SerializationError
+        fmt = format_for_path(path)
+        note = None
         try:
-            if path.lower().endswith(".imfn"):
+            if fmt is None:
+                raise SerializationError(tr("err.unsupported_format"))
+            if fmt.writer == "imfn":
                 save_document(self._document, path)
+            elif fmt.writer == "psd" and not flatten:
+                from core.psd_export import PsdExporter
+                exporter = PsdExporter(self._document)
+                exporter.save(path)
+                if exporter.rasterized or exporter.skipped:
+                    note = tr("status.psd_saved_notes", raster=exporter.rasterized, skipped=exporter.skipped)
             else:
-                save_image_atomic(self._document.get_composite(respect_live_hidden=False), path)
+                from ui.export_quality_dialog import remembered_quality
+                write_flat_image(self._document.get_composite(respect_live_hidden=False), path, fmt,
+                                 remembered_quality(fmt) if fmt.lossy else -1)
         except (SerializationError, OSError) as e:
             QMessageBox.critical(self, tr("err.title.save_error"),
                                  tr("err.could_not_save", path=path) + f"\n{e}")
@@ -174,7 +201,7 @@ class FileActionsMixin:
             QMessageBox.critical(self, tr("err.title.save_error"),
                                  tr("err.could_not_save", path=path))
             return
-        self._status.showMessage(tr("status.saved", path=path))
+        self._status.showMessage(tr("status.saved", path=path) + (f"  |  {note}" if note else ""))
         c = self._canvas
         if c:
             c.is_modified = False

@@ -17,11 +17,11 @@ class TextOptions(BaseOptions):
         super().__init__(parent)
         self.layout.setSpacing(4)
 
-        font_combo = self._font_combo = QFontComboBox()
-        font_combo.setFixedWidth(250)
-        font_combo.setCurrentFont(QFont("Sans Serif"))
-        font_combo.currentFontChanged.connect(
-            lambda f: self.option_changed.emit("font_family", f.family()))
+        from ui.font_picker import FontChoice
+        self._font = FontChoice(self.option_changed.emit)
+        font_combo = self._font_combo = self._font.family_combo
+        font_combo.setFixedWidth(230)
+        self._font.style_combo.setToolTip(tr("char.font_style"))
 
         size_sp = self._size_sp = QDoubleSpinBox()
         size_sp.setRange(1, 1296)
@@ -98,6 +98,7 @@ class TextOptions(BaseOptions):
         theme.apply_style(stroke_lbl, lambda: f"color: {theme.SUBTEXT}; font-size: 12px;")
 
         self.layout.addWidget(font_combo)
+        self.layout.addWidget(self._font.style_combo)
         self.layout.addWidget(size_sp)
         self.layout.addWidget(self._sep())
         self.layout.addWidget(btn_b)
@@ -129,7 +130,7 @@ class TextOptions(BaseOptions):
         """Reflects tool_opts (or the style at the text caret, see
         ui/actions/text_actions.py) without re-emitting option_changed."""
         put = self.set_silently
-        put(self._font_combo, self._font_combo.setCurrentFont, QFont(opts.get("font_family", "Sans Serif")))
+        self._font.show(opts.get("font_family", "Sans Serif"), opts.get("font_style", ""))
         put(self._size_sp, self._size_sp.setValue, float(opts.get("font_size", 24)))
         put(self._orient_btn, self._orient_btn.setChecked, bool(opts.get("text_vertical", False)))
         for btn, key in ((self._btn_b, "font_bold"), (self._btn_i, "font_italic"),

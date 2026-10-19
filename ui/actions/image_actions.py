@@ -73,6 +73,23 @@ class ImageActionsMixin:
         self._update_status()
 
     @require_document
+    def _extend_canvas(self, left: int, top: int, right: int, bottom: int):
+        """The canvas edge handles: grow / shrink on any side. Growing on
+        the left or top moves the content with it; the view shifts by the
+        same amount, so the picture stays where it was on screen."""
+        if not (left or top or right or bottom):
+            return
+        self._push_history(tr("history.resize_canvas"))
+        self._document.extend_canvas(left, top, right, bottom, self._canvas.bg_color)
+        c = self._canvas
+        if left or top:
+            from PyQt6.QtCore import QPointF
+            c._pan -= QPointF(left * c.zoom, top * c.zoom)
+        self._canvas_refresh()
+        self._refresh_layers()
+        self._update_status()
+
+    @require_document
     def _apply_crop(self):
         from tools.other_tools import CropTool
         tool = self._tools.get("Crop")

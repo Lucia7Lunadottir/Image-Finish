@@ -322,11 +322,8 @@
   "status.info":   "  {w} \u00d7 {h} px  |  Zoom: {z}%  |  Layer: {layer}",
 
   "dlg.open_image":    "Open Image",
-  "dlg.open_filter":   "ImageFinish (*.imfn);;Photoshop (*.psd *.psb);;Images (*.png *.jpg *.jpeg *.bmp *.webp *.tiff);;All Files (*)",
   "dlg.open_image_as_layer": "Open Image as Layer",
-  "dlg.open_filter_images":  "Images (*.png *.jpg *.jpeg *.bmp *.webp *.tiff);;All Files (*)",
   "dlg.save_as":       "Save As",
-  "dlg.save_filter":   "ImageFinish (*.imfn);;PNG (*.png);;JPEG (*.jpg *.jpeg);;WebP (*.webp);;TIFF (*.tiff);;BMP (*.bmp);;All Files (*)",
   "dlg.export_png":    "Export PNG",
   "dlg.export_slices": "Select folder for export",
   "dlg.define_name":        "Name:",
@@ -1213,5 +1210,12 @@
   "warp.style.fisheye": "Fisheye",
   "warp.style.inflate": "Inflate",
   "warp.style.squeeze": "Squeeze",
-  "warp.style.twist": "Twist"
+  "warp.style.twist": "Twist",
+  "dlg.filter.supported": "All supported files",
+  "dlg.filter.all_files": "All files",
+  "dlg.export_quality_title": "{format} options",
+  "dlg.export_quality": "Quality",
+  "err.unsupported_format": "This file type can't be saved",
+  "status.psd_saved_notes": "PSD: stored as pixels (text, shapes, fills): {raster}; not saved (adjustment layers): {skipped}",
+  "char.font_style": "Font style"
 }

@@ -481,20 +481,15 @@ def test_truncated_layer_section_falls_back_to_merged(qapp, tmp_path):
 
 # ── main window ──────────────────────────────────────────────────────────────
 
-def test_open_psd_in_main_window_and_save_goes_to_imfn(main_window, mocked_dialogs, tmp_path, monkeypatch):
+def test_open_psd_in_main_window_and_save_writes_psd(main_window, mocked_dialogs, tmp_path):
+    """Ctrl+S on an opened PSD writes the PSD back (with its layers), as
+    in Photoshop — it used to be import-only (Save As .imfn)."""
     path = tmp_path / "art.psd"
-    path.write_bytes(psd(4, 4, [layer("only", (0, 0, 4, 4), rgb_planes(4, 4, 1, 2, 3))]))
+    path.write_bytes(psd(4, 4, [layer("only", (0, 0, 4, 4), rgb_planes(4, 4, 1, 2, 3)),
+                                layer("second", (0, 0, 2, 2), rgb_planes(2, 2, 9, 9, 9))]))
     main_window._open_file_path(str(path))
-    assert [l.name for l in main_window._document.layers] == ["only"]
-    assert main_window._filepath == str(path)
-
-    asked = {}
-    from PyQt6.QtWidgets import QFileDialog
-
-    def fake_save(parent, caption, suggested, filters):
-        asked["suggested"] = suggested
-        return "", ""
-    monkeypatch.setattr(QFileDialog, "getSaveFileName", staticmethod(fake_save))
+    assert [l.name for l in main_window._document.layers] == ["only", "second"]
+    main_window._document.layers[1].name = "renamed"
     main_window._save()
-    assert asked["suggested"] == str(tmp_path / "art.imfn")
-    assert path.read_bytes()[:4] == b"8BPS"          # the PSD itself is untouched
+    doc, _ = load(tmp_path, path.read_bytes(), name="again.psd")
+    assert [l.name for l in doc.layers] == ["only", "renamed"]

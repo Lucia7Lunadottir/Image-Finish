@@ -17,6 +17,7 @@ The editor only talks to that interface: caret geometry, hit-testing,
 selection rectangles and line navigation.
 """
 import math
+from dataclasses import replace
 
 from PyQt6.QtCore import QLineF, QPointF, QRectF, Qt
 from PyQt6.QtGui import (QBrush, QColor, QFont, QImage, QPainter, QPainterPath,
@@ -42,8 +43,23 @@ def layout_device() -> QImage:
 def qfont(style: CharStyle) -> QFont:
     f = QFont(style.family)
     f.setPointSizeF(max(0.5, style.size))
-    f.setBold(style.bold)
-    f.setItalic(style.italic)
+    if style.style and not (style.bold or style.italic):
+        f.setStyleName(style.style)               # the exact face
+    elif style.style:
+        # B / I on top of a chosen style (Photoshop's faux bold / italic):
+        # a style name would pin the face, so match by its weight, width
+        # and slant instead, made bold / italic.
+        from PyQt6.QtGui import QFontDatabase
+        from core.font_catalog import STRETCH, style_width
+        weight = QFontDatabase.weight(style.family, style.style)
+        f.setWeight(QFont.Weight(max(weight, 700) if style.bold else weight))
+        f.setItalic(style.italic or QFontDatabase.italic(style.family, style.style))
+        stretch = STRETCH.get(style_width(style.style))
+        if stretch:
+            f.setStretch(stretch)
+    else:
+        f.setBold(style.bold)
+        f.setItalic(style.italic)
     f.setUnderline(False)        # decorations are drawn as geometry, see _decorations
     f.setStrikeOut(False)
     if style.caps == "all":
@@ -138,11 +154,50 @@ def _paragraphs(text: str):
     return out
 
 
+FALLBACK_FAMILY = "Sans Serif"
+_symbol_fonts: dict = {}
+
+
+def _symbol_raw_font(family: str):
+    """The raw font of a *symbol* font (Webdings…), else None. Qt doesn't
+    fall back to other fonts for characters a symbol font lacks — it draws
+    empty boxes — so text_engine does that itself (see _covered)."""
+    if family not in _symbol_fonts:
+        from PyQt6.QtGui import QFontDatabase, QRawFont
+        symbol = QFontDatabase.WritingSystem.Symbol in QFontDatabase.writingSystems(family)
+        _symbol_fonts[family] = QRawFont.fromFont(QFont(family)) if symbol else None
+    return _symbol_fonts[family]
+
+
+def _fallback(style: CharStyle) -> CharStyle:
+    return replace(style, family=FALLBACK_FAMILY, style="")
+
+
+def _covered(text: str, lo: int, hi: int, style: CharStyle):
+    """[lo, hi) split where a symbol font lacks characters: those parts
+    get the same style in the fallback family."""
+    raw = _symbol_raw_font(style.family)
+    if raw is None:
+        yield lo, hi, style
+        return
+    start, has = lo, None
+    for i in range(lo, hi):
+        ch = text[i]
+        ok = ch.isspace() or raw.supportsCharacter(ord(ch))   # ord: also beyond the BMP
+        if has is None:
+            has = ok
+        elif ok != has:
+            yield start, i, style if has else _fallback(style)
+            start, has = i, ok
+    if start < hi:
+        yield start, hi, style if has in (None, True) else _fallback(style)
+
+
 def _runs_in(data: TextData, a: int, b: int):
     for s, e, style in data.iter_runs():
         lo, hi = max(s, a), min(e, b)
         if lo < hi:
-            yield lo, hi, style
+            yield from _covered(data.text, lo, hi, style)
 
 
 def _glyph_path(run, dx: float, dy: float) -> tuple:
@@ -423,6 +478,9 @@ class VerticalLayout(TextLayoutResult):
 
     @staticmethod
     def _glyph(ch: str, style: CharStyle):
+        raw = _symbol_raw_font(style.family)
+        if raw is not None and not ch.isspace() and not raw.supportsCharacter(ord(ch)):
+            style = _fallback(style)
         tl = QTextLayout(ch, qfont(style), layout_device())
         tl.beginLayout()
         ql = tl.createLine()

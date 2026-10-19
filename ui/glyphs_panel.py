@@ -100,9 +100,10 @@ class GlyphsPanel(QWidget):
         layout.addWidget(self._header_lbl)
 
         # ---------- Font selector ----------
-        self._font_combo = QFontComboBox()
+        from ui.font_picker import FontFamilyCombo
+        self._font_combo = FontFamilyCombo()
         self._font_combo.setSizePolicy(QSizePolicy.Policy.Expanding, QSizePolicy.Policy.Fixed)
-        self._font_combo.currentFontChanged.connect(self._on_font_changed)
+        self._font_combo.family_chosen.connect(lambda fam: self._on_font_changed(QFont(fam)))
         layout.addWidget(self._font_combo)
 
         # ---------- Search ----------

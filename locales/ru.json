@@ -321,11 +321,8 @@
   "status.info":   "  {w} × {h} пкс  |  Масштаб: {z}%  |  Слой: {layer}",
 
   "dlg.open_image":    "Открыть изображение",
-  "dlg.open_filter":   "ImageFinish (*.imfn);;Photoshop (*.psd *.psb);;Изображения (*.png *.jpg *.jpeg *.bmp *.webp *.tiff);;Все файлы (*)",
   "dlg.open_image_as_layer": "Открыть изображение как слой",
-  "dlg.open_filter_images":  "Изображения (*.png *.jpg *.jpeg *.bmp *.webp *.tiff);;Все файлы (*)",
   "dlg.save_as":       "Сохранить как",
-  "dlg.save_filter":   "ImageFinish (*.imfn);;PNG (*.png);;JPEG (*.jpg *.jpeg);;WebP (*.webp);;TIFF (*.tiff);;BMP (*.bmp);;Все файлы (*)",
   "dlg.export_png":    "Экспорт PNG",
   "dlg.export_slices": "Выберите папку для сохранения",
   "dlg.define_name":        "Имя:",
@@ -1206,5 +1203,12 @@
   "warp.style.fisheye": "Рыбий глаз",
   "warp.style.inflate": "Надутый",
   "warp.style.squeeze": "Сжатие",
-  "warp.style.twist": "Скручивание"
+  "warp.style.twist": "Скручивание",
+  "dlg.filter.supported": "Все поддерживаемые файлы",
+  "dlg.filter.all_files": "Все файлы",
+  "dlg.export_quality_title": "Параметры {format}",
+  "dlg.export_quality": "Качество",
+  "err.unsupported_format": "Этот тип файла нельзя сохранить",
+  "status.psd_saved_notes": "PSD: сохранены как пиксели (текст, фигуры, заливки): {raster}; не сохранены (корректирующие слои): {skipped}",
+  "char.font_style": "Начертание"
 }

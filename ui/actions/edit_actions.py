@@ -92,17 +92,38 @@ class EditActionsMixin:
             self._canvas_refresh()
             return
             
-        self._push_history(tr("history.clear_layer"))
         sel = self._document.selection
-        if sel and not sel.isEmpty():
-            p = QPainter(layer.image)
-            p.setCompositionMode(QPainter.CompositionMode.CompositionMode_Clear)
-            p.translate(-layer.offset)
-            p.setClipPath(sel)
-            p.fillRect(sel.boundingRect().toRect(), QColor(0, 0, 0, 0))
+        has_selection = sel is not None and not sel.isEmpty()
+        editing_mask = getattr(layer, "editing_mask", False) and layer.mask is not None
+        if not has_selection and not editing_mask and layer.pixel_access_for("paint") != "direct":
+            # A layer drawn from data (text, shape, fill, adjustment, smart
+            # object, group) has no pixels to clear — its `image` is only a
+            # thumbnail: clearing it changed nothing on the canvas. As in
+            # Photoshop, Delete with nothing selected removes the layer.
+            self._delete_layer()
+            return
+        # With a selection: through the pixel gate (rasterize text/shapes
+        # after asking; a message for layers without pixels).
+        from ui.actions.pixel_target import pixel_layer_for_edit
+        layer = pixel_layer_for_edit(self, "paint")
+        if layer is None:
+            return
+        self._push_history(tr("history.clear_layer"))
+        target = layer.mask if editing_mask else layer.image
+        if has_selection:
+            p = QPainter(target)
+            if editing_mask:
+                # A mask has no transparency: "cleared" = hidden (black).
+                p.translate(-layer.offset)
+                p.fillPath(sel, QColor(0, 0, 0))
+            else:
+                p.setCompositionMode(QPainter.CompositionMode.CompositionMode_Clear)
+                p.translate(-layer.offset)
+                p.setClipPath(sel)
+                p.fillRect(sel.boundingRect().toRect(), QColor(0, 0, 0, 0))
             p.end()
         else:
-            layer.image.fill(Qt.GlobalColor.transparent)
+            target.fill(QColor(0, 0, 0) if editing_mask else Qt.GlobalColor.transparent)
         self._canvas_refresh()
 
     @require_document
