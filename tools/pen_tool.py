@@ -267,6 +267,33 @@ class BasePenTool(BaseTool):
             focus_component(wp, idx)
         return wp
 
+    # ── would a press edit a live shape's points? ───────────────────────
+    def live_shape_edit_at(self, pos, doc, opts):
+        self._opts = opts
+        target = self._path_target(doc)
+        if not getattr(target, "is_live", False):
+            return None
+        return target.layer if self._edits_points_at(doc, target.wp, QPointF(pos), opts) else None
+
+    def _edits_points_at(self, doc, wp, pos, opts) -> bool:
+        """Creating tools: a new component added to the selected shape
+        (a path operation other than "new")."""
+        return (self.CREATES_PATHS and self._mode() == "shape"
+                and opts.get("shape_path_op", "new") in PATH_OPS)
+
+    def _hits_anchor(self, wp, pos, opts) -> bool:
+        hit = self.screen_px(opts, self.HIT_PX)
+        return any(self._dist(pos, n["p"]) < hit for c in path_components(wp) for n in c["nodes"])
+
+    def _hits_handle(self, wp, pos, opts) -> bool:
+        hit = self.screen_px(opts, self.HIT_PX)
+        return any(self._dist(n[k], n["p"]) > 1 and self._dist(pos, n[k]) < hit
+                   for c in path_components(wp) for n in c["nodes"] for k in ("c1", "c2"))
+
+    def _hits_segment(self, wp, pos, tolerance) -> bool:
+        return any(segment_at(c["nodes"], c["closed"], pos, tolerance) is not None
+                   for c in path_components(wp))
+
     def _closes_path(self, wp, pos, opts) -> bool:
         """Would a click at `pos` close the open path (near its first node)?"""
         nodes = wp['nodes']
@@ -410,8 +437,8 @@ class PenTool(BasePenTool):
         if opts.get("_alt") and has_path(wp):
             return "convert"
         nodes = wp["nodes"]
-        drawing = bool(nodes) and not wp["closed"]
-        if self._closes_path(wp, pos, opts):
+        drawing = bool(nodes) and not wp["closed"] and not getattr(target, "is_live", False)
+        if drawing and self._closes_path(wp, pos, opts):
             return "close"
         hit = self.screen_px(opts, self.HIT_PX)
         if drawing and self._dist(pos, nodes[-1]["p"]) < hit:
@@ -424,6 +451,16 @@ class PenTool(BasePenTool):
                 if segment_at(comp["nodes"], comp["closed"], pos, hit) is not None:
                     return "add"
         return "draw" if drawing else "new"
+
+    def _edits_points_at(self, doc, wp, pos, opts) -> bool:
+        action = self.action_at(doc, pos, opts)
+        if action in ("add", "delete"):
+            return True
+        if action == "direct":
+            return self._helper(DirectSelectionTool)._edits_points_at(doc, wp, pos, opts)
+        if action == "convert":
+            return self._helper(ConvertPointTool)._edits_points_at(doc, wp, pos, opts)
+        return super()._edits_points_at(doc, wp, pos, opts)
 
     def _helper(self, cls):
         if cls not in self._helpers:
@@ -546,6 +583,9 @@ class CurvaturePenTool(BasePenTool):
         super().__init__(owner)
         self.drag_idx = -1
 
+    def _edits_points_at(self, doc, wp, pos, opts) -> bool:
+        return self._hits_anchor(wp, pos, opts) or super()._edits_points_at(doc, wp, pos, opts)
+
     def on_press(self, pos, doc, fg, bg, opts):
         target = self._path_target(doc)
         wp = target.wp
@@ -604,6 +644,9 @@ class AddAnchorPointTool(BasePenTool):
     icon = "✒️+"
     shortcut = "P"
 
+    def _edits_points_at(self, doc, wp, pos, opts) -> bool:
+        return self._hits_segment(wp, pos, self.screen_px(opts, self.COMPONENT_PX))
+
     def on_press(self, pos, doc, fg, bg, opts):
         wp = self._focus_at(doc, pos, self.screen_px(opts, self.COMPONENT_PX))
         nodes = wp['nodes']
@@ -620,6 +663,10 @@ class DeleteAnchorPointTool(BasePenTool):
     name = "DeleteAnchor"
     icon = "✒️-"
     shortcut = "P"
+
+    def _edits_points_at(self, doc, wp, pos, opts) -> bool:
+        return self._hits_anchor(wp, pos, opts)
+
     def on_press(self, pos, doc, fg, bg, opts):
         wp = self._focus_at(doc, pos, self.screen_px(opts, self.COMPONENT_PX))
         nodes = wp['nodes']
@@ -640,6 +687,9 @@ class ConvertPointTool(BasePenTool):
     def __init__(self, owner=None):
         super().__init__(owner)
         self.drag_target = None
+
+    def _edits_points_at(self, doc, wp, pos, opts) -> bool:
+        return self._hits_handle(wp, pos, opts) or self._hits_anchor(wp, pos, opts)
 
     def on_press(self, pos, doc, fg, bg, opts):
         self.drag_target = None
@@ -683,6 +733,9 @@ class PathSelectionTool(BasePenTool):
         self._orig_nodes = []
         self._moved = []
 
+    def _edits_points_at(self, doc, wp, pos, opts) -> bool:
+        return False                    # moves the whole shape, which stays live
+
     def on_press(self, pos, doc, fg, bg, opts):
         wp = self._get_wp(doc)
         if not has_path(wp): return
@@ -720,6 +773,11 @@ class DirectSelectionTool(ConvertPointTool):
     name = "DirectSelection"
     icon = "↗"
     shortcut = "A"
+
+    def _edits_points_at(self, doc, wp, pos, opts) -> bool:
+        return (super()._edits_points_at(doc, wp, pos, opts)
+                or self._hits_segment(wp, pos, self.screen_px(opts, self.HIT_PX)))
+
     def on_press(self, pos, doc, fg, bg, opts):
         self.drag_target = None
         self._was_smooth = False

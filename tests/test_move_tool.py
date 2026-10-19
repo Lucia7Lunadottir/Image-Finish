@@ -269,6 +269,13 @@ def test_raster_layer_corner_scale_is_independent_per_axis(qapp):
     assert params["w"] != pytest.approx(params["h"], rel=1e-6)
 
 
+def _in_progress(layer):
+    """The layer as the canvas composites it mid-drag (MoveTool previews a
+    live layer in place, see LiveRenderedLayer._move_preview_source)."""
+    assert layer._live_edit_hidden and layer._move_preview_source is not None
+    return layer.move_preview(layer._move_preview_source())
+
+
 def _path_style_layer(doc, rect=(50, 50, 40, 30)):
     layer = VectorLayer("Shape", doc.width, doc.height)
     path = QPainterPath()
@@ -294,9 +301,7 @@ def test_vector_path_style_move_translates_vector_mask_live(qapp):
 
     # Live preview while still dragging must reflect the in-progress drag.
     tool.on_move(QPoint(90, 85), doc, QColor(), QColor(), OPTS)
-    fp = tool.floating_preview()
-    assert fp[0] == "live"
-    assert fp[1].vector_mask.boundingRect() == QRectF(70, 70, 40, 30)
+    assert _in_progress(layer).vector_mask.boundingRect() == QRectF(70, 70, 40, 30)
 
     tool.apply_transform(doc)
     assert layer.vector_mask.boundingRect() == QRectF(70, 70, 40, 30)
@@ -356,8 +361,7 @@ def test_vector_shape_data_move_updates_rect_and_rebakes(qapp):
 
     tool = MoveTool()
     tool.on_press(QPoint(35, 35), doc, QColor(), QColor(), OPTS)
-    fp = tool.floating_preview()
-    assert fp[0] == "live"  # crisp re-rendered preview, not the stale baked bitmap
+    _in_progress(layer)     # crisp re-rendered preview, not the stale baked bitmap
     tool.on_move(QPoint(45, 45), doc, QColor(), QColor(), OPTS)
     tool.apply_transform(doc)
 
@@ -379,9 +383,7 @@ def test_vector_shape_data_live_preview_reflects_in_progress_drag(qapp):
     tool.on_press(QPoint(35, 35), doc, QColor(), QColor(), OPTS)
     tool.on_move(QPoint(55, 55), doc, QColor(), QColor(), OPTS)  # +20, +20, mid-drag
 
-    fp = tool.floating_preview()
-    assert fp[0] == "live"
-    assert fp[1].shape_data["rect"] == (40, 40, 30, 30)
+    assert _in_progress(layer).shape_data["rect"] == (40, 40, 30, 30)
     assert layer.shape_data["rect"] == (20, 20, 30, 30)   # the real layer is untouched mid-drag
 
 
@@ -417,12 +419,13 @@ def test_vector_shape_data_hidden_from_composite_while_move_tool_drags_it(qapp):
     assert not layer._live_edit_hidden
     tool.on_press(QPoint(35, 35), doc, QColor(), QColor(), OPTS)
     assert layer._live_edit_hidden
+    tool.on_move(QPoint(55, 55), doc, QColor(), QColor(), OPTS)          # +20, +20
 
     doc.invalidate_composite()
     comp = doc.get_composite()
-    assert comp.pixelColor(35, 35).alpha() == 0  # old position: contributes nothing while hidden
+    assert comp.pixelColor(25, 25).alpha() == 0       # old position: no ghost left behind
+    assert comp.pixelColor(65, 65).alpha() == 255     # one copy, at the new position
 
-    tool.on_move(QPoint(45, 45), doc, QColor(), QColor(), OPTS)
     tool.apply_transform(doc)
     assert not layer._live_edit_hidden
 
@@ -468,9 +471,7 @@ def test_text_move_preview_is_the_committed_result(qapp):
     c = layer.content_bounds().center().toPoint()
     tool.on_press(c, doc, QColor(), QColor(), OPTS)
     tool.on_move(c + QPoint(30, 10), doc, QColor(), QColor(), OPTS)
-    fp = tool.floating_preview()
-    assert fp[0] == "live"
-    preview = fp[1].data()
+    preview = _in_progress(layer).data()
     tool.apply_transform(doc)
     committed = layer.data()
     assert (preview.x, preview.y, preview.angle) == (committed.x, committed.y, committed.angle)

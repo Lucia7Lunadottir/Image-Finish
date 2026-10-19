@@ -224,6 +224,9 @@ class LayerStyleDialog(BaseDialog):
             add_slider(tr("ls.size"), "size", 0, 100, 5, "px")
         elif key == "stroke":
             add_slider(tr("ls.size"), "size", 1, 100, 3, "px")
+            from core.layer_styles import STROKE_POSITIONS
+            add_combo(tr("ls.position"), "position",
+                      [(tr(f"ls.position.{pos}"), pos) for pos in STROKE_POSITIONS])
             add_combo(tr("ls.blend_mode"), "blend_mode", blend_modes)
             add_slider(tr("ls.opacity"), "opacity", 0, 100, 100, "%")
             add_color(tr("ls.color"), "color", QColor(0,0,0))

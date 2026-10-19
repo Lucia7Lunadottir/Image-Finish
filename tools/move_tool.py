@@ -34,6 +34,7 @@ class MoveTool(TransformTool):
     def _reset_state(self):
         if getattr(self, "_target_layer", None) is not None:
             self._target_layer._live_edit_hidden = False
+            self._target_layer._move_preview_source = None
         super()._reset_state()
 
     def _begin(self, layer, doc) -> bool:
@@ -42,6 +43,8 @@ class MoveTool(TransformTool):
         # the layer is told to contribute nothing to the composite for the
         # duration of the drag instead (_reset_state clears it).
         layer._live_edit_hidden = True
+        if self._previews_in_composite(layer):
+            layer._move_preview_source = lambda: self._total_transform
         if getattr(doc, "snap_to_layers", True):
             self._snap_targets = [r for r in (l.snap_rect() for l in doc.layers
                                               if l is not layer and l.visible)
@@ -78,6 +81,19 @@ class MoveTool(TransformTool):
 
     def _after_floating_bake(self, doc):
         pass   # the selection already follows the piece; it stays
+
+    def sharp_while_dragging(self) -> bool:
+        layer = getattr(self, "_target_layer", None)
+        return self.is_transforming and layer is not None and self._previews_in_composite(layer)
+
+    @staticmethod
+    def _previews_in_composite(layer) -> bool:
+        """Shapes, Pen paths and text: the drag shows the layer re-rendered
+        with the drag applied (the same geometry the commit computes), in
+        its place in the layer stack and with its layer styles — not its
+        baked bitmap stretched on top of everything."""
+        return (not layer.is_container and hasattr(layer, "move_preview")
+                and layer.has_live_content())
 
     def _get_handle_hit(self, pos: QPointF, opts: dict):
         if self._bounds.isEmpty(): return 'move'
@@ -377,11 +393,8 @@ class MoveTool(TransformTool):
         if not self.is_transforming:
             return None
         layer = self._target_layer
-        if layer is not None and hasattr(layer, "move_preview") and layer.has_live_content():
-            # Shapes, Pen paths and text: preview the layer re-rendered with
-            # the drag applied (the same geometry the commit computes), not
-            # its baked bitmap stretched.
-            return ("live", layer.move_preview(self._total_transform))
+        if layer is not None and self._previews_in_composite(layer):
+            return None             # the layer itself composites as moved
         if self._original_img is not None:
             return ("transform", self._original_img, self._original_offset, self._total_transform)
         return None

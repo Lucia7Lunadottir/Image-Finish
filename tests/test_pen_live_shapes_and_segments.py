@@ -289,3 +289,105 @@ def test_color_sampler_alt_removal_is_in_screen_pixels(qapp, zoom, removes):
     tool.markers = [QPoint(50, 50)]
     tool.on_press(QPoint(56, 50), Document(100, 100), FG, BG, {"_alt": True, "_zoom": zoom})
     assert (not tool.markers) is removes
+
+
+# ── the "turn into a path?" question ─────────────────────────────────────────
+
+@pytest.mark.parametrize("tool, pos, opts, asks", [
+    (DirectSelectionTool, (40, 40), {}, True),          # an anchor
+    (DirectSelectionTool, (70, 40), {}, True),          # a segment
+    (DirectSelectionTool, (150, 150), {}, False),       # nowhere
+    (PathSelectionTool, (70, 60), {}, False),           # moving it whole keeps it live
+    (AddAnchorPointTool, (70, 40), {}, True),
+    (AddAnchorPointTool, (70, 60), {}, False),
+    (PenTool, (40, 40), {"pen_mode": "shape", "pen_auto_add_delete": True}, True),
+    (PenTool, (150, 150), {"pen_mode": "shape"}, False),                         # a new shape
+    (PenTool, (150, 150), {"pen_mode": "shape", "shape_path_op": "unite"}, True),
+    (PenTool, (40, 40), {"pen_mode": "shape", "_ctrl": True}, True),
+])
+def test_which_presses_would_turn_a_live_shape_into_a_path(doc, tool, pos, opts, asks):
+    layer = _live(doc)
+    assert (tool().live_shape_edit_at(QPoint(*pos), doc, opts) is layer) is asks
+    assert layer.is_live_shape()                        # asking changes nothing
+
+
+def test_pen_near_a_live_line_end_does_not_continue_it(doc):
+    layer = _live(doc, "line", rect=(20, 100, 160, 0))
+    tool = PenTool()
+    assert tool.live_shape_edit_at(QPoint(180, 100), doc, {"pen_mode": "shape",
+                                                           "pen_auto_add_delete": False}) is None
+
+
+def _mouse(kind, pos):
+    from PyQt6.QtCore import QEvent, Qt
+    from PyQt6.QtGui import QMouseEvent
+    button = Qt.MouseButton.LeftButton
+    buttons = button if kind != QEvent.Type.MouseButtonRelease else Qt.MouseButton.NoButton
+    return QMouseEvent(kind, QPointF(*pos), QPointF(*pos), button, buttons,
+                       Qt.KeyboardModifier.NoModifier)
+
+
+@pytest.fixture()
+def canvas_with_shape(main_window, mocked_dialogs):
+    w = main_window
+    w._add_tab(Document(200, 200), "t")
+    layer = _live(w._document)
+    c = w._canvas
+    c.resize(400, 400)
+    c.zoom, c._pan = 1.0, QPointF(0, 0)
+    w._activate_tool("AddAnchor")
+    return w, c, layer
+
+
+def _click(c, pos):
+    from PyQt6.QtCore import QEvent
+    c.mousePressEvent(_mouse(QEvent.Type.MouseButtonPress, pos))
+    c.mouseReleaseEvent(_mouse(QEvent.Type.MouseButtonRelease, pos))
+
+
+def test_refusing_the_question_leaves_the_shape_alone(canvas_with_shape, monkeypatch):
+    import ui.actions.live_shape_prompt as prompt
+    w, c, layer = canvas_with_shape
+    asked = []
+    monkeypatch.setattr(prompt, "confirm_live_shape_conversion",
+                        lambda parent, l: asked.append(l) or False)
+    _click(c, (70, 40))
+    assert asked == [layer] and layer.is_live_shape()
+
+
+def test_accepting_converts_and_one_undo_brings_the_shape_back(canvas_with_shape, monkeypatch):
+    import ui.actions.live_shape_prompt as prompt
+    w, c, layer = canvas_with_shape
+    monkeypatch.setattr(prompt, "confirm_live_shape_conversion", lambda parent, l: True)
+    _click(c, (70, 40))
+    edited = w._document.get_active_layer()
+    assert not edited.is_live_shape() and len(edited.path_nodes["nodes"]) == 5
+    w._undo()
+    assert w._document.get_active_layer().is_live_shape()
+
+
+def test_dont_ask_again_is_remembered(qapp, monkeypatch):
+    import ui.actions.live_shape_prompt as prompt
+    from PyQt6.QtWidgets import QMessageBox
+    store = {}
+
+    class _Settings:
+        def value(self, key, default=None, type=None):
+            return store.get(key, default)
+
+        def setValue(self, key, value):
+            store[key] = value
+
+    monkeypatch.setattr(prompt, "_settings", lambda: _Settings())
+    shown = []
+
+    def fake_exec(box):
+        shown.append(box.text())
+        box.checkBox().setChecked(True)
+        return QMessageBox.StandardButton.Ok
+
+    monkeypatch.setattr(QMessageBox, "exec", fake_exec)
+    layer = VectorLayer("Прямоугольник 1", 10, 10)
+    assert prompt.confirm_live_shape_conversion(None, layer)
+    assert prompt.confirm_live_shape_conversion(None, layer)
+    assert len(shown) == 1 and "Прямоугольник 1" in shown[0]

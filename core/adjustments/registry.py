@@ -136,7 +136,10 @@ class Levels(AdjustmentKind):
               Param("gamma", 1.0, float, aliases=("gamma_sp", "mid")),
               Param("white", 255, aliases=("white_sp", "in_max", "in_white", "in_high")),
               Param("out_min", 0, aliases=("out_min_sp", "out_black", "out_low")),
-              Param("out_max", 255, aliases=("out_max_sp", "out_white", "out_high")))
+              Param("out_max", 255, aliases=("out_max_sp", "out_white", "out_high")),
+              # Optional per-channel settings {"r"|"g"|"b": {black, gamma, ...}}
+              # (from Photoshop files; the dialog edits the composite only).
+              Param("channels", None, object))
 
     def _fix_legacy_units(self, p, raw):
         if p["gamma"] > 5.0:
@@ -146,9 +149,34 @@ class Levels(AdjustmentKind):
         if p["white"] <= p["black"]:
             p["white"] = p["black"] + 1
 
+    _CHANNEL_INDEX = {"r": 2, "g": 1, "b": 0}       # in a BGRA pixel
+
     def apply(self, image, p):
         from ui.levels_dialog import apply_levels
+        channels = p.get("channels") or {}
+        if channels:
+            image = self._apply_channels(image, channels)
         return apply_levels(image, p["black"], p["gamma"], p["white"], p["out_min"], p["out_max"])
+
+    def _apply_channels(self, image, channels: dict):
+        """Each channel's own levels — before the composite one, as
+        Photoshop does (checked against its renders)."""
+        import numpy as np
+        from core.pixel_buffer import qimage_argb_view
+        from ui.adjustments_dialog import _to_argb32
+        from ui.levels_dialog import levels_lut
+        img = _to_argb32(image).copy()
+        arr = qimage_argb_view(img, writable=True)[:, :img.width(), :]
+        for name, c in channels.items():
+            idx = self._CHANNEL_INDEX.get(name)
+            if idx is None or not isinstance(c, dict):
+                continue
+            q = {k: c.get(k, d) for k, d in (("black", 0), ("gamma", 1.0), ("white", 255),
+                                                ("out_min", 0), ("out_max", 255))}
+            lut = np.frombuffer(levels_lut(int(q["black"]), float(q["gamma"]), int(q["white"]),
+                                           int(q["out_min"]), int(q["out_max"])), np.uint8)
+            arr[:, :, idx] = lut[arr[:, :, idx]]
+        return img.convertToFormat(QImage.Format.Format_ARGB32_Premultiplied)
 
 
 @register

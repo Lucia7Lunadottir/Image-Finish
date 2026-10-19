@@ -714,6 +714,11 @@ class CanvasWidget(QOpenGLWidget):
         old_layer_idx = self.document.active_layer_index
         doc_pos = self.to_doc(ev.position())
 
+        if not self._convert_live_shape_for_press(tool, doc_pos):
+            self._stroke_in_progress = False
+            self._pre_stroke_state = None
+            return False
+
         if getattr(tool, "needs_background_composite", False):
             self._start_effect_stroke()
 
@@ -734,6 +739,21 @@ class CanvasWidget(QOpenGLWidget):
             self.document_changed.emit()
         elif self.document.active_layer_index != old_layer_idx:
             self.document_changed.emit()
+        return True
+
+    def _convert_live_shape_for_press(self, tool, doc_pos) -> bool:
+        """A pen tool about to edit a live shape's points: ask (as
+        Photoshop does) and turn it into a path layer — part of the press's
+        undo step. False if refused: the press then does nothing."""
+        edit_at = getattr(tool, "live_shape_edit_at", None)
+        layer = edit_at(doc_pos, self.document, self.tool_opts) if edit_at else None
+        if layer is None:
+            return True
+        from ui.actions.live_shape_prompt import confirm_live_shape_conversion
+        if not confirm_live_shape_conversion(self.window(), layer):
+            return False
+        layer.convert_to_path_layer(layer.live_shape_nodes())
+        layer.rebake_thumbnail()
         return True
 
     def _history_state_for(self, tool_name: str):

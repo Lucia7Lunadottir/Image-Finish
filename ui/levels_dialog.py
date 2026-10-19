@@ -51,10 +51,8 @@ def compute_histogram(img: QImage) -> list:
         return hist
 
 
-def apply_levels(src: QImage,
-                 black: int, gamma: float, white: int,
-                 out_min: int, out_max: int) -> QImage:
-    """Apply input/output levels via an 8-bit LUT."""
+def levels_lut(black: int, gamma: float, white: int, out_min: int, out_max: int) -> bytearray:
+    """The 8-bit lookup table of one input/output levels setting."""
     black   = max(0,       min(253,      black))
     white   = max(black+1, min(255,      white))
     gamma   = max(0.01,    min(9.99,     gamma))
@@ -69,6 +67,14 @@ def apply_levels(src: QImage,
     for i in range(256):
         v = max(0.0, min(1.0, (i - black) / in_span)) ** inv_g
         lut[i] = int(max(0, min(255, out_min + v * out_span)))
+    return lut
+
+
+def apply_levels(src: QImage,
+                 black: int, gamma: float, white: int,
+                 out_min: int, out_max: int) -> QImage:
+    """Apply input/output levels via an 8-bit LUT."""
+    lut = levels_lut(black, gamma, white, out_min, out_max)
 
     img = _to_argb32(src)
     try:

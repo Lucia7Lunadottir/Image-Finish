@@ -77,6 +77,38 @@ def scale_layer_styles(styles: dict, k: float) -> dict:
     return out
 
 
+STROKE_POSITIONS = ("outside", "inside", "center")
+
+
+def stroke_coverage(alpha: "np.ndarray", size: float, position: str = "outside") -> "np.ndarray":
+    """uint8 coverage of a `size`-px stroke along the edge of `alpha`
+    (uint8), by exact distance to the edge like Photoshop's: outside,
+    inside or centred on it. One pixel of falloff keeps it antialiased;
+    an outside stroke also fills under the layer's soft edge pixels, never
+    under its opaque inside (so it shows the outline only, even at 0% Fill)."""
+    from scipy import ndimage
+    a = alpha.astype(np.float32) / 255.0
+    inside = alpha >= 128
+    d_out = ndimage.distance_transform_edt(~inside)        # outside pixels: to the shape
+    d_in = ndimage.distance_transform_edt(inside)          # inside pixels: to the outside
+    if position == "inside":
+        cov = np.clip(size + 0.5 - d_in, 0.0, 1.0) * a
+    elif position == "center":
+        half = size / 2.0
+        cov = (np.clip(half + 0.5 - d_out, 0.0, 1.0) * (1.0 - a)
+               + np.clip(half + 0.5 - d_in, 0.0, 1.0) * a)
+    else:
+        cov = np.clip(size + 0.5 - d_out, 0.0, 1.0) * (1.0 - a)
+    return np.clip(cov * 255.0 + 0.5, 0, 255).astype(np.uint8)
+
+
+def fill_opacity(styles: dict | None) -> float:
+    """Photoshop's Fill opacity, 0..100 — a plain number in `styles` (not
+    an effect: it doesn't switch the styles render path on by itself)."""
+    v = (styles or {}).get("fill_opacity", 100)
+    return max(0.0, min(100.0, float(v))) if isinstance(v, (int, float)) else 100.0
+
+
 def layer_styles_padding(styles: dict) -> int:
     """How far (pixels) the enabled effects reach outside the layer's pixels."""
     pad = 0
@@ -226,16 +258,29 @@ def apply_layer_styles(img: QImage, styles: dict, frame: QRectF | None = None) -
         render_effect_layer(mask, og.get("color", QColor(255,255,150)), og.get("opacity", 75), _get_comp_mode(og.get("blend_mode", "Screen")))
         
     st = styles.get("stroke")
-    if st and st.get("enabled"):
-        size = st.get("size", 3)
-        if size > 0:
-            mask = get_blurred_alpha(size, 0, 0)
-            mask[mask > 10] = 255
-            mask[get_blurred_alpha(0, 0, 0) > 128] = 0
-            render_effect_layer(mask, st.get("color", QColor(0,0,0)), st.get("opacity", 100), _get_comp_mode(st.get("blend_mode", "SourceOver")))
+    stroke_mask = None
+    if st and st.get("enabled") and st.get("size", 3) > 0:
+        stroke_mask = stroke_coverage(get_blurred_alpha(0, 0, 0), float(st.get("size", 3)),
+                                      st.get("position", "outside"))
+
+    def render_stroke():
+        render_effect_layer(stroke_mask, st.get("color", QColor(0, 0, 0)), st.get("opacity", 100),
+                            _get_comp_mode(st.get("blend_mode", "SourceOver")))
+
+    # An outside stroke lies under the layer's pixels; inside / centre ones
+    # cover their edge, so they're drawn after them.
+    if stroke_mask is not None and st.get("position", "outside") == "outside":
+        render_stroke()
 
     painter.setCompositionMode(QPainter.CompositionMode.CompositionMode_SourceOver)
+    # Fill opacity (Photoshop's "Fill"): the layer's own pixels and its
+    # overlays fade, the effects around them don't.
+    painter.setOpacity(fill_opacity(styles) / 100.0)
     painter.drawImage(pad, pad, base_img)
+    painter.setOpacity(1.0)
+
+    if stroke_mask is not None and st.get("position", "outside") != "outside":
+        render_stroke()
 
     ins = styles.get("inner_shadow")
     if ins and ins.get("enabled"):

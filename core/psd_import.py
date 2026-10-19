@@ -16,9 +16,11 @@ our list (above its children, see LayerActionsMixin._group_layer).
 
 Pixel, type, shape and smart-object layers come in as their stored pixels.
 Colour and gradient fill layers that Photoshop saved without pixels are
-painted from their settings and vector mask. Adjustment layers, pattern
-fills and noise gradients without pixels are skipped (and counted); layer
-effects (drop shadow, stroke, ...) aren't imported."""
+painted from their settings and vector mask. Adjustment layers become our
+adjustment layers (core/psd_adjustments.py); kinds we don't have, pattern
+fills and noise gradients without pixels are skipped (and counted). Layer
+effects become layer styles (core/psd_effects.py), with the layer's Fill
+opacity."""
 from __future__ import annotations
 
 import struct
@@ -31,7 +33,7 @@ from PyQt6.QtGui import QColor, QColorSpace, QImage, QPainter, QPainterPath
 
 from core.app_logging import get_logger
 from core.document import Document
-from core.layer import GroupLayer, Layer, RasterLayer
+from core.layer import AdjustmentLayer, GroupLayer, Layer, RasterLayer
 from core.locale import tr
 from core.pixel_buffer import gray_mask_image, path_mask
 
@@ -526,6 +528,8 @@ class PsdLayerRecord:
     vector_mask: _VectorMask | None = None
     fill_key: bytes | None = None     # b"SoCo" / b"GdFl" / b"PtFl"
     fill: _Fill | None = None         # solid colour / gradient we can paint
+    adjustment_blocks: dict = field(default_factory=dict)   # key -> bytes (core/psd_adjustments.py)
+    effects: dict | None = None       # the layer effects descriptor ('lfx2' / 'lmfx')
     channel_ids: list = field(default_factory=list)
     channel_lengths: list = field(default_factory=list)
     channel_data: dict = field(default_factory=dict)   # id -> memoryview
@@ -792,7 +796,11 @@ class PsdFile:
 
         color_data = bytes(r.take(r.u32()))
         resources_len = r.u32()
-        icc = self._read_icc_profile(r, r.pos + resources_len)
+        resources = self._read_resources(r, r.pos + resources_len)
+        icc = resources.get(1039)
+        # Global light angle (resource 1037), which effects may follow.
+        self.global_angle = (struct.unpack(">i", resources[1037][:4])[0]
+                             if len(resources.get(1037, b"")) >= 4 else 120)
         self.color_mode = _color_mode_for(self.mode, color_data)
         self.colors = _IccConverter(icc, self.color_mode, self.depth)
         self.decoder = _ChannelDecoder(self.depth, r.psb)
@@ -810,11 +818,13 @@ class PsdFile:
         r.pos = section_end
         self._merged_offset = section_end
 
-    @staticmethod
-    def _read_icc_profile(r: _Reader, end: int) -> bytes | None:
-        """The embedded ICC profile (image resource 1039), if any. Leaves
-        the cursor at `end`."""
-        icc = None
+    _RESOURCES = (1037, 1039)          # global angle, ICC profile
+
+    @classmethod
+    def _read_resources(cls, r: _Reader, end: int) -> dict:
+        """The image resources we use, {id: bytes}. Leaves the cursor at
+        `end`."""
+        found = {}
         try:
             while r.pos + 12 <= end:
                 if bytes(r.take(4)) != b"8BIM":
@@ -826,12 +836,12 @@ class PsdFile:
                 data = r.take(min(size, end - r.pos))
                 if size % 2 and r.pos < end:
                     r.skip(1)
-                if res_id == 1039:
-                    icc = bytes(data)
+                if res_id in cls._RESOURCES:
+                    found[res_id] = bytes(data)
         except PsdFormatError:
             logger.warning("PSD image resources unreadable")
         r.pos = end
-        return icc
+        return found
 
     # ---------------------------------------------------------------- layers
     def _read_layer_and_mask_section(self, end: int) -> None:
@@ -920,8 +930,18 @@ class PsdFile:
             rec.fill_opacity = block[0]
         elif key in (b"vmsk", b"vsms"):
             rec.vector_mask = _VectorMaskReader(self.width, self.height).read(block)
+        elif key in (b"lfx2", b"lmfx") and len(block) > 8:
+            # 'lmfx' (several effects of a kind) wins over 'lfx2'.
+            if key == b"lmfx" or rec.effects is None:
+                try:
+                    rec.effects = _DescriptorReader(bytes(block[8:])).read()
+                except PsdFormatError as e:
+                    logger.warning("Effects of PSD layer %r not imported: %s", rec.name, e)
+        elif key == b"CgEd":
+            rec.adjustment_blocks[key] = bytes(block)
         elif key in _ADJUSTMENT_KEYS:
             rec.is_adjustment = True
+            rec.adjustment_blocks[key] = bytes(block)
             if key in _FILL_KEYS:
                 rec.fill_key = key
                 rec.fill = self._read_fill(key, block, rec.name)
@@ -1084,7 +1104,7 @@ class PsdImporter:
         self._path = path
         self._psd: PsdFile | None = None
         self._doc: Document | None = None
-        self.skipped_layers = 0     # adjustment / pattern / noise-gradient layers
+        self.skipped_layers = 0     # unsupported adjustment / pattern / noise-gradient layers
 
     def load(self) -> Document:
         with open(self._path, "rb") as f:
@@ -1117,7 +1137,8 @@ class PsdImporter:
                 group.expanded = rec.section == _SECTION_OPEN
                 self._doc.layers.append(group)
             elif rec.is_adjustment and not self._has_content(rec):
-                self.skipped_layers += 1
+                if not self._add_adjustment_layer(rec, parent_id):
+                    self.skipped_layers += 1
             else:
                 self._add_pixel_layer(rec, parent_id)
         # A file missing a group's closing record: keep the group anyway.
@@ -1156,19 +1177,60 @@ class PsdImporter:
             layer.mask_enabled = not rec.mask.disabled
         self._doc.layers.append(layer)
 
+    def _add_adjustment_layer(self, rec: PsdLayerRecord, parent_id: str | None) -> bool:
+        """Our adjustment layer for a Photoshop one; False if we have no
+        such adjustment or can't read its settings."""
+        from core.psd_adjustments import codec_for_blocks
+        codec = codec_for_blocks(rec.adjustment_blocks)
+        if codec is None:
+            return False
+        try:
+            params = codec.read(rec.adjustment_blocks, self._psd)
+        except (struct.error, PsdFormatError, IndexError, ValueError) as e:
+            logger.warning("Adjustment layer %r not imported: %s", rec.name, e)
+            params = None
+        if params is None:
+            return False
+        layer = AdjustmentLayer(rec.name, self._doc.width, self._doc.height)
+        layer.parent_id = parent_id
+        layer.adjustment_data = {"type": codec.type, **params}
+        self._copy_common(rec, layer)
+        layer.clipping = rec.clipping
+        vm = rec.vector_mask
+        if vm is not None:
+            layer.vector_mask = vm.path
+            layer.vector_mask_enabled = not vm.disabled
+        mask = self._psd.layer_mask(rec)
+        if mask is not None:
+            layer.mask = gray_mask_image(mask)
+            layer.mask_enabled = not rec.mask.disabled
+        self._doc.layers.append(layer)
+        return True
+
     def _add_merged(self) -> None:
         layer = RasterLayer("Background", self._doc.width, self._doc.height)
         layer.image = _rgba_to_qimage(self._psd.merged_rgba())
         self._doc.layers.append(layer)
 
-    @staticmethod
-    def _copy_common(rec: PsdLayerRecord, layer: Layer) -> None:
+    def _copy_common(self, rec: PsdLayerRecord, layer: Layer) -> None:
         layer.name = rec.name
         layer.visible = rec.visible
-        # No layer effects are imported, so fill opacity acts like opacity.
-        layer.opacity = (rec.opacity / 255.0) * (rec.fill_opacity / 255.0)
         key = rec.section_blend_key or rec.blend_key
         layer.blend_mode = _BLEND_MODES.get(key, "SourceOver")
+        styles = {}
+        if rec.effects is not None and not layer.is_container:
+            from core.psd_effects import layer_styles_from_effects
+            styles = layer_styles_from_effects(rec.effects, self._psd.global_angle,
+                                               self._psd.descriptor_rgb)
+        if styles:
+            # Fill opacity fades the layer's pixels, not its effects.
+            layer.opacity = rec.opacity / 255.0
+            if rec.fill_opacity < 255:
+                styles["fill_opacity"] = rec.fill_opacity / 2.55
+            layer.layer_styles = styles
+        else:
+            # Without effects, fill opacity acts like opacity.
+            layer.opacity = (rec.opacity / 255.0) * (rec.fill_opacity / 255.0)
 
 
 def _rgba_to_qimage(rgba: np.ndarray) -> QImage:

@@ -11,8 +11,9 @@ What goes into the file, per layer:
 
 Text, shapes, Pen paths and fill layers are written as their rendered
 pixels (Photoshop's own text/shape data isn't documented well enough to
-write); adjustment layers have no pixels and are skipped. `PsdExporter`
-counts both so the UI can say so. The merged image (the composite) is
+write). Adjustment layers are written as Photoshop adjustment layers
+(core/psd_adjustments.py); the kinds Photoshop doesn't have are skipped.
+`PsdExporter` counts both so the UI can say so. The merged image (the composite) is
 written too, so viewers that don't read layers still show the picture.
 
 8-bit RGB with alpha; RLE (PackBits) compression; PSB above 30000 px."""
@@ -128,7 +129,7 @@ class PsdExporter:
         self.psb = doc.width > _PSD_MAX or doc.height > _PSD_MAX
         self._rle = _RleEncoder(self.psb)
         self.rasterized = 0          # text / shape / fill layers written as pixels
-        self.skipped = 0             # adjustment layers (no pixels to write)
+        self.skipped = 0             # adjustment layers Photoshop has no counterpart for
 
     # ── public ──────────────────────────────────────────────────────
     def to_bytes(self) -> bytes:
@@ -206,7 +207,11 @@ class PsdExporter:
                     walk(layer.layer_id)
                     out.append({"group": layer})
                 elif isinstance(layer, AdjustmentLayer):
-                    self.skipped += 1
+                    tags = self._adjustment_tags(layer)
+                    if tags is None:
+                        self.skipped += 1
+                    else:
+                        out.append({"adjustment": layer, "tags": tags})
                 else:
                     if isinstance(layer, LiveRenderedLayer) or getattr(layer, "SETTINGS_LAYER", False):
                         self.rasterized += 1
@@ -223,6 +228,12 @@ class PsdExporter:
             kind = _OPEN_FOLDER if getattr(g, "expanded", True) else _CLOSED_FOLDER
             return self._layer_record(g.name, QRect(), {}, None, self._opacity(g), False, g.visible,
                                       b"pass", self._section(kind, b"pass"))
+        if "adjustment" in e:
+            layer = e["adjustment"]
+            return self._layer_record(layer.name, QRect(), {}, self._mask(layer), self._opacity(layer),
+                                      bool(getattr(layer, "clipping", False)), layer.visible,
+                                      _BLEND_KEYS.get(getattr(layer, "blend_mode", "SourceOver"), b"norm"),
+                                      e["tags"])
         layer = e["layer"]
         img, rect = _LayerPixels.render(self._doc, layer)
         channels = {}
@@ -233,6 +244,17 @@ class PsdExporter:
         return self._layer_record(layer.name, rect, channels, mask, self._opacity(layer),
                                   bool(getattr(layer, "clipping", False)), layer.visible,
                                   _BLEND_KEYS.get(getattr(layer, "blend_mode", "SourceOver"), b"norm"), b"")
+
+    def _adjustment_tags(self, layer) -> bytes | None:
+        """The tagged blocks of an adjustment layer, or None if Photoshop
+        has no such adjustment."""
+        from core.adjustments.registry import get_kind
+        from core.psd_adjustments import codec_for_type
+        data = layer.adjustment_data or {}
+        codec, kind = codec_for_type(data.get("type", "")), get_kind(data.get("type", ""))
+        if codec is None or kind is None:
+            return None
+        return b"".join(self._tag(key, block) for key, block in codec.write(kind.normalize(data)))
 
     @staticmethod
     def _opacity(layer) -> int:
@@ -270,9 +292,12 @@ class PsdExporter:
         if mask is not None:
             channels = dict(channels)
             channels[-2] = mask[3]
-        data = {cid: self._rle.encode(plane) for cid, plane in channels.items()}
-        if not data:                 # every layer needs its colour channels, even empty
-            data = {cid: struct.pack(">H", 0) for cid in (-1, 0, 1, 2)}
+        encoded = {cid: self._rle.encode(plane) for cid, plane in channels.items()}
+        # Every layer has its colour channels, even empty (adjustment layers,
+        # groups); the mask goes last.
+        data = {cid: encoded.get(cid, struct.pack(">H", 0)) for cid in (-1, 0, 1, 2)}
+        if -2 in encoded:
+            data[-2] = encoded[-2]
         top, left = (rect.y(), rect.x()) if not rect.isEmpty() else (0, 0)
         bottom, right = (rect.y() + rect.height(), rect.x() + rect.width()) if not rect.isEmpty() else (0, 0)
         head = struct.pack(">4iH", top, left, bottom, right, len(data))

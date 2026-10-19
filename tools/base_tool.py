@@ -46,6 +46,18 @@ class BaseTool(ABC):
     # coordinates; `pw` is one screen pixel in document units, so sizes and
     # pen widths given as multiples of it look the same at any zoom.
 
+    def sharp_while_dragging(self) -> bool:
+        """True while a drag only changes vector content (a Move of a
+        shape or text): the canvas may then keep re-rendering it at screen
+        resolution mid-drag, as long as that's cheap (ui/canvas_hires.py)."""
+        return False
+
+    def live_shape_edit_at(self, pos, doc, opts: dict):
+        """The live Shapes-tool layer a press at `pos` would turn into a
+        path (the canvas asks first, see ui/actions/live_shape_prompt.py),
+        or None. Only the pen tools edit shapes' points."""
+        return None
+
     @staticmethod
     def screen_px(opts: dict, px: float) -> float:
         """`px` screen pixels in document units at the current zoom — for

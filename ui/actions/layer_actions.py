@@ -247,6 +247,10 @@ class LayerActionsMixin:
                 return {"type": t}
             d = dlg.adjustment_data()
             d["type"] = t
+            # Settings the dialog doesn't show (e.g. per-channel Levels
+            # from a Photoshop file) are kept, not dropped.
+            for key, value in (getattr(dlg, "_orig_adj_data", None) or {}).items():
+                d.setdefault(key, value)
             return d
 
         def wrapped_refresh():

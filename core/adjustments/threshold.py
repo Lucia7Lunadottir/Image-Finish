@@ -11,9 +11,9 @@ def apply_threshold(src: QImage, threshold: int) -> QImage:
         import numpy as np
         img = img.copy()
         arr = _in_place_arr(img)
-        R = arr[:, :, 2].astype(np.uint16)
-        G = arr[:, :, 1].astype(np.uint16)
-        B = arr[:, :, 0].astype(np.uint16)
+        R = arr[:, :, 2].astype(np.uint32)
+        G = arr[:, :, 1].astype(np.uint32)
+        B = arr[:, :, 0].astype(np.uint32)
         luma  = (299 * R + 587 * G + 114 * B) // 1000
         white = (luma >= threshold).astype(np.uint8) * 255
         arr[:, :, 0] = white

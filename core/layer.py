@@ -258,12 +258,14 @@ class Layer:
                     current_mask = current_mask.copy()
                     _composite_active_stroke(current_mask, active_stroke["img"], active_stroke, self.offset)
 
-                m_arr = _qimage_argb_view(current_mask, writable=False)[:, :img_to_draw.width(), :]
-                mask_f = m_arr[..., 1].astype(np.float32) / 255.0
+                mask_f = _mask_coverage(current_mask, self.offset, current_offset,
+                                        img_to_draw.width(), img_to_draw.height())
                 arr[:] = (arr.astype(np.float32) * mask_f[..., np.newaxis]).astype(np.uint8)
 
             if is_clipping:
-                ox, oy = self.offset.x(), self.offset.y()
+                # The image may be bigger than the layer (layer styles pad
+                # it): place it by where it is drawn, not the layer offset.
+                ox, oy = current_offset.x(), current_offset.y()
                 w, h = img_to_draw.width(), img_to_draw.height()
                 dx1, dy1 = max(0, ox), max(0, oy)
                 dx2, dy2 = min(document.width, ox + w), min(document.height, oy + h)
@@ -284,7 +286,7 @@ class Layer:
             if clip_path is not None:
                 ap.setClipPath(clip_path)
             ap.setOpacity(self.opacity)
-            ap.drawImage(self.offset, img_to_draw)
+            ap.drawImage(current_offset, img_to_draw)
             ap.end()
 
             arr_alpha = _qimage_argb_view(base_alpha_img, writable=False)
@@ -547,6 +549,23 @@ class Layer:
         return f"<{type(self).__name__} '{self.name}' {self.width()}x{self.height()} visible={self.visible}>"
 
 
+def _mask_coverage(mask: QImage, mask_origin: QPoint, image_origin: QPoint, w: int, h: int):
+    """A layer mask's 0..1 coverage over a w x h image drawn at
+    `image_origin` (document space); the mask sits at `mask_origin`. The
+    image can be larger than the mask — layer styles pad it — and there,
+    outside the mask, nothing shows."""
+    import numpy as np
+    from core.pixel_buffer import qimage_argb_view
+    m = qimage_argb_view(mask, writable=False)[:, :mask.width(), 1]
+    out = np.zeros((h, w), dtype=np.float32)
+    dx, dy = mask_origin.x() - image_origin.x(), mask_origin.y() - image_origin.y()
+    x1, y1 = max(0, dx), max(0, dy)
+    x2, y2 = min(w, dx + mask.width()), min(h, dy + mask.height())
+    if x1 < x2 and y1 < y2:
+        out[y1:y2, x1:x2] = m[y1 - dy:y2 - dy, x1 - dx:x2 - dx].astype(np.float32) / 255.0
+    return out
+
+
 class RasterLayer(Layer):
     """Plain pixel layer — the default/fallback layer kind. No extra fields."""
     CAN_BE_SMART_OBJECT = True
@@ -573,8 +592,7 @@ def transform_shape_rect(rect: QRectF, angle: float, transform) -> tuple[QRectF,
     """Applies a MoveTool drag/resize transform to a shape_data-style
     axis-aligned rect + angle pair, returning the new (rect, angle).
     Shared by VectorLayer.move_tool_apply_extra's shape_data commit and
-    MoveTool's live shape_data drag preview (tools/move_tool.py::
-    floating_preview / ui/overlay_renderers.py::draw_transform_preview) —
+    MoveTool's drag preview (LiveRenderedLayer._move_preview_source) —
     both need the exact same "where does this shape end up" math, one to
     commit it, one to draw it a frame earlier."""
     new_center = transform.map(rect.center())
@@ -586,6 +604,10 @@ def transform_shape_rect(rect: QRectF, angle: float, transform) -> tuple[QRectF,
 
 class LiveRenderedLayer(Layer):
     _live_edit_hidden = False   # class default: clones made via __new__ skip __init__
+    # While hidden for a MoveTool drag: a callable giving the drag's current
+    # transform — the layer then composites as moved, through the normal
+    # pipeline (layer styles, masks, blend, order), not as an overlay.
+    _move_preview_source = None
     _PIXEL_ACCESS = "rasterize"
     CAN_BE_SMART_OBJECT = True
 
@@ -701,8 +723,15 @@ class LiveRenderedLayer(Layer):
 
     def render_into(self, ctx, layer_artboard_rect, is_clipping, next_clipping):
         if self._live_edit_hidden:
-            # A drag (MoveTool, ShapeLayerItem) or the text editor's fast
-            # typing mode is the only visible representation right now.
+            source = self._move_preview_source
+            if source is not None:
+                moved = self.move_preview(source())
+                moved._live_edit_hidden = False
+                moved._move_preview_source = None
+                moved.render_into(ctx, layer_artboard_rect, is_clipping, next_clipping)
+                return
+            # A drag (ShapeLayerItem) or the text editor's fast typing mode
+            # is the only visible representation right now.
             if not is_clipping:
                 ctx.clip_alpha = None
             return

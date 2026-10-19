@@ -133,13 +133,15 @@ def test_save_psd_reports_rasterized_and_skipped_layers(main_window, mocked_dial
     t = doc.add_layer(name="T", layer_cls=TextLayer)
     t.text_data = {"text": "Hi", "x": 2, "y": 2, "font_size": 14}
     a = doc.add_layer(name="A", layer_cls=AdjustmentLayer)
-    a.adjustment_data = {"type": "invert"}
+    a.adjustment_data = {"type": "invert"}              # Photoshop has it: written
+    h = doc.add_layer(name="H", layer_cls=AdjustmentLayer)
+    h.adjustment_data = {"type": "hdr_toning"}          # it hasn't: skipped
     path = str(tmp_path / "x.psd")
     w._do_save(path)
     msg = w._status.currentMessage()
     assert "1" in msg and "PSD" in msg
     names = [l.name for l in PsdImporter(path).load().layers]
-    assert names == ["Background", "T"]
+    assert names == ["Background", "T", "A"]
 
 
 # ── PSD export ───────────────────────────────────────────────────────────────

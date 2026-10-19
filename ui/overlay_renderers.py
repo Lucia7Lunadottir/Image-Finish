@@ -314,15 +314,6 @@ def draw_transform_preview(painter, *, active_tool, pan, zoom):
             painter.setTransform(QTransform().translate(tl.x(), tl.y()) * transform, combine=True)
             painter.drawImage(0, 0, img)
             painter.restore()
-        elif len(fp) == 2 and fp[0] == "live":
-            _, layer = fp
-            painter.save()
-            painter.translate(pan)
-            painter.scale(zoom, zoom)
-            painter.setRenderHint(QPainter.RenderHint.Antialiasing)
-            painter.setOpacity(layer.opacity)
-            layer.paint_content(painter)
-            painter.restore()
         elif len(fp) == 4 and fp[0] == "warp":
             _, src_img, patches, fast = fp
             painter.save()
