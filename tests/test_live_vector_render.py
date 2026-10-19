@@ -286,3 +286,27 @@ def test_text_with_layer_style_is_sharp_and_shadowed():
     # The shadow is the "O" ring shifted 10 px right: its right wall ends at right+10.
     shadow_wall = int((b.right() + 9) * scale)
     assert view.pixelColor(shadow_wall, y).red() > 200
+
+
+def test_text_layers_alone_also_get_the_sharp_view(main_window):
+    """Real gap: only shapes counted as "vector content", so a document
+    whose live layers were text showed the magnified document raster —
+    text (and its stroke/shadow styles) went pixelated when zoomed in,
+    although render_view draws it sharp."""
+    from core.layer import TextLayer
+    w = main_window
+    doc = Document(80, 50)
+    text = doc.add_layer(name="T", layer_cls=TextLayer)
+    text.text_data = {"text": "Ag", "x": 5, "y": 5, "font_size": 30}
+    text.layer_styles = {"stroke": {"enabled": True, "size": 2, "color": QColor(255, 0, 0),
+                                    "position": "outside", "opacity": 100}}
+    assert doc.has_vector_content()
+    w._add_tab(doc, "t")
+    canvas = w._canvas
+    canvas.resize(400, 300)
+    canvas.zoom = 6.0
+    canvas._recompute_composite()
+    canvas._cache_dirty = False
+    assert canvas._hires.wanted("RGB")
+    text.text_data = {"text": "", "x": 5, "y": 5, "font_size": 30}
+    assert not doc.has_vector_content()          # an empty text layer draws nothing

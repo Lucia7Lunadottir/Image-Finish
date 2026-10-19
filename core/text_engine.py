@@ -100,6 +100,15 @@ class TextLayoutResult:
         r = self.outline().boundingRect()
         return r if not r.isEmpty() else self.bounds()
 
+    def apply_warp(self, warp) -> None:
+        """Warp Text: bend the glyph outlines within the text's frame. Only
+        the outlines change — carets, hit-testing and selection stay on
+        the unwarped layout (the editor shows the text unwarped)."""
+        frame = self.bounds()
+        if frame.width() <= 0 or frame.height() <= 0:
+            return
+        self.pieces = [GlyphPiece(warp.map_path(p.path, frame), p.style) for p in self.pieces]
+
     # editing
     def caret_line(self, pos: int) -> QLineF:
         raise NotImplementedError
@@ -491,8 +500,13 @@ class VerticalLayout(TextLayoutResult):
         return self.hit(QPointF(target.x + target.width / 2, hint + 0.01)), hint
 
 
-def layout_text(data: TextData) -> TextLayoutResult:
-    return VerticalLayout(data) if data.vertical else HorizontalLayout(data)
+def layout_text(data: TextData, warped: bool = True) -> TextLayoutResult:
+    """`warped=False`: ignore Warp Text (the text editor edits the plain
+    layout, so its caret and selection match the glyphs)."""
+    layout = VerticalLayout(data) if data.vertical else HorizontalLayout(data)
+    if warped and data.warp.is_active():
+        layout.apply_warp(data.warp)
+    return layout
 
 
 # ── painting ───────────────────────────────────────────────────────────────

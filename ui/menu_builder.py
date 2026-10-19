@@ -175,6 +175,7 @@ def build_menu_bar(win) -> None:
     layer_m.addSeparator()
     win._act(layer_m, "menu.smart_object",   win._new_smart_object)
     win._act(layer_m, "menu.rasterize_layer", win._rasterize_layer)
+    win._act(layer_m, "menu.warp_text", win._warp_text)
     combine_m = win._menu(layer_m, "menu.combine_shapes")
     for op in ("unite", "subtract", "intersect", "exclude"):
         win._act(combine_m, f"opts.shape.path_op.{op}", lambda _=False, o=op: win._combine_shapes(o))

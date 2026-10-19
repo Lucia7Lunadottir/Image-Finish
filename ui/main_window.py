@@ -85,6 +85,17 @@ class MainWindow(QMainWindow,
     def __init__(self):
         super().__init__()
         self.setWindowTitle(tr("title.untitled", mode="RGB/8"))
+        # The canvas is a QOpenGLWidget. When the *first* one is added to a
+        # window that had none (opening a file from the Welcome screen), Qt
+        # switches the window to GPU composition by destroying and
+        # recreating its native window — "the app closes and reopens", and
+        # on Wayland the new surface sometimes never appears (the process
+        # lives on with no window). A hidden GL widget present before the
+        # window is first shown makes it GPU-composited from the start, so
+        # nothing is recreated later.
+        from PyQt6.QtOpenGLWidgets import QOpenGLWidget
+        self._gl_composition_anchor = QOpenGLWidget(self)
+        self._gl_composition_anchor.hide()
 
         self._recent_files = []
         self._load_recent_files()

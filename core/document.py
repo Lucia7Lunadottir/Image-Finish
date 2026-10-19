@@ -424,11 +424,9 @@ class Document:
 
     def has_vector_content(self) -> bool:
         """Whether any visible layer would look sharper in render_view than
-        in the document-resolution composite."""
-        for layer in self.layers:
-            if layer.visible and hasattr(layer, "has_vector_geometry") and layer.has_vector_geometry():
-                return True
-        return False
+        in the document-resolution composite — shapes, Pen paths *and*
+        text (with their layer styles): every layer drawn from data."""
+        return any(layer.visible and layer.sharper_when_zoomed() for layer in self.layers)
 
     def _render_layer_list(self, layers: list[Layer], layer_artboard_rect, ctx: "CompositeContext") -> None:
         """Render one sibling list (top-level layers, or one group's/

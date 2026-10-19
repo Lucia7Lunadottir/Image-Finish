@@ -41,6 +41,41 @@ class TextActionsMixin:
         """The options bar's ✓ button: commit the edit in progress."""
         self._commit_text_edit_if_active()
 
+    # ── Warp Text ───────────────────────────────────────────────────
+    def _warp_text(self, *_):
+        """Layer > Warp Text… / the Text options bar's warp button: the
+        dialog previews on the layer itself; OK is one undo step, Cancel
+        puts the text back as it was."""
+        if self._document is None:
+            return
+        self._commit_text_edit_if_active()
+        layer = self._document.get_active_layer()
+        if not isinstance(layer, TextLayer) or layer.data() is None:
+            self._status.showMessage(tr("status.warp_text_needs_text"), 4000)
+            return
+        from ui.warp_text_dialog import WarpTextDialog
+        doc = self._document
+        original = layer.text_data
+        data = layer.data()
+        pre_state = self._make_history_state(tr("history.warp_text"),
+                                             modified_index=doc.layers.index(layer))
+
+        def preview(warp):
+            d = data.copy()
+            d.warp = warp
+            layer.set_data(d)
+            self._canvas_refresh()
+
+        dlg = WarpTextDialog(data.warp, preview, self)
+        if dlg.exec():
+            preview(dlg.warp())
+            self._history.push(pre_state)
+            layer.rebake_thumbnail()
+            self._refresh_layers()
+        else:
+            layer.text_data = original
+            self._canvas_refresh()
+
     # ── options ─────────────────────────────────────────────────────
     def _is_text_tool_active(self) -> bool:
         from tools.text_tool import _BaseTypeTool
@@ -98,7 +133,14 @@ class TextActionsMixin:
             if QApplication.activeModalWidget() is not None:
                 return
             session.proxy.setFocus()
-        QTimer.singleShot(0, _refocus)
+        # Owned by the window (not a bare singleShot lambda): if the window
+        # is gone before the tick, the timer goes with it — a queued slot
+        # touching deleted widgets would raise, and PyQt6 aborts on that.
+        timer = QTimer(self)
+        timer.setSingleShot(True)
+        timer.timeout.connect(_refocus)
+        timer.timeout.connect(timer.deleteLater)
+        timer.start(0)
 
     # ── panels <- text ──────────────────────────────────────────────
     def _sync_text_panels(self, opts: dict):

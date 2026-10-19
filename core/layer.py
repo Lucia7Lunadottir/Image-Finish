@@ -313,6 +313,12 @@ class Layer:
         return None
 
     # ------------------------------------------------------------------
+    def sharper_when_zoomed(self) -> bool:
+        """Whether Document.render_view (drawing at screen resolution) shows
+        this layer sharper than the magnified document composite. Pixel
+        layers: no; layers drawn from data (LiveRenderedLayer): yes."""
+        return False
+
     def copy(self, deep_image: bool = True) -> "Layer":
         """Copy layer. When *deep_image* is False the QImage is shared (faster
         for undo snapshots of layers that won't be modified)."""
@@ -586,6 +592,9 @@ class LiveRenderedLayer(Layer):
 
     def has_live_content(self) -> bool:
         raise NotImplementedError
+
+    def sharper_when_zoomed(self) -> bool:
+        return self.has_live_content()
 
     def paint_content(self, painter: QPainter) -> None:
         raise NotImplementedError

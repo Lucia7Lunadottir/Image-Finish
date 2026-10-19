@@ -102,6 +102,16 @@ class TextEffects:
     shadow_dy: float = 3.0
 
 
+def _no_warp():
+    from core.text_warp import TextWarp
+    return TextWarp()
+
+
+def _warp_from_dict(d):
+    from core.text_warp import TextWarp
+    return TextWarp.from_dict(d)
+
+
 def _paragraph_from_dict(p: dict) -> ParagraphStyle:
     return ParagraphStyle(
         align=p.get("align", "left") if p.get("align") in ALIGNS else "left",
@@ -127,6 +137,8 @@ class TextData:
     angle: float = 0.0             # rotation (degrees) around (x, y)
     vertical: bool = False
     box: tuple | None = None       # (w, h) for paragraph (area) text; None = point text
+    # Warp Text (core/text_warp.py); immutable, so copies can share it.
+    warp: "TextWarp" = field(default_factory=lambda: _no_warp())
 
     def __post_init__(self):
         # Constructed directly (tests, legacy data) the runs/paragraphs may
@@ -145,6 +157,7 @@ class TextData:
             "x": self.x, "y": self.y, "angle": self.angle,
             "vertical": self.vertical,
             "box": list(self.box) if self.box else None,
+            "warp": self.warp.to_dict() if self.warp.is_active() else None,
         }
 
     @classmethod
@@ -165,6 +178,7 @@ class TextData:
                 x=float(d.get("x", 0)), y=float(d.get("y", 0)), angle=float(d.get("angle", 0) or 0),
                 vertical=bool(d.get("vertical", False)),
                 box=tuple(d["box"]) if d.get("box") else None,
+                warp=_warp_from_dict(d.get("warp")),
             )
             data._normalize()
             return data

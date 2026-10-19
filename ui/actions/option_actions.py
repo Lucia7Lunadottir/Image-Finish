@@ -20,6 +20,7 @@ class OptionActionsMixin:
         "move_cancel":         "_opt_cmd_move_cancel",
         "pen_action":          "_opt_cmd_pen_action",
         "pen_round_corners":   "_opt_cmd_pen_round_corners",
+        "text_warp":           "_warp_text",
     }
 
     def _opt_cmd_text_edit_cancel(self, _value):

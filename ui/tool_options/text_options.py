@@ -74,6 +74,13 @@ class TextOptions(BaseOptions):
         self._orient_btn.setToolTip(tr("opts.text.vertical_tip"))
         self._orient_btn.toggled.connect(lambda v: self.option_changed.emit("text_vertical", v))
 
+        # Warp Text (Photoshop's "T" over an arc button) for the selected text.
+        self._warp_btn = QPushButton("⌒T")
+        self._warp_btn.setObjectName("smallBtn")
+        self._warp_btn.setFixedSize(36, 26)
+        self._warp_btn.setToolTip(tr("opts.text.warp_tip"))
+        self._warp_btn.clicked.connect(lambda: self.option_changed.emit("text_warp", True))
+
         # Commit / cancel the edit in progress (shown only while editing).
         self._commit_btn = QPushButton("✓")
         self._commit_btn.setObjectName("smallBtn")
@@ -109,6 +116,7 @@ class TextOptions(BaseOptions):
         self.layout.addWidget(clr_shadow)
         self.layout.addWidget(self._sep())
         self.layout.addWidget(self._orient_btn)
+        self.layout.addWidget(self._warp_btn)
         self.layout.addStretch()
         self.layout.addWidget(self._commit_btn)
         self.layout.addWidget(self._cancel_btn)

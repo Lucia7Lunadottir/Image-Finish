@@ -217,7 +217,7 @@ class TextEditSession(QObject):
         key = (id(shown), shown.text, tuple(shown.runs), tuple(shown.paragraphs), shown.effects,
                shown.box, shown.vertical, shown.x, shown.y, shown.angle)
         if self._layout_for != key:
-            self._layout = layout_text(shown)
+            self._layout = layout_text(shown, warped=False)
             self._layout_for = key
         return self._layout
 
