@@ -49,6 +49,8 @@ class LayerActionsMixin:
         if not self._doc_controller.set_active_layer_index(index):
             return
         self._refresh_layers()
+        if self._canvas is not None:
+            self._canvas.update()     # tool overlays follow the active layer
 
     @require_document
     def _on_layer_visibility(self, index: int, visible: bool):

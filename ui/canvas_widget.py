@@ -88,6 +88,9 @@ class CanvasWidget(QOpenGLWidget):
             "shape_stroke":   True,
             "shape_stroke_width": 2,
             "shape_path_op":  "new",
+            "pen_mode":       "shape",      # Pen tools draw shape layers (Photoshop's default)
+            "pen_auto_add_delete": True,
+            "pen_corner_radius": 10,
             "effect_strength": 0.5,
             "crop_overlay":   "thirds",
         }
@@ -165,6 +168,9 @@ class CanvasWidget(QOpenGLWidget):
         overlay = getattr(self, "_shape_overlay", None)
         if overlay is not None:
             overlay.set_interactive(getattr(tool, "name", None) == "Shapes")
+        # The new tool's overlay (e.g. a shape layer's path nodes) shows
+        # right away, not on the next mouse move.
+        self.update()
 
     @staticmethod
     def _build_checker(tile: int = 16) -> QPixmap:
@@ -953,6 +959,13 @@ class CanvasWidget(QOpenGLWidget):
 
     def keyPressEvent(self, ev):
         k = ev.key()
+        if (k in (Qt.Key.Key_Return, Qt.Key.Key_Enter, Qt.Key.Key_Escape) and self.document
+                and not self._stroke_in_progress and hasattr(self.active_tool, "finish_path")):
+            # Pen tools: Enter / Esc ends the open path (Photoshop).
+            if self.active_tool.finish_path(self.document):
+                self.document_changed.emit()
+                self.update()
+                return
         if k == Qt.Key.Key_Control: self.tool_opts["_ctrl"] = True
         if k == Qt.Key.Key_Shift: self.tool_opts["_shift"] = True
         if k == Qt.Key.Key_Alt: self.tool_opts["_alt"] = True

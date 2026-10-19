@@ -137,20 +137,18 @@ def _opt_color(opts, key, fallback) -> QColor:
     return QColor(v) if v is not None else QColor(fallback)
 
 
-def shape_data_from_opts(opts: dict, fg, start: QPoint, end: QPoint, angle: int) -> dict:
-    """Builds a new shape's shape_data from the Shapes tool options.
-    `shape_color` (the old single color) is the fallback for both fill and
-    stroke colors; `brush_size` the fallback stroke width (older callers
-    and tests), `shape_stroke_width` the real Shapes-tool setting — the
-    brush tools share `brush_size`, a shape's stroke shouldn't."""
+def appearance_from_opts(opts: dict, fg):
+    """Fill and stroke of a new vector shape from the options bar — shared
+    by the Shapes tool and the Pen tools' shape mode. `shape_color` (the
+    old single color) is the fallback for both fill and stroke colors;
+    `brush_size` the fallback stroke width (older callers and tests),
+    `shape_stroke_width` the real setting — the brush tools share
+    `brush_size`, a shape's stroke shouldn't."""
     from core.shape_model import ShapeAppearance
     from core.gradient_model import Gradient
-    base = _opt_color(opts, "shape_color", fg)
-    rect = QRect(start, end).normalized()
+    base = _opt_color(opts, "shape_color", fg if fg is not None else QColor(0, 0, 0))
     width = opts.get("shape_stroke_width", opts.get("brush_size", 3))
-    r = int(opts.get("shape_corner_radius", 20))
-    radii = opts.get("shape_corner_radii") or [r, r, r, r]
-    appearance = ShapeAppearance(
+    return ShapeAppearance(
         fill_enabled=bool(opts.get("shape_fill", False)),
         fill_type=opts.get("shape_fill_type", "solid"),
         fill_color=_opt_color(opts, "shape_fill_color", base),
@@ -164,6 +162,16 @@ def shape_data_from_opts(opts: dict, fg, start: QPoint, end: QPoint, angle: int)
         stroke_cap=opts.get("shape_stroke_cap", "butt"),
         stroke_join=opts.get("shape_stroke_join", "miter"),
     )
+
+
+def shape_data_from_opts(opts: dict, fg, start: QPoint, end: QPoint, angle: int) -> dict:
+    """Builds a new shape's shape_data from the Shapes tool options (see
+    appearance_from_opts for the fill/stroke fallbacks)."""
+    base = _opt_color(opts, "shape_color", fg)
+    rect = QRect(start, end).normalized()
+    r = int(opts.get("shape_corner_radius", 20))
+    radii = opts.get("shape_corner_radii") or [r, r, r, r]
+    appearance = appearance_from_opts(opts, fg)
     sd = {
         "shape": opts.get("shape_type", "rect"),
         "rect":  (rect.x(), rect.y(), rect.width(), rect.height()),

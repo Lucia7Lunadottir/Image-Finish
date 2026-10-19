@@ -1,117 +1,198 @@
+"""Pen tools (Pen, Freeform Pen, Curvature Pen, Add/Delete/Convert Anchor,
+Path Selection, Direct Selection), modeled on Photoshop's.
+
+What a pen tool edits — its *target* — is either the document's work path
+or the nodes of a Pen-style shape layer (VectorLayer with `path_style`):
+
+  * Pen / Freeform / Curvature in "shape" mode (`pen_mode` option) draw a
+    shape layer directly: the first click creates it, later clicks extend
+    it, and with a path operation other than "new" a new component is
+    added to the selected shape. In "path" mode they draw the work path.
+  * The editing tools edit the active shape layer's path if there is one,
+    else the work path.
+  * The Pen also edits as it goes, like Photoshop's: Ctrl = temporary
+    Direct Selection, Alt = temporary Convert Point, and (Auto Add/Delete)
+    hovering a segment adds an anchor, hovering an anchor deletes it.
+
+Every pen tool's on_press/on_move/on_release is wrapped so each event
+writes the edited nodes back to a shape layer (`VectorLayer.update_path`).
+The path data format itself lives in core/path_model.py."""
 import math
+
 from PyQt6.QtCore import QPointF, QRectF, Qt
-from PyQt6.QtGui import QPainterPath, QColor, QPen
+from PyQt6.QtGui import QColor, QCursor, QPainterPath, QPen
+
+from core.path_model import (PATH_OPS, bezier_point as _bezier_point, build_bezier_path,  # noqa: F401
+                             clear_path, component_at, corner_node, focus_component, has_path,
+                             insert_node_on_segment, path_components, path_to_work_path,
+                             segment_at, split_bezier as _split_bezier, start_new_component)
 from tools.base_tool import BaseTool
-
-def _lerp(p1: QPointF, p2: QPointF, t: float) -> QPointF:
-    return QPointF(p1.x() + (p2.x() - p1.x()) * t, p1.y() + (p2.y() - p1.y()) * t)
-
-def _bezier_point(p0, p1, p2, p3, t):
-    q0 = _lerp(p0, p1, t); q1 = _lerp(p1, p2, t); q2 = _lerp(p2, p3, t)
-    r0 = _lerp(q0, q1, t); r1 = _lerp(q1, q2, t)
-    return _lerp(r0, r1, t)
-
-def _split_bezier(p0, p1, p2, p3, t):
-    q0 = _lerp(p0, p1, t); q1 = _lerp(p1, p2, t); q2 = _lerp(p2, p3, t)
-    r0 = _lerp(q0, q1, t); r1 = _lerp(q1, q2, t)
-    s0 = _lerp(r0, r1, t)
-    return q0, r0, s0, r1, q2
+from tools.pen_cursors import pen_cursor
 
 
-# A work path / saved path is {"nodes": [...], "closed": bool} — the
-# component the pen tools are editing — plus optional "subpaths": a list
-# of finished components of the same shape (Make Work Path from a
-# selection with several parts or holes, or a new component started after
-# closing one, as in Photoshop). Old paths without "subpaths" read as
-# before.
+# ── targets ──────────────────────────────────────────────────────────────────
 
-def path_components(wp: dict | None) -> list[dict]:
-    """Every component with nodes, the edited one last."""
-    if not wp:
-        return []
-    comps = [c for c in wp.get("subpaths", []) if c.get("nodes")]
-    if wp.get("nodes"):
-        comps.append({"nodes": wp["nodes"], "closed": wp.get("closed", False)})
-    return comps
+class _WorkPathTarget:
+    """The document's work path."""
+    is_shape = False
 
+    def __init__(self, doc):
+        if not hasattr(doc, "work_path"):
+            doc.work_path = {"nodes": [], "closed": False}
+        self.wp = doc.work_path
 
-def has_path(wp: dict | None) -> bool:
-    return bool(path_components(wp))
+    def is_current(self, doc) -> bool:
+        return getattr(doc, "work_path", None) is self.wp
+
+    def commit(self, final: bool) -> None:
+        pass                                    # edited in place
 
 
-def clear_path(wp: dict) -> None:
-    wp["nodes"], wp["closed"], wp["subpaths"] = [], False, []
+class _ShapeLayerPathTarget:
+    """A Pen-style shape layer's nodes (VectorLayer.editable_path); every
+    commit rebuilds its vector_mask (a new object, so undo snapshots keep
+    the old one)."""
+    is_shape = True
+
+    def __init__(self, layer):
+        self.layer = layer
+        self.wp = layer.editable_path()
+
+    def is_current(self, doc) -> bool:
+        layer = self.layer
+        return (doc.get_active_layer() is layer and layer._path_nodes_valid()
+                and layer.path_nodes is self.wp)
+
+    def commit(self, final: bool) -> None:
+        self.layer.update_path()
+        if final:
+            self.layer.rebake_thumbnail()
 
 
-def start_new_component(wp: dict) -> None:
-    """Keep the edited component as finished; the next nodes start a new one."""
-    if wp.get("nodes"):
-        wp.setdefault("subpaths", []).append({"nodes": wp["nodes"], "closed": wp.get("closed", False)})
-    wp["nodes"], wp["closed"] = [], False
+def _active_pen_layer(doc):
+    layer = doc.get_active_layer()
+    if layer is None or getattr(layer, "locked", False):
+        return None
+    return layer if getattr(layer, "is_pen_path_layer", lambda: False)() else None
 
 
-def focus_component(wp: dict, index: int) -> None:
-    """Make component `index` (of path_components) the edited one."""
-    comps = path_components(wp)
-    if not 0 <= index < len(comps) or index == len(comps) - 1 and wp.get("nodes"):
-        return
-    chosen = comps.pop(index)
-    wp["subpaths"] = comps
-    wp["nodes"], wp["closed"] = chosen["nodes"], chosen["closed"]
+def _committing(handler, final: bool):
+    def wrapper(self, pos, doc, fg, bg, opts):
+        self._opts = opts
+        result = handler(self, pos, doc, fg, bg, opts)
+        target = (self._owner or self)._target
+        if target is not None and target.is_current(doc):
+            target.commit(final)
+        return result
+    wrapper._commits_path = True
+    wrapper.__name__ = handler.__name__
+    wrapper.__doc__ = handler.__doc__
+    return wrapper
 
 
-def component_at(wp: dict, pos, tolerance: float) -> int | None:
-    """Index of the component with a node, handle or curve point nearest
-    to `pos` within `tolerance`, or None."""
-    best, best_d = None, tolerance
-    for ci, comp in enumerate(path_components(wp)):
-        nodes = comp["nodes"]
-        pts = [q for n in nodes for q in (n["p"], n["c1"], n["c2"])]
-        segs = len(nodes) if comp["closed"] else len(nodes) - 1
-        for i in range(max(0, segs)):
-            n0, n1 = nodes[i], nodes[(i + 1) % len(nodes)]
-            pts += [_bezier_point(n0["p"], n0["c2"], n1["c1"], n1["p"], k / 16) for k in range(1, 16)]
-        for q in pts:
-            d = math.hypot(pos.x() - q.x(), pos.y() - q.y())
-            if d < best_d:
-                best, best_d = ci, d
-    return best
-
-
-def _append_component(path: QPainterPath, comp: dict) -> None:
-    nodes = comp["nodes"]
-    path.moveTo(nodes[0]["p"])
-    for i in range(1, len(nodes)):
-        n0, n1 = nodes[i - 1], nodes[i]
-        path.cubicTo(n0["c2"], n1["c1"], n1["p"])
-    if comp.get("closed") and len(nodes) > 1:
-        n0, n1 = nodes[-1], nodes[0]
-        path.cubicTo(n0["c2"], n1["c1"], n1["p"])
-        path.closeSubpath()
-
-
-def build_bezier_path(wp: dict) -> QPainterPath:
-    """Single source of truth for turning a work path / saved path (format
-    above) into a QPainterPath — the pen tools' overlay, the Paths panel's
-    Make Selection/Fill/Stroke, Render filters."""
-    path = QPainterPath()
-    for comp in path_components(wp):
-        _append_component(path, comp)
-    return path
-
+# ── base ─────────────────────────────────────────────────────────────────────
 
 class BasePenTool(BaseTool):
     CONTEXT_MENU = "path"
-    def __init__(self):
+    TARGETS_SHAPE_LAYERS = False   # editing tools: the active shape layer's path
+    CREATES_PATHS = False          # Pen / Freeform / Curvature: honour pen_mode
+
+    # Overlay sizes and hit distances are in screen pixels, so handles look
+    # and grab the same at any zoom.
+    ANCHOR_PX = 7
+    HANDLE_PX = 6
+    HIT_PX = 8
+    CLOSE_PX = 10
+    COMPONENT_PX = 15
+
+    def __init__(self, owner=None):
         super().__init__()
         self.current_pos = None
+        self._target = None
+        # A tool the Pen borrows for Ctrl/Alt/auto add-delete edits shares
+        # the Pen's target instead of choosing its own.
+        self._owner = owner
+        self._opts: dict = {}
+
+    def __init_subclass__(cls, **kwargs):
+        super().__init_subclass__(**kwargs)
+        for name in ("on_press", "on_move", "on_release"):
+            handler = getattr(cls, name, None)      # inherited ones too
+            if handler is not None and not getattr(handler, "_commits_path", False):
+                setattr(cls, name, _committing(handler, final=name == "on_release"))
+
+    # ── target ──────────────────────────────────────────────────────────
+    def _mode(self) -> str:
+        return self._opts.get("pen_mode", "path")
+
+    def _wants_shape_layer(self) -> bool:
+        return self.TARGETS_SHAPE_LAYERS or (self.CREATES_PATHS and self._mode() == "shape")
+
+    def _path_target(self, doc):
+        if self._owner is not None:
+            return self._owner._path_target(doc)
+        layer = _active_pen_layer(doc) if self._wants_shape_layer() else None
+        t = self._target
+        if t is not None and t.is_current(doc) and t.is_shape == (layer is not None):
+            return t
+        self._target = _ShapeLayerPathTarget(layer) if layer is not None else _WorkPathTarget(doc)
+        return self._target
 
     def _get_wp(self, doc):
-        if not hasattr(doc, "work_path"):
-            doc.work_path = {"nodes": [], "closed": False}
-        return doc.work_path
+        return self._path_target(doc).wp
 
+    def _work_path(self, doc):
+        return _WorkPathTarget(doc).wp
+
+    def _draws_new_shape(self, target) -> bool:
+        """Shape mode with no shape layer selected: whatever the work path
+        looks like, a click starts a new shape and edits nothing."""
+        return self.CREATES_PATHS and self._mode() == "shape" and not target.is_shape
+
+    def _begin_drawing(self, doc, fg, opts, continue_open: bool = True) -> dict:
+        """The path a creating tool's new nodes go into. In shape mode: the
+        open path of the selected shape layer, a new component of it (path
+        operation other than "new"), or a brand-new shape layer."""
+        target = self._path_target(doc)
+        if not (self.CREATES_PATHS and self._mode() == "shape"):
+            return target.wp
+        if target.is_shape:
+            wp = target.wp
+            if continue_open and wp["nodes"] and not wp["closed"]:
+                return wp
+            op = opts.get("shape_path_op", "new")
+            if op in PATH_OPS:
+                start_new_component(wp, op)
+                return wp
+        layer = self._new_shape_layer(doc, fg, opts)
+        self._target = _ShapeLayerPathTarget(layer)
+        return self._target.wp
+
+    @staticmethod
+    def _new_shape_layer(doc, fg, opts):
+        from core.layer import VectorLayer
+        from tools.shapes_tool import appearance_from_opts
+        index = doc.active_layer_index + 1 if doc.layers else None
+        layer = doc.add_layer(doc.next_layer_name(VectorLayer, "layer.name.shape"), index,
+                              layer_cls=VectorLayer)
+        layer.path_style = appearance_from_opts(opts, fg).to_path_style()
+        layer.path_nodes = {"nodes": [], "closed": False, "subpaths": []}
+        layer.update_path()
+        return layer
+
+    def finish_path(self, doc) -> bool:
+        """Enter / Esc: end the open path; the next click starts a new one."""
+        wp = self._get_wp(doc)
+        if not wp["nodes"] or wp["closed"]:
+            return False
+        start_new_component(wp)
+        target = self._path_target(doc)
+        target.commit(True)
+        return True
+
+    # ── shared helpers ──────────────────────────────────────────────────
     def on_hover(self, pos, doc, fg, bg, opts):
+        self._opts = opts
         self.current_pos = QPointF(pos)
 
     def _build_path(self, wp) -> QPainterPath:
@@ -126,34 +207,69 @@ class BasePenTool(BaseTool):
             focus_component(wp, idx)
         return wp
 
+    @staticmethod
+    def _screen_px(opts, px: float) -> float:
+        """`px` screen pixels in document units at the current zoom."""
+        return px / max(0.01, opts.get("_zoom", 1.0))
+
+    def _closes_path(self, wp, pos, opts) -> bool:
+        """Would a click at `pos` close the open path (near its first node)?"""
+        nodes = wp['nodes']
+        return (len(nodes) > 1 and not wp['closed'] and
+                self._dist(pos, nodes[0]['p']) < self._screen_px(opts, self.CLOSE_PX))
+
+    def _overlay_preview(self, wp):
+        """Rubber band from the last node to the cursor (Pen only)."""
+        return None
+
+    def _overlay_close_hint(self, wp, opts) -> bool:
+        return False
+
     def draw_overlays(self, painter, pw, doc):
         wp = self._get_wp(doc)
         nodes = wp.get('nodes', [])
-        if not has_path(wp): return
+        if not has_path(wp):
+            return
+        t = painter.worldTransform()
+        px = 1.0 / max(1e-6, math.hypot(t.m11(), t.m12()))     # one screen pixel
 
         path = self._build_path(wp)
-        if nodes and getattr(self, 'name', '') == 'Pen' and self.current_pos and self.pointer_inside and not wp.get('closed') and getattr(self, 'dragging_idx', -1) == -1:
-            n0 = nodes[-1]
-            path.cubicTo(n0['c2'], self.current_pos, self.current_pos)
+        preview = self._overlay_preview(wp)
+        if preview is not None:
+            path.cubicTo(*preview)
 
-        painter.setPen(QPen(QColor(0, 150, 255), max(1.0, pw * 1.5)))
+        line = QPen(QColor(0, 150, 255), 1.5)
+        line.setCosmetic(True)
+        painter.setPen(line)
         painter.setBrush(Qt.BrushStyle.NoBrush)
         painter.drawPath(path)
 
-        painter.setPen(QPen(QColor(0, 0, 0), pw))
+        outline = QPen(QColor(0, 0, 0), 1.0)
+        outline.setCosmetic(True)
+        painter.setPen(outline)
+        a, h = self.ANCHOR_PX * px / 2, self.HANDLE_PX * px / 2
+        for comp in path_components(wp):
+            if comp['nodes'] is nodes:
+                continue
+            painter.setBrush(QColor(255, 255, 255))
+            for n in comp['nodes']:
+                painter.drawRect(QRectF(n['p'].x() - a, n['p'].y() - a, 2 * a, 2 * a))
         for n in nodes:
             painter.setBrush(QColor(255, 255, 255))
-            painter.drawRect(QRectF(n['p'].x() - pw*2, n['p'].y() - pw*2, pw*4, pw*4))
+            painter.drawRect(QRectF(n['p'].x() - a, n['p'].y() - a, 2 * a, 2 * a))
             painter.setBrush(Qt.BrushStyle.NoBrush)
-            if n['c1'] != n['p']:
-                painter.drawLine(n['c1'], n['p'])
-                painter.drawEllipse(n['c1'], pw*2, pw*2)
-            if n['c2'] != n['p']:
-                painter.drawLine(n['c2'], n['p'])
-                painter.drawEllipse(n['c2'], pw*2, pw*2)
+            for key in ('c1', 'c2'):
+                if n[key] != n['p']:
+                    painter.drawLine(n[key], n['p'])
+                    painter.drawEllipse(n[key], h, h)
+        if self._overlay_close_hint(wp, {"_zoom": 1.0 / px}):
+            painter.setBrush(QColor(0, 150, 255))
+            painter.drawEllipse(nodes[0]['p'], a * 1.6, a * 1.6)
 
     def perform_action(self, doc, action, fg_color):
-        wp = self._get_wp(doc)
+        # Make Selection / Shape / Clear always act on the work path, never
+        # on a shape layer the editing tools happen to be showing.
+        wp = self._work_path(doc)
         if action == "clear":
             clear_path(wp)
             return None
@@ -167,83 +283,223 @@ class BasePenTool(BaseTool):
     def needs_history_push(self): return True
     def cursor(self): return Qt.CursorShape.CrossCursor
 
+
+def _keep_smooth(n: dict, moved: str) -> None:
+    """After handle `moved` of a smooth node was dragged, turn the other
+    handle to stay opposite it (keeping its own length) — the node stays
+    smooth, as with Photoshop's Direct Selection."""
+    other = "c1" if moved == "c2" else "c2"
+    p, m, o = n["p"], n[moved], n[other]
+    dm = math.hypot(m.x() - p.x(), m.y() - p.y())
+    do = math.hypot(o.x() - p.x(), o.y() - p.y())
+    if dm < 1e-6 or do < 1e-6:
+        return
+    n[other] = QPointF(p.x() - (m.x() - p.x()) / dm * do, p.y() - (m.y() - p.y()) / dm * do)
+
+
+def _is_smooth(n: dict) -> bool:
+    p, a, b = n["p"], n["c1"], n["c2"]
+    va, vb = (a.x() - p.x(), a.y() - p.y()), (b.x() - p.x(), b.y() - p.y())
+    la, lb = math.hypot(*va), math.hypot(*vb)
+    if la < 1e-6 or lb < 1e-6:
+        return False
+    return (va[0] * vb[0] + va[1] * vb[1]) / (la * lb) < -0.995        # opposite
+
+
+# ── drawing tools ────────────────────────────────────────────────────────────
+
 class PenTool(BasePenTool):
+    CREATES_PATHS = True
+    REPAINT_ON_HOVER = True
     name = "Pen"
     icon = "✒️"
     shortcut = "P"
-    def __init__(self):
-        super().__init__()
-        self.dragging_idx = -1
 
+    def __init__(self, owner=None):
+        super().__init__(owner)
+        self.dragging_idx = -1
+        self._drag_out_only = False
+        self._delegate = None
+        self._helpers: dict = {}
+
+    # ── what a click would do ───────────────────────────────────────────
+    def action_at(self, doc, pos, opts) -> str:
+        """'direct' (Ctrl), 'convert' (Alt), 'close', 'corner' (the open
+        path's last node: drops its outgoing handle), 'delete' / 'add'
+        (Auto Add/Delete over an anchor / a segment), 'new' (a click starts
+        a new path), or 'draw' (the next node of the open path)."""
+        self._opts = opts
+        target = self._path_target(doc)
+        if self._draws_new_shape(target):
+            return "new"
+        wp = target.wp
+        if opts.get("_ctrl") and has_path(wp):
+            return "direct"
+        if opts.get("_alt") and has_path(wp):
+            return "convert"
+        nodes = wp["nodes"]
+        drawing = bool(nodes) and not wp["closed"]
+        if self._closes_path(wp, pos, opts):
+            return "close"
+        hit = self._screen_px(opts, self.HIT_PX)
+        if drawing and self._dist(pos, nodes[-1]["p"]) < hit:
+            return "corner"
+        if opts.get("pen_auto_add_delete", True):
+            for comp in path_components(wp):
+                if any(self._dist(pos, n["p"]) < hit for n in comp["nodes"]):
+                    return "delete"
+            for comp in path_components(wp):
+                if segment_at(comp["nodes"], comp["closed"], pos, hit) is not None:
+                    return "add"
+        return "draw" if drawing else "new"
+
+    def _helper(self, cls):
+        if cls not in self._helpers:
+            self._helpers[cls] = cls(owner=self)
+        return self._helpers[cls]
+
+    # ── events ──────────────────────────────────────────────────────────
     def on_press(self, pos, doc, fg, bg, opts):
         self.current_pos = QPointF(pos)
-        wp = self._get_wp(doc)
+        self.dragging_idx = -1
+        action = self.action_at(doc, pos, opts)
+        helper_cls = {"direct": DirectSelectionTool, "convert": ConvertPointTool,
+                      "add": AddAnchorPointTool, "delete": DeleteAnchorPointTool}.get(action)
+        if helper_cls is not None:
+            self._delegate = self._helper(helper_cls)
+            self._delegate.on_press(pos, doc, fg, bg, opts)
+            return
+        self._delegate = None
+
+        if action == "close":
+            wp = self._get_wp(doc)
+            wp['closed'] = True
+            self.dragging_idx, self._drag_out_only = 0, False
+            return
+        if action == "corner":
+            wp = self._get_wp(doc)
+            last = wp['nodes'][-1]
+            last['c2'] = QPointF(last['p'])
+            self.dragging_idx, self._drag_out_only = len(wp['nodes']) - 1, True
+            return
+
+        wp = self._begin_drawing(doc, fg, opts)
         if wp['closed']:
             start_new_component(wp)
-        nodes = wp['nodes']
-        if nodes and not wp['closed'] and self._dist(pos, nodes[0]['p']) < 10:
-            wp['closed'] = True
-            self.dragging_idx = 0
-            return
-        nodes.append({'p': QPointF(pos), 'c1': QPointF(pos), 'c2': QPointF(pos)})
-        self.dragging_idx = len(nodes) - 1
+        wp['nodes'].append(corner_node(pos))
+        self.dragging_idx, self._drag_out_only = len(wp['nodes']) - 1, False
 
     def on_move(self, pos, doc, fg, bg, opts):
         self.current_pos = QPointF(pos)
+        if self._delegate is not None:
+            self._delegate.on_move(pos, doc, fg, bg, opts)
+            return
         if self.dragging_idx >= 0:
-            node = self._get_wp(doc)['nodes'][self.dragging_idx]
+            nodes = self._get_wp(doc)['nodes']
+            if self.dragging_idx >= len(nodes):
+                return
+            node = nodes[self.dragging_idx]
             node['c2'] = QPointF(pos)
-            node['c1'] = QPointF(node['p'].x() * 2.0 - node['c2'].x(), node['p'].y() * 2.0 - node['c2'].y())
+            if not self._drag_out_only:
+                node['c1'] = QPointF(node['p'].x() * 2.0 - pos.x(), node['p'].y() * 2.0 - pos.y())
 
     def on_release(self, pos, doc, fg, bg, opts):
+        if self._delegate is not None:
+            self._delegate.on_release(pos, doc, fg, bg, opts)
+        self._delegate = None
         self.dragging_idx = -1
 
+    # ── look ────────────────────────────────────────────────────────────
+    _BADGES = {"close": "o", "corner": "^", "convert": "^", "add": "+", "delete": "-",
+               "new": "*", "draw": ""}
+
+    def cursor(self):
+        doc = getattr(self, "_hover_doc", None)
+        if doc is None or self.current_pos is None:
+            return pen_cursor("*")
+        action = self.action_at(doc, self.current_pos, self._opts)
+        if action == "direct":
+            return QCursor(Qt.CursorShape.ArrowCursor)
+        return pen_cursor(self._BADGES.get(action, ""))
+
+    def on_hover(self, pos, doc, fg, bg, opts):
+        super().on_hover(pos, doc, fg, bg, opts)
+        self._hover_doc = doc
+
+    def _overlay_preview(self, wp):
+        nodes = wp['nodes']
+        if (nodes and self.current_pos and self.pointer_inside and not wp.get('closed')
+                and self.dragging_idx == -1 and self._delegate is None):
+            return (nodes[-1]['c2'], self.current_pos, self.current_pos)
+        return None
+
+    def _overlay_close_hint(self, wp, opts) -> bool:
+        return (self._overlay_preview(wp) is not None
+                and self._closes_path(wp, self.current_pos, opts))
+
+
 class FreeformPenTool(BasePenTool):
+    CREATES_PATHS = True
     name = "FreeformPen"
     icon = "✍️"
     shortcut = "P"
 
     def on_press(self, pos, doc, fg, bg, opts):
-        wp = self._get_wp(doc)
-        start_new_component(wp)
-        wp['nodes'] = [{'p': QPointF(pos), 'c1': QPointF(pos), 'c2': QPointF(pos)}]
+        wp = self._begin_drawing(doc, fg, opts, continue_open=False)
+        op = wp.get("op")
+        start_new_component(wp, op)
+        wp['nodes'] = [corner_node(pos)]
 
     def on_move(self, pos, doc, fg, bg, opts):
         nodes = self._get_wp(doc)['nodes']
         if not nodes: return
         if self._dist(pos, nodes[-1]['p']) > 15:
-            nodes.append({'p': QPointF(pos), 'c1': QPointF(pos), 'c2': QPointF(pos)})
+            nodes.append(corner_node(pos))
+
+    def on_release(self, pos, doc, fg, bg, opts):
+        # A freeform stroke is finished as soon as it's drawn: in shape
+        # mode, the next stroke is a new shape / component.
+        wp = self._get_wp(doc)
+        if self._mode() == "shape" and wp['nodes']:
+            wp['closed'] = len(wp['nodes']) > 2
+
 
 class CurvaturePenTool(BasePenTool):
+    CREATES_PATHS = True
     name = "CurvaturePen"
     icon = "〰️"
     shortcut = "P"
-    def __init__(self):
-        super().__init__()
+
+    def __init__(self, owner=None):
+        super().__init__(owner)
         self.drag_idx = -1
 
     def on_press(self, pos, doc, fg, bg, opts):
-        wp = self._get_wp(doc)
-        nodes = wp['nodes']
+        target = self._path_target(doc)
+        wp = target.wp
+        nodes = [] if self._draws_new_shape(target) else wp['nodes']
         for i, n in enumerate(nodes):
-            if self._dist(pos, n['p']) < 10:
+            if self._dist(pos, n['p']) < self._screen_px(opts, self.HIT_PX):
                 self.drag_idx = i
                 return
-        if nodes and not wp['closed'] and self._dist(pos, nodes[0]['p']) < 10:
+        if nodes and self._closes_path(wp, pos, opts):
             wp['closed'] = True
             self._smooth(wp); self.drag_idx = -1
             return
+        wp = self._begin_drawing(doc, fg, opts)
         if wp['closed']:
             start_new_component(wp)
-            nodes = wp['nodes']
-        nodes.append({'p': QPointF(pos), 'c1': QPointF(pos), 'c2': QPointF(pos)})
+        nodes = wp['nodes']
+        nodes.append(corner_node(pos))
         self.drag_idx = len(nodes) - 1
         self._smooth(wp)
 
     def on_move(self, pos, doc, fg, bg, opts):
         if self.drag_idx >= 0:
-            self._get_wp(doc)['nodes'][self.drag_idx]['p'] = QPointF(pos)
-            self._smooth(self._get_wp(doc))
+            wp = self._get_wp(doc)
+            if self.drag_idx < len(wp['nodes']):
+                wp['nodes'][self.drag_idx]['p'] = QPointF(pos)
+                self._smooth(wp)
 
     def on_release(self, pos, doc, fg, bg, opts):
         self.drag_idx = -1
@@ -267,64 +523,63 @@ class CurvaturePenTool(BasePenTool):
             nodes[i]['c1'] = QPointF(p.x() - dx * t1, p.y() - dy * t1)
             nodes[i]['c2'] = QPointF(p.x() + dx * t2, p.y() + dy * t2)
 
+
+# ── editing tools ────────────────────────────────────────────────────────────
+
 class AddAnchorPointTool(BasePenTool):
+    TARGETS_SHAPE_LAYERS = True
     name = "AddAnchor"
     icon = "✒️+"
     shortcut = "P"
 
     def on_press(self, pos, doc, fg, bg, opts):
-        wp = self._focus_at(doc, pos)
+        wp = self._focus_at(doc, pos, self._screen_px(opts, self.COMPONENT_PX))
         nodes = wp['nodes']
         if len(nodes) < 2: return
-        best_dist = float('inf')
-        best_t, best_idx = 0, -1
-        n_segments = len(nodes) if wp['closed'] else len(nodes) - 1
-        for i in range(n_segments):
-            n0, n1 = nodes[i], nodes[(i+1)%len(nodes)]
-            for step in range(1, 20):
-                t = step / 20.0
-                pt = _bezier_point(n0['p'], n0['c2'], n1['c1'], n1['p'], t)
-                d = self._dist(pos, pt)
-                if d < best_dist:
-                    best_dist = d; best_t = t; best_idx = i
-        if best_dist < 15:
-            n0, n1 = nodes[best_idx], nodes[(best_idx+1)%len(nodes)]
-            q0, r0, s0, r1, q2 = _split_bezier(n0['p'], n0['c2'], n1['c1'], n1['p'], best_t)
-            n0['c2'], n1['c1'] = q0, q2
-            nodes.insert(best_idx + 1, {'p': s0, 'c1': r0, 'c2': r1})
+        hit = segment_at(nodes, wp['closed'], pos, self._screen_px(opts, self.COMPONENT_PX))
+        if hit is not None:
+            insert_node_on_segment(nodes, *hit)
+
+    def cursor(self): return pen_cursor("+")
+
 
 class DeleteAnchorPointTool(BasePenTool):
+    TARGETS_SHAPE_LAYERS = True
     name = "DeleteAnchor"
     icon = "✒️-"
     shortcut = "P"
     def on_press(self, pos, doc, fg, bg, opts):
-        wp = self._focus_at(doc, pos)
+        wp = self._focus_at(doc, pos, self._screen_px(opts, self.COMPONENT_PX))
         nodes = wp['nodes']
         for i, n in enumerate(nodes):
-            if self._dist(pos, n['p']) < 10:
+            if self._dist(pos, n['p']) < self._screen_px(opts, self.HIT_PX):
                 nodes.pop(i)
                 if len(nodes) < 3: wp['closed'] = False
                 return
 
+    def cursor(self): return pen_cursor("-")
+
+
 class ConvertPointTool(BasePenTool):
+    TARGETS_SHAPE_LAYERS = True
     name = "ConvertPoint"
     icon = "^"
     shortcut = "P"
-    def __init__(self):
-        super().__init__()
+    def __init__(self, owner=None):
+        super().__init__(owner)
         self.drag_target = None
 
     def on_press(self, pos, doc, fg, bg, opts):
         self.drag_target = None
-        nodes = self._focus_at(doc, pos)['nodes']
+        nodes = self._focus_at(doc, pos, self._screen_px(opts, self.COMPONENT_PX))['nodes']
         for i, n in enumerate(nodes):
             # A handle lying on its anchor (corner point) is not a separate
             # target — the click goes to the anchor below.
             for key in ('c1', 'c2'):
-                if self._dist(n[key], n['p']) > 1 and self._dist(pos, n[key]) < 8:
+                if self._dist(n[key], n['p']) > 1 and self._dist(pos, n[key]) < self._screen_px(opts, self.HIT_PX):
                     self.drag_target = (i, key); return
         for i, n in enumerate(nodes):
-            if self._dist(pos, n['p']) < 8:
+            if self._dist(pos, n['p']) < self._screen_px(opts, self.HIT_PX):
                 if self._dist(n['p'], n['c1']) > 1 or self._dist(n['p'], n['c2']) > 1:
                     n['c1'] = QPointF(n['p']); n['c2'] = QPointF(n['p'])
                 else:
@@ -341,12 +596,16 @@ class ConvertPointTool(BasePenTool):
             n['c2'] = QPointF(pos)
             n['c1'] = QPointF(n['p'].x() * 2 - pos.x(), n['p'].y() * 2 - pos.y())
 
+    def cursor(self): return pen_cursor("^")
+
+
 class PathSelectionTool(BasePenTool):
+    TARGETS_SHAPE_LAYERS = True
     name = "PathSelection"
     icon = "↖"
     shortcut = "A"
-    def __init__(self):
-        super().__init__()
+    def __init__(self, owner=None):
+        super().__init__(owner)
         self._dragging = False
         self._start_pos = None
         self._orig_nodes = []
@@ -356,8 +615,8 @@ class PathSelectionTool(BasePenTool):
         wp = self._get_wp(doc)
         if not has_path(wp): return
         path = self._build_path(wp)
-        # Check if we clicked near the path bounding box
-        if path.boundingRect().adjusted(-10, -10, 10, 10).contains(QPointF(pos)):
+        m = self._screen_px(opts, self.CLOSE_PX)
+        if path.boundingRect().adjusted(-m, -m, m, m).contains(QPointF(pos)):
             self._dragging = True
             self._start_pos = QPointF(pos)
             self._moved = [n for comp in path_components(wp) for n in comp['nodes']]
@@ -379,21 +638,27 @@ class PathSelectionTool(BasePenTool):
 
     def cursor(self): return Qt.CursorShape.ArrowCursor
 
+
 class DirectSelectionTool(ConvertPointTool):
+    """Drags anchors and handles. Dragging a handle of a smooth node turns
+    the opposite handle with it (the node stays smooth) unless Alt is held."""
     name = "DirectSelection"
     icon = "↗"
     shortcut = "A"
     def on_press(self, pos, doc, fg, bg, opts):
         self.drag_target = None
-        nodes = self._focus_at(doc, pos)['nodes']
+        self._was_smooth = False
+        nodes = self._focus_at(doc, pos, self._screen_px(opts, self.COMPONENT_PX))['nodes']
         for i, n in enumerate(nodes):
             # A handle lying on its anchor (corner point) is not a separate
             # target — the click goes to the anchor below.
             for key in ('c1', 'c2'):
-                if self._dist(n[key], n['p']) > 1 and self._dist(pos, n[key]) < 8:
-                    self.drag_target = (i, key); return
+                if self._dist(n[key], n['p']) > 1 and self._dist(pos, n[key]) < self._screen_px(opts, self.HIT_PX):
+                    self.drag_target = (i, key)
+                    self._was_smooth = _is_smooth(n)
+                    return
         for i, n in enumerate(nodes):
-            if self._dist(pos, n['p']) < 8:
+            if self._dist(pos, n['p']) < self._screen_px(opts, self.HIT_PX):
                 self.drag_target = (i, 'p')
                 self._start_pos = QPointF(pos)
                 self._orig_n = {'p': QPointF(n['p']), 'c1': QPointF(n['c1']), 'c2': QPointF(n['c2'])}
@@ -403,12 +668,14 @@ class DirectSelectionTool(ConvertPointTool):
         if not self.drag_target: return
         idx, ttype = self.drag_target
         n = self._get_wp(doc)['nodes'][idx]
-        if ttype == 'c1': n['c1'] = QPointF(pos)
-        elif ttype == 'c2': n['c2'] = QPointF(pos)
+        if ttype in ('c1', 'c2'):
+            n[ttype] = QPointF(pos)
+            if self._was_smooth and not opts.get("_alt"):
+                _keep_smooth(n, ttype)
         elif ttype == 'p':
             delta = QPointF(pos) - self._start_pos
             n['p'] = self._orig_n['p'] + delta
             n['c1'] = self._orig_n['c1'] + delta
             n['c2'] = self._orig_n['c2'] + delta
-            
+
     def cursor(self): return Qt.CursorShape.ArrowCursor

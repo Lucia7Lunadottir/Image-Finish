@@ -9,13 +9,10 @@ def _clone_nodes(nodes) -> list:
 
 
 def clone_work_path(wp: dict | None) -> dict:
-    """Deep copy of a work path, its finished components included."""
-    if not wp: return {"nodes": [], "closed": False}
-    clone = {"nodes": _clone_nodes(wp.get("nodes", [])), "closed": wp.get("closed", False)}
-    if wp.get("subpaths"):
-        clone["subpaths"] = [{"nodes": _clone_nodes(c["nodes"]), "closed": c.get("closed", False)}
-                             for c in wp["subpaths"]]
-    return clone
+    """Deep copy of a work path, its finished components (and their path
+    operations) included."""
+    from core.path_model import clone_path
+    return clone_path(wp)
 
 
 @dataclass

@@ -1,9 +1,14 @@
+import os
+
 from PyQt6.QtCore import QSettings
 from PyQt6.QtGui import QAction
 from PyQt6.QtWidgets import QFileDialog, QMessageBox
 from core.document import Document
 from core.locale import tr
 from ui.document_controller import require_document
+
+
+_PSD_EXTENSIONS = (".psd", ".psb")
 
 
 class FileActionsMixin:
@@ -78,40 +83,9 @@ class FileActionsMixin:
                 self._status.showMessage(tr("status.legacy_format"))
             return
                 
-        if path.lower().endswith(".psd"):
-            try:
-                from psd_tools import PSDImage
-                psd = PSDImage.open(path)
-                doc = Document(psd.width, psd.height)
-                doc.layers = []
-                from core.layer import RasterLayer
-                from PyQt6.QtGui import QImage, QPainter
-                from PyQt6.QtCore import QPoint
-                for pl in psd:
-                    if pl.is_group(): continue
-                    pil_img = pl.topil()
-                    if not pil_img: continue
-                    if pil_img.mode != "RGBA": pil_img = pil_img.convert("RGBA")
-                    data = pil_img.tobytes("raw", "RGBA")
-                    qim = QImage(data, pil_img.width, pil_img.height, QImage.Format.Format_RGBA8888).copy()
-                    qim = qim.convertToFormat(QImage.Format.Format_ARGB32_Premultiplied)
-                    layer = RasterLayer(pl.name, doc.width, doc.height)
-                    p = QPainter(layer.image)
-                    p.drawImage(QPoint(pl.left, pl.top), qim)
-                    p.end()
-                    layer.visible = pl.visible
-                    layer.opacity = pl.opacity / 255.0
-                    doc.layers.insert(0, layer)
-                if not doc.layers: doc.add_layer("Background")
-                doc.active_layer_index = len(doc.layers) - 1
-                self._add_tab(doc, path.split("/")[-1], path)
-                return
-            except ImportError:
-                QMessageBox.warning(self, tr("err.title.error"), "Please install 'psd-tools' (pip install psd-tools) to open PSD files.")
-                return
-            except Exception as e:
-                QMessageBox.critical(self, tr("err.title.error"), f"Failed to open PSD: {e}")
-                return
+        if path.lower().endswith(_PSD_EXTENSIONS):
+            self._open_psd(path)
+            return
 
         from PyQt6.QtGui import QImage
         img = QImage(path)
@@ -131,17 +105,42 @@ class FileActionsMixin:
         doc.active_layer_index = 0
         self._add_tab(doc, path.split("/")[-1], path)
 
+    def _open_psd(self, path: str):
+        """Photoshop .psd/.psb through core.psd_import (no PSD library)."""
+        from core.psd_import import PsdImporter, PsdFormatError
+        importer = PsdImporter(path)
+        try:
+            doc = importer.load()
+        except (PsdFormatError, OSError) as e:
+            QMessageBox.critical(self, tr("err.title.error"),
+                                 tr("err.could_not_open", path=path) + f"\n{e}")
+            return
+        except Exception:
+            from core.app_logging import get_logger
+            get_logger("file_actions").exception("Unexpected error loading %s", path)
+            QMessageBox.critical(self, tr("err.title.error"),
+                                 tr("err.could_not_open", path=path))
+            return
+        self._add_tab(doc, path.split("/")[-1], path)
+        if importer.skipped_layers:
+            self._status.showMessage(tr("status.psd_skipped_layers", count=importer.skipped_layers))
+
     @require_document
     def _save(self):
-        if hasattr(self, "_filepath") and self._filepath:
-            self._do_save(self._filepath)
+        path = getattr(self, "_filepath", None)
+        if path and path.lower().endswith(_PSD_EXTENSIONS):
+            # PSD is import-only: save the layers as .imfn next to it instead
+            # of flattening them into a file Qt can't write anyway.
+            self._save_as(suggested_name=os.path.splitext(path)[0] + ".imfn")
+        elif path:
+            self._do_save(path)
         else:
             self._save_as()
 
     @require_document
-    def _save_as(self):
+    def _save_as(self, *, suggested_name: str = "untitled.png"):
         path, _ = QFileDialog.getSaveFileName(
-            self, tr("dlg.save_as"), "untitled.png", tr("dlg.save_filter"))
+            self, tr("dlg.save_as"), suggested_name, tr("dlg.save_filter"))
         if path:
             self._filepath = path
             self._do_save(path)

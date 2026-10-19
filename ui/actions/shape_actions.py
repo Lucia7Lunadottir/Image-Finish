@@ -45,17 +45,30 @@ _GEOMETRY_EDITS = {
 }
 
 
+def _edits_shapes(tool) -> bool:
+    """Tools whose options bar shows (and live-edits) a shape's appearance:
+    the Shapes tool and the pen tools (their shape mode)."""
+    from tools.pen_tool import BasePenTool
+    from tools.shapes_tool import ShapesTool
+    return isinstance(tool, (ShapesTool, BasePenTool))
+
+
 class ShapeActionsMixin:
-    """When the Shapes tool is active and the active layer is a shape (or a
-    Pen path) layer, options-bar edits re-render that existing layer live
-    instead of only taking effect on the *next* shape drawn — the same idea
-    as _apply_text_styles editing a text layer's already-placed text."""
+    """When the Shapes tool or a pen tool is active and the active layer is
+    a shape (or a Pen path) layer, options-bar edits re-render that
+    existing layer live instead of only taking effect on the *next* shape
+    drawn — the same idea as _apply_text_styles editing a text layer's
+    already-placed text. Geometry edits (sides, radii, ...) are the Shapes
+    tool's only."""
 
     def _apply_shape_option_live(self, key: str, value) -> bool:
         if key not in _APPEARANCE_EDITS and key not in _GEOMETRY_EDITS and key != "shape_angle":
             return False
         from tools.shapes_tool import ShapesTool
-        if not isinstance(self._canvas.active_tool, ShapesTool):
+        tool = self._canvas.active_tool
+        if not _edits_shapes(tool):
+            return False
+        if key not in _APPEARANCE_EDITS and not isinstance(tool, ShapesTool):
             return False
         doc = self._document
         layer = doc.get_active_layer() if doc else None
@@ -104,12 +117,12 @@ class ShapeActionsMixin:
         """Pushes the just-selected shape's own properties into the
         options bar, so editing starts from that shape's real values
         instead of whatever was left over from the last shape drawn."""
-        from tools.shapes_tool import ShapesTool
-        if not isinstance(getattr(self._canvas, "active_tool", None), ShapesTool):
+        if not _edits_shapes(getattr(self._canvas, "active_tool", None)):
             return
         if layer is None or not hasattr(layer, "has_vector_geometry") or not layer.has_vector_geometry():
             return
-        page = self._opts_bar.page_for("Shapes") if hasattr(self, "_opts_bar") else None
+        page = (self._opts_bar.page_for(self._active_tool_name)
+                if hasattr(self, "_opts_bar") else None)
         if page is None or not hasattr(page, "update_from_opts"):
             return
         a = layer.appearance()

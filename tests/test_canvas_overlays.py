@@ -52,4 +52,5 @@ def test_pen_segment_to_cursor_hidden_outside_canvas(main_window):
 
 def test_repaint_on_hover_tools(main_window):
     hover = {n for n, t in main_window._tools.items() if t.REPAINT_ON_HOVER}
-    assert hover == {"Select", "Shapes", "RotateView", "Gradient", "ObjectSelection"}
+    # Pen: the rubber band to the cursor and the close / add / delete hints.
+    assert hover == {"Select", "Shapes", "RotateView", "Gradient", "ObjectSelection", "Pen"}

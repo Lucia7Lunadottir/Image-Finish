@@ -138,6 +138,11 @@ class PathMenu(CanvasMenu):
         self._add(menu, "paths.fill", lambda: w._path_fill(wp), has_path)
         self._add(menu, "paths.stroke", lambda: w._path_stroke(wp), has_path)
         self._add(menu, "opts.pen.shape", lambda: w._on_opt_changed("pen_action", "shape"), has_path)
+        # Rounds what the tool is editing: the selected shape or the work path.
+        target_wp = ctx.tool._path_target(ctx.doc).wp if hasattr(ctx.tool, "_path_target") else wp
+        radius = ctx.canvas.tool_opts.get("pen_corner_radius", 10)
+        self._add(menu, "opts.pen.round_corners",
+                  lambda: w._on_opt_changed("pen_round_corners", radius), _has_path(target_wp))
         menu.addSeparator()
         self._add(menu, "paths.delete", lambda: w._on_opt_changed("pen_action", "clear"), has_path)
 

@@ -19,6 +19,7 @@ class OptionActionsMixin:
         "move_apply":          "_opt_cmd_move_apply",
         "move_cancel":         "_opt_cmd_move_cancel",
         "pen_action":          "_opt_cmd_pen_action",
+        "pen_round_corners":   "_opt_cmd_pen_round_corners",
     }
 
     def _opt_cmd_text_edit_cancel(self, _value):
@@ -69,6 +70,29 @@ class OptionActionsMixin:
             elif action == "shape":
                 self._push_history(tr("history.new_vector_shape"))
                 self._new_shape_layer_from_path(path)
+        self._refresh_layers()
+        self._canvas_refresh()
+
+    def _opt_cmd_pen_round_corners(self, radius):
+        """Round the sharp corners of what the pen tools are editing: the
+        selected shape layer's path, or the work path."""
+        from core.path_model import round_corners
+        from tools.pen_tool import BasePenTool, PathSelectionTool
+        doc = self._document
+        if doc is None:
+            return
+        tool = self._canvas.active_tool
+        if not isinstance(tool, BasePenTool):
+            tool = self._tools.get("PathSelection") or PathSelectionTool()
+        target = tool._path_target(doc)
+        from core.path_model import clone_path
+        trial = clone_path(target.wp)
+        if not round_corners(trial, float(radius)):
+            self._status.showMessage(tr("status.pen_no_corners"), 4000)
+            return
+        self._push_history(tr("history.round_corners"))
+        round_corners(target.wp, float(radius))
+        target.commit(True)
         self._refresh_layers()
         self._canvas_refresh()
 

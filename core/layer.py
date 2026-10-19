@@ -976,20 +976,64 @@ class VectorLayer(LiveRenderedLayer):
         super().__init__(name, width, height, fill_color)
         self.shape_data: dict | None = None   # ShapesTool primitives (rendered live; also kept baked to image for thumbnails)
         self.path_style: dict | None = None   # Pen Tool path: {"fill_color", "stroke_color", "stroke_width"}
+        # A Pen path's editable nodes (core/path_model.py format: open
+        # components, per-component path operations) — `vector_mask` is
+        # built from them. Valid only while `vector_mask` is still the very
+        # path built from them: anything else that replaces the mask (Move,
+        # Free Transform, boolean ops) invalidates them, and they're read
+        # back out of the mask on the next edit.
+        self.path_nodes: dict | None = None
+        self._path_nodes_mask = None
 
     def _copy_extra(self, clone, deep_image):
         sd = self.shape_data
         clone.shape_data = dict(sd) if sd else None
         ps = self.path_style
         clone.path_style = dict(ps) if ps else None
+        if self._path_nodes_valid():
+            from core.path_model import clone_path
+            clone.path_nodes = clone_path(self.path_nodes)
+            clone._path_nodes_mask = clone.vector_mask
+        else:
+            clone.path_nodes = None
+            clone._path_nodes_mask = None
 
     def _to_dict_extra(self, d):
         d["shape_data"] = self.shape_data
         d["path_style"] = self.path_style
+        d["path_nodes"] = self.path_nodes if self._path_nodes_valid() else None
 
     def _from_dict_extra(self, d):
         self.shape_data = d.get("shape_data")
         self.path_style = d.get("path_style")
+        self.path_nodes = d.get("path_nodes") if self.path_style else None
+        self._path_nodes_mask = self.vector_mask if self.path_nodes is not None else None
+
+    # ── Pen path nodes ──────────────────────────────────────────────────
+    def _path_nodes_valid(self) -> bool:
+        nodes_mask = getattr(self, "_path_nodes_mask", None)
+        return getattr(self, "path_nodes", None) is not None and nodes_mask is self.vector_mask
+
+    def is_pen_path_layer(self) -> bool:
+        """A Pen-style shape layer, also while its path has fewer than two
+        nodes (being drawn) — `_is_path_layer` needs a fillable mask."""
+        return bool(self.path_style) and (self.vector_mask is not None or getattr(self, "path_nodes", None) is not None)
+
+    def editable_path(self) -> dict:
+        """The nodes the pen tools edit in place; call `update_path` after."""
+        if not self._path_nodes_valid():
+            from core.path_model import path_to_work_path
+            self.path_nodes = path_to_work_path(self.vector_mask or QPainterPath())
+            self._path_nodes_mask = self.vector_mask
+        return self.path_nodes
+
+    def update_path(self) -> None:
+        """Rebuild `vector_mask` from the (edited) `path_nodes`. A new path
+        object each time, so undo snapshots keep the old one."""
+        from core.path_model import build_shape_path
+        path = build_shape_path(self.path_nodes or {})
+        self.vector_mask = path
+        self._path_nodes_mask = path
 
     # ── vector geometry ─────────────────────────────────────────────────
     def has_vector_geometry(self) -> bool:
