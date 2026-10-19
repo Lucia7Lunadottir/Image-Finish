@@ -17,7 +17,7 @@ class ColorSamplerTool(BaseTool):
             if not self.markers: return
             dists = [((p.x()-pos.x())**2 + (p.y()-pos.y())**2, p) for p in self.markers]
             dists.sort()
-            if dists[0][0] < 100:  # Remove if clicked nearby (within 10 px)
+            if dists[0][0] < self.screen_px(opts, 10) ** 2:  # Remove if clicked nearby (within 10 screen px)
                 self.markers.remove(dists[0][1])
         else:
             if len(self.markers) < 10:
@@ -51,7 +51,7 @@ class RulerTool(BaseTool):
                 if min(d1, d2) < best_dist:
                     best_dist = min(d1, d2)
                     best_idx = i
-            if best_dist < 100:  # Remove ruler if clicked near its endpoint (10 px)
+            if best_dist < self.screen_px(opts, 10) ** 2:  # Remove ruler if clicked near its endpoint (10 screen px)
                 self.lines.pop(best_idx)
                 return
                 

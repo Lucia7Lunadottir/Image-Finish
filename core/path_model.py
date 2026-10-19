@@ -173,6 +173,32 @@ def translate_path(wp: dict | None, dx: float, dy: float) -> None:
                 n[key] = QPointF(n[key].x() + dx, n[key].y() + dy)
 
 
+def _canonical_components(wp: dict | None) -> list:
+    """The components in an order that doesn't depend on which one is
+    being edited (focus_component reorders them) and that a translation
+    keeps: by first anchor."""
+    comps = [(c.get("closed", False), c.get("op"),
+              [(n[k].x(), n[k].y()) for n in c["nodes"] for k in ("p", "c1", "c2")])
+             for c in path_components(wp)]
+    return sorted(comps, key=lambda c: c[2][0])
+
+
+def path_offset(base: dict | None, moved: dict | None, eps: float = 1e-4):
+    """(dx, dy) if `moved` is `base` translated as a whole — (0, 0) when
+    unchanged — or None if it was edited any other way."""
+    a, b = _canonical_components(base), _canonical_components(moved)
+    if len(a) != len(b) or not a:
+        return None if a or b else (0.0, 0.0)
+    dx, dy = b[0][2][0][0] - a[0][2][0][0], b[0][2][0][1] - a[0][2][0][1]
+    for (ca, oa, pa), (cb, ob, pb) in zip(a, b):
+        if ca != cb or oa != ob or len(pa) != len(pb):
+            return None
+        for (xa, ya), (xb, yb) in zip(pa, pb):
+            if abs(xb - xa - dx) > eps or abs(yb - ya - dy) > eps:
+                return None
+    return dx, dy
+
+
 # ── QPainterPath conversion ──────────────────────────────────────────────────
 
 def _append_component(path: QPainterPath, comp: dict) -> None:

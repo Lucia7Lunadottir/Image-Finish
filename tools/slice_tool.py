@@ -32,7 +32,7 @@ class SliceTool(BaseTool):
     def draw_overlays(self, painter, pw, doc):
         if self._start and self._end:
             r = QRect(self._start, self._end).normalized()
-            painter.setPen(QPen(QColor(0, 150, 255), max(1.0, pw)))
+            painter.setPen(QPen(QColor(0, 150, 255), pw))
             painter.setBrush(QColor(0, 150, 255, 40))
             painter.drawRect(r)
 

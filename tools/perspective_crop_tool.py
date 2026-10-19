@@ -15,7 +15,7 @@ class PerspectiveCropTool(BaseTool):
         self.points = []
         self.pending_quad = None
         self._dragged_point_index = -1
-        self._threshold = 40
+        self._threshold = 12          # screen pixels
 
 
     def draw(self, painter: QPainter, doc, fg, bg, opts):
@@ -43,7 +43,7 @@ class PerspectiveCropTool(BaseTool):
     def on_press(self, pos: QPoint, doc, fg: QColor, bg: QColor, opts: dict):
         if len(self.points) == 4:
             for i, p in enumerate(self.points):
-                if self._dist_to_point(pos, p) < self._threshold:
+                if self._dist_to_point(pos, p) < self.screen_px(opts, self._threshold):
                     self._dragged_point_index = i
                     return
 

@@ -151,7 +151,8 @@ def test_grabbing_a_node_uses_screen_distance(zoom, grabs):
     _open_path(doc)
     tool = DirectSelectionTool()
     tool.on_press(QPoint(105, 100), doc, QColor(), QColor(), {"_zoom": zoom})
-    assert (tool.drag_target is not None) is grabs
+    # (too far from the node it grabs the segment it lies on instead)
+    assert (tool.drag_target == (0, "p")) is grabs
 
 
 def _anchor_width_on_screen(zoom):

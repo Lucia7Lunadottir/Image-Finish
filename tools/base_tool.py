@@ -42,6 +42,16 @@ class BaseTool(ABC):
     # outside it, so previews that follow the cursor aren't left hanging.
     pointer_inside: bool = True
 
+    # draw_overlays(painter, pw, doc), if a tool has it, paints in document
+    # coordinates; `pw` is one screen pixel in document units, so sizes and
+    # pen widths given as multiples of it look the same at any zoom.
+
+    @staticmethod
+    def screen_px(opts: dict, px: float) -> float:
+        """`px` screen pixels in document units at the current zoom — for
+        hit distances, which must not grow or shrink with the zoom."""
+        return px / max(0.01, opts.get("_zoom", 1.0))
+
     def on_press(self, pos: QPoint, doc, fg: QColor, bg: QColor, opts: dict):
         """Called on mouse button press."""
         pass

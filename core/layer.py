@@ -993,7 +993,8 @@ def paint_path_style(painter: QPainter, path: QPainterPath, path_style: dict) ->
     same ShapeAppearance renderer shape_data layers use, so both kinds of
     vector layer support the same fill/stroke options and stay sharp at
     any zoom (painting happens in device space)."""
-    ShapeAppearance.from_path_style(path_style).paint(painter, path, closed=True)
+    ShapeAppearance.from_path_style(path_style).paint(
+        painter, path, closed=not path_style.get("open_stroke", False))
 
 
 class VectorLayer(LiveRenderedLayer):
@@ -1078,6 +1079,35 @@ class VectorLayer(LiveRenderedLayer):
             self.update_path()
         if self.has_vector_geometry():
             self.rebake_thumbnail()
+
+    def is_live_shape(self) -> bool:
+        """A Shapes-tool primitive (rect, ellipse, polygon, line...), still
+        parametric."""
+        return self.shape_spec() is not None and not self.path_style
+
+    def live_shape_nodes(self) -> dict:
+        """A live shape's outline as pen-tool nodes, in document space."""
+        from core.path_model import path_to_work_path
+        return path_to_work_path(self._geometry_transform().map(self.shape_spec().outline()))
+
+    def convert_to_path_layer(self, nodes: dict) -> None:
+        """Photoshop's "turn a live shape into a regular path": editing a
+        shape's points makes it a Pen-style path layer with `nodes`
+        (document space), keeping its fill and stroke. A line stays an
+        open, unfilled stroke."""
+        spec = self.shape_spec()
+        appearance = spec.appearance
+        style_extra = {}
+        if spec.kind.is_open:
+            from dataclasses import replace
+            appearance = replace(appearance, fill_enabled=False)
+            style_extra["open_stroke"] = True
+        self.shape_data = None
+        self.path_style = {**appearance.to_path_style(), **style_extra}
+        self.offset = QPoint(0, 0)
+        self.vector_mask_enabled = True
+        self.path_nodes = nodes
+        self.update_path()
 
     def update_path(self) -> None:
         """Rebuild `vector_mask` from the (edited) `path_nodes`. A new path

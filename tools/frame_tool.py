@@ -36,7 +36,7 @@ class FrameTool(BaseTool):
     def draw_overlays(self, painter, pw, doc):
         if self._start and self._end:
             r = QRectF(QPointF(self._start), QPointF(self._end)).normalized()
-            painter.setPen(QPen(QColor(150, 150, 150), max(1.0, pw * 2)))
+            painter.setPen(QPen(QColor(150, 150, 150), pw * 2))
             painter.setBrush(QColor(200, 200, 200, 100))
             painter.drawEllipse(r) if self._shape == "ellipse" else painter.drawRect(r)
 

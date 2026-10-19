@@ -2,7 +2,10 @@
 Path Selection, Direct Selection), modeled on Photoshop's.
 
 What a pen tool edits — its *target* — is either the document's work path
-or the nodes of a Pen-style shape layer (VectorLayer with `path_style`):
+or the nodes of a shape layer: a Pen-style one (VectorLayer with
+`path_style`) or a live Shapes-tool primitive (`shape_data`), which, as in
+Photoshop, turns into a regular path the moment its points are edited
+(moving it whole with Path Selection keeps it live):
 
   * Pen / Freeform / Curvature in "shape" mode (`pen_mode` option) draw a
     shape layer directly: the first click creates it, later clicks extend
@@ -19,13 +22,14 @@ writes the edited nodes back to a shape layer (`VectorLayer.update_path`).
 The path data format itself lives in core/path_model.py."""
 import math
 
-from PyQt6.QtCore import QPointF, QRectF, Qt
-from PyQt6.QtGui import QColor, QCursor, QPainterPath, QPen
+from PyQt6.QtCore import QPoint, QPointF, QRectF, Qt
+from PyQt6.QtGui import QColor, QCursor, QPainterPath, QPen, QTransform
 
 from core.path_model import (PATH_OPS, bezier_point as _bezier_point, build_bezier_path,  # noqa: F401
-                             clear_path, component_at, corner_node, focus_component, has_path,
-                             insert_node_on_segment, path_components, path_to_work_path,
-                             segment_at, split_bezier as _split_bezier, start_new_component)
+                             clear_path, clone_path, component_at, corner_node, focus_component,
+                             has_path, insert_node_on_segment, path_components, path_offset,
+                             path_to_work_path, segment_at, split_bezier as _split_bezier,
+                             start_new_component)
 from tools.base_tool import BaseTool
 from tools.pen_cursors import pen_cursor
 
@@ -69,11 +73,65 @@ class _ShapeLayerPathTarget:
             self.layer.rebake_thumbnail()
 
 
-def _active_pen_layer(doc):
+class _LiveShapeTarget:
+    """A live Shapes-tool primitive. The tools edit a node copy of its
+    outline; the first edit that is more than moving the whole outline
+    turns the layer into a Pen-style path layer with those nodes (and this
+    target into that layer's _ShapeLayerPathTarget). A whole-outline move
+    moves the shape itself, which stays live."""
+    is_shape = True
+
+    def __init__(self, layer):
+        self.layer = layer
+        self._orig_sd = layer.shape_data
+        self._sd = layer.shape_data
+        self._offset = QPoint(layer.offset)
+        self._base = layer.live_shape_nodes()
+        self.wp = clone_path(self._base)
+        self._converted = None
+
+    @property
+    def is_live(self) -> bool:
+        return self._converted is None
+
+    def is_current(self, doc) -> bool:
+        if self._converted is not None:
+            return self._converted.is_current(doc)
+        layer = self.layer
+        return (doc.get_active_layer() is layer and layer.shape_data is self._sd
+                and layer.offset == self._offset)
+
+    def commit(self, final: bool) -> None:
+        if self._converted is not None:
+            self._converted.commit(final)
+            return
+        layer = self.layer
+        shift = path_offset(self._base, self.wp)
+        if shift is None:
+            layer.convert_to_path_layer(self.wp)
+            self._converted = _ShapeLayerPathTarget(layer)
+            self.wp = self._converted.wp
+            self._converted.commit(final)
+            return
+        if shift != (0.0, 0.0) or layer.shape_data is not self._orig_sd:
+            layer.shape_data = self._orig_sd
+            layer.apply_move_geometry(QTransform.fromTranslate(*shift))
+            self._sd = layer.shape_data
+        if final:
+            layer.rebake_thumbnail()
+
+
+def _active_shape_target(doc):
+    """The target for the active layer if it's a shape layer pen tools can
+    edit (Pen-style or live), else None."""
     layer = doc.get_active_layer()
     if layer is None or getattr(layer, "locked", False):
         return None
-    return layer if getattr(layer, "is_pen_path_layer", lambda: False)() else None
+    if getattr(layer, "is_pen_path_layer", lambda: False)():
+        return _ShapeLayerPathTarget
+    if getattr(layer, "is_live_shape", lambda: False)():
+        return _LiveShapeTarget
+    return None
 
 
 def _committing(handler, final: bool):
@@ -131,11 +189,11 @@ class BasePenTool(BaseTool):
     def _path_target(self, doc):
         if self._owner is not None:
             return self._owner._path_target(doc)
-        layer = _active_pen_layer(doc) if self._wants_shape_layer() else None
+        kind = _active_shape_target(doc) if self._wants_shape_layer() else None
         t = self._target
-        if t is not None and t.is_current(doc) and t.is_shape == (layer is not None):
+        if t is not None and t.is_current(doc) and t.is_shape == (kind is not None):
             return t
-        self._target = _ShapeLayerPathTarget(layer) if layer is not None else _WorkPathTarget(doc)
+        self._target = kind(doc.get_active_layer()) if kind is not None else _WorkPathTarget(doc)
         return self._target
 
     def _get_wp(self, doc):
@@ -158,7 +216,9 @@ class BasePenTool(BaseTool):
             return target.wp
         if target.is_shape:
             wp = target.wp
-            if continue_open and wp["nodes"] and not wp["closed"]:
+            # A live line isn't a path being drawn — never continued.
+            if (continue_open and wp["nodes"] and not wp["closed"]
+                    and not getattr(target, "is_live", False)):
                 return wp
             op = opts.get("shape_path_op", "new")
             if op in PATH_OPS:
@@ -182,11 +242,11 @@ class BasePenTool(BaseTool):
 
     def finish_path(self, doc) -> bool:
         """Enter / Esc: end the open path; the next click starts a new one."""
-        wp = self._get_wp(doc)
-        if not wp["nodes"] or wp["closed"]:
+        target = self._path_target(doc)
+        wp = target.wp
+        if not wp["nodes"] or wp["closed"] or getattr(target, "is_live", False):
             return False
         start_new_component(wp)
-        target = self._path_target(doc)
         target.commit(True)
         return True
 
@@ -207,16 +267,11 @@ class BasePenTool(BaseTool):
             focus_component(wp, idx)
         return wp
 
-    @staticmethod
-    def _screen_px(opts, px: float) -> float:
-        """`px` screen pixels in document units at the current zoom."""
-        return px / max(0.01, opts.get("_zoom", 1.0))
-
     def _closes_path(self, wp, pos, opts) -> bool:
         """Would a click at `pos` close the open path (near its first node)?"""
         nodes = wp['nodes']
         return (len(nodes) > 1 and not wp['closed'] and
-                self._dist(pos, nodes[0]['p']) < self._screen_px(opts, self.CLOSE_PX))
+                self._dist(pos, nodes[0]['p']) < self.screen_px(opts, self.CLOSE_PX))
 
     def _overlay_preview(self, wp):
         """Rubber band from the last node to the cursor (Pen only)."""
@@ -297,6 +352,23 @@ def _keep_smooth(n: dict, moved: str) -> None:
     n[other] = QPointF(p.x() - (m.x() - p.x()) / dm * do, p.y() - (m.y() - p.y()) / dm * do)
 
 
+def _segment_drag_weight(t: float) -> float:
+    """How a segment drag at curve parameter `t` is shared between the two
+    handles (0 = all on the start handle) — Inkscape's curve-drag split:
+    near an end only that end's handle moves."""
+    if t <= 1 / 6:
+        return 0.0
+    if t <= 0.5:
+        return ((6 * t - 1) / 2) ** 3 / 2
+    if t <= 5 / 6:
+        return (1 - ((6 * (1 - t) - 1) / 2) ** 3) / 2 + 0.5
+    return 1.0
+
+
+def _is_straight(n0: dict, n1: dict) -> bool:
+    return n0["c2"] == n0["p"] and n1["c1"] == n1["p"]
+
+
 def _is_smooth(n: dict) -> bool:
     p, a, b = n["p"], n["c1"], n["c2"]
     va, vb = (a.x() - p.x(), a.y() - p.y()), (b.x() - p.x(), b.y() - p.y())
@@ -341,7 +413,7 @@ class PenTool(BasePenTool):
         drawing = bool(nodes) and not wp["closed"]
         if self._closes_path(wp, pos, opts):
             return "close"
-        hit = self._screen_px(opts, self.HIT_PX)
+        hit = self.screen_px(opts, self.HIT_PX)
         if drawing and self._dist(pos, nodes[-1]["p"]) < hit:
             return "corner"
         if opts.get("pen_auto_add_delete", True):
@@ -479,7 +551,7 @@ class CurvaturePenTool(BasePenTool):
         wp = target.wp
         nodes = [] if self._draws_new_shape(target) else wp['nodes']
         for i, n in enumerate(nodes):
-            if self._dist(pos, n['p']) < self._screen_px(opts, self.HIT_PX):
+            if self._dist(pos, n['p']) < self.screen_px(opts, self.HIT_PX):
                 self.drag_idx = i
                 return
         if nodes and self._closes_path(wp, pos, opts):
@@ -533,10 +605,10 @@ class AddAnchorPointTool(BasePenTool):
     shortcut = "P"
 
     def on_press(self, pos, doc, fg, bg, opts):
-        wp = self._focus_at(doc, pos, self._screen_px(opts, self.COMPONENT_PX))
+        wp = self._focus_at(doc, pos, self.screen_px(opts, self.COMPONENT_PX))
         nodes = wp['nodes']
         if len(nodes) < 2: return
-        hit = segment_at(nodes, wp['closed'], pos, self._screen_px(opts, self.COMPONENT_PX))
+        hit = segment_at(nodes, wp['closed'], pos, self.screen_px(opts, self.COMPONENT_PX))
         if hit is not None:
             insert_node_on_segment(nodes, *hit)
 
@@ -549,10 +621,10 @@ class DeleteAnchorPointTool(BasePenTool):
     icon = "✒️-"
     shortcut = "P"
     def on_press(self, pos, doc, fg, bg, opts):
-        wp = self._focus_at(doc, pos, self._screen_px(opts, self.COMPONENT_PX))
+        wp = self._focus_at(doc, pos, self.screen_px(opts, self.COMPONENT_PX))
         nodes = wp['nodes']
         for i, n in enumerate(nodes):
-            if self._dist(pos, n['p']) < self._screen_px(opts, self.HIT_PX):
+            if self._dist(pos, n['p']) < self.screen_px(opts, self.HIT_PX):
                 nodes.pop(i)
                 if len(nodes) < 3: wp['closed'] = False
                 return
@@ -571,15 +643,15 @@ class ConvertPointTool(BasePenTool):
 
     def on_press(self, pos, doc, fg, bg, opts):
         self.drag_target = None
-        nodes = self._focus_at(doc, pos, self._screen_px(opts, self.COMPONENT_PX))['nodes']
+        nodes = self._focus_at(doc, pos, self.screen_px(opts, self.COMPONENT_PX))['nodes']
         for i, n in enumerate(nodes):
             # A handle lying on its anchor (corner point) is not a separate
             # target — the click goes to the anchor below.
             for key in ('c1', 'c2'):
-                if self._dist(n[key], n['p']) > 1 and self._dist(pos, n[key]) < self._screen_px(opts, self.HIT_PX):
+                if self._dist(n[key], n['p']) > 1 and self._dist(pos, n[key]) < self.screen_px(opts, self.HIT_PX):
                     self.drag_target = (i, key); return
         for i, n in enumerate(nodes):
-            if self._dist(pos, n['p']) < self._screen_px(opts, self.HIT_PX):
+            if self._dist(pos, n['p']) < self.screen_px(opts, self.HIT_PX):
                 if self._dist(n['p'], n['c1']) > 1 or self._dist(n['p'], n['c2']) > 1:
                     n['c1'] = QPointF(n['p']); n['c2'] = QPointF(n['p'])
                 else:
@@ -615,7 +687,7 @@ class PathSelectionTool(BasePenTool):
         wp = self._get_wp(doc)
         if not has_path(wp): return
         path = self._build_path(wp)
-        m = self._screen_px(opts, self.CLOSE_PX)
+        m = self.screen_px(opts, self.CLOSE_PX)
         if path.boundingRect().adjusted(-m, -m, m, m).contains(QPointF(pos)):
             self._dragging = True
             self._start_pos = QPointF(pos)
@@ -640,34 +712,76 @@ class PathSelectionTool(BasePenTool):
 
 
 class DirectSelectionTool(ConvertPointTool):
-    """Drags anchors and handles. Dragging a handle of a smooth node turns
-    the opposite handle with it (the node stays smooth) unless Alt is held."""
+    """Drags anchors, handles and segments, like Photoshop's. Dragging a
+    handle of a smooth node turns the opposite handle with it (the node
+    stays smooth) unless Alt is held. Dragging a straight segment moves its
+    two anchors; dragging a curved one reshapes it so the grabbed point
+    follows the cursor (its two handles change, smooth ends stay smooth)."""
     name = "DirectSelection"
     icon = "↗"
     shortcut = "A"
     def on_press(self, pos, doc, fg, bg, opts):
         self.drag_target = None
         self._was_smooth = False
-        nodes = self._focus_at(doc, pos, self._screen_px(opts, self.COMPONENT_PX))['nodes']
+        wp = self._focus_at(doc, pos, self.screen_px(opts, self.COMPONENT_PX))
+        nodes = wp['nodes']
         for i, n in enumerate(nodes):
             # A handle lying on its anchor (corner point) is not a separate
             # target — the click goes to the anchor below.
             for key in ('c1', 'c2'):
-                if self._dist(n[key], n['p']) > 1 and self._dist(pos, n[key]) < self._screen_px(opts, self.HIT_PX):
+                if self._dist(n[key], n['p']) > 1 and self._dist(pos, n[key]) < self.screen_px(opts, self.HIT_PX):
                     self.drag_target = (i, key)
                     self._was_smooth = _is_smooth(n)
                     return
         for i, n in enumerate(nodes):
-            if self._dist(pos, n['p']) < self._screen_px(opts, self.HIT_PX):
+            if self._dist(pos, n['p']) < self.screen_px(opts, self.HIT_PX):
                 self.drag_target = (i, 'p')
                 self._start_pos = QPointF(pos)
                 self._orig_n = {'p': QPointF(n['p']), 'c1': QPointF(n['c1']), 'c2': QPointF(n['c2'])}
                 return
+        if len(nodes) > 1:
+            hit = segment_at(nodes, wp['closed'], pos, self.screen_px(opts, self.HIT_PX))
+            if hit is not None:
+                seg, t = hit
+                n0, n1 = nodes[seg], nodes[(seg + 1) % len(nodes)]
+                self.drag_target = (seg, 'segment')
+                self._start_pos = QPointF(pos)
+                self._seg_t = t
+                self._seg_orig = [{k: QPointF(n[k]) for k in ('p', 'c1', 'c2')} for n in (n0, n1)]
+                self._seg_straight = _is_straight(n0, n1)
+                self._seg_smooth = (_is_smooth(n0), _is_smooth(n1))
+
+    def _drag_segment(self, nodes, seg, pos, opts):
+        n0, n1 = nodes[seg], nodes[(seg + 1) % len(nodes)]
+        o0, o1 = self._seg_orig
+        d = QPointF(pos) - self._start_pos
+        if self._seg_straight:
+            for n, o in ((n0, o0), (n1, o1)):
+                for k in ('p', 'c1', 'c2'):
+                    n[k] = o[k] + d
+            return
+        t = self._seg_t
+        w = _segment_drag_weight(t)
+        # The curve point at t moves by exactly d (Inkscape's formula).
+        n0['c2'] = o0['c2'] + d * ((1 - w) / (3 * t * (1 - t) * (1 - t)))
+        n1['c1'] = o1['c1'] + d * (w / (3 * t * t * (1 - t)))
+        if not opts.get("_alt"):
+            if self._seg_smooth[0]:
+                n0['c1'] = QPointF(o0['c1'])
+                _keep_smooth(n0, 'c2')
+            if self._seg_smooth[1]:
+                n1['c2'] = QPointF(o1['c2'])
+                _keep_smooth(n1, 'c1')
 
     def on_move(self, pos, doc, fg, bg, opts):
         if not self.drag_target: return
         idx, ttype = self.drag_target
-        n = self._get_wp(doc)['nodes'][idx]
+        nodes = self._get_wp(doc)['nodes']
+        if ttype == 'segment':
+            if len(nodes) > 1:
+                self._drag_segment(nodes, idx, pos, opts)
+            return
+        n = nodes[idx]
         if ttype in ('c1', 'c2'):
             n[ttype] = QPointF(pos)
             if self._was_smooth and not opts.get("_alt"):

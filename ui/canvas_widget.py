@@ -437,7 +437,8 @@ class CanvasWidget(QOpenGLWidget):
             logger.exception("Critical canvas paint loop failure")
 
     def _paint_tool_overlays(self, painter: QPainter):
-        """The active tool's handles and guides, in document space."""
+        """The active tool's handles and guides, in document space; the
+        tool gets one screen pixel in document units to size them by."""
         tool = self.active_tool
         if tool is None or not hasattr(tool, "draw_overlays"):
             return
@@ -446,7 +447,7 @@ class CanvasWidget(QOpenGLWidget):
         try:
             painter.translate(self._pan)
             painter.scale(self.zoom, self.zoom)
-            tool.draw_overlays(painter, max(1.0, 1.0 / self.zoom), self.document)
+            tool.draw_overlays(painter, 1.0 / self.zoom, self.document)
         except Exception:
             logger.exception("Tool overlay rendering error in %s", getattr(tool, "name", "?"))
         finally:

@@ -84,14 +84,21 @@ def draw_artboard_frames(painter, *, doc, pan, zoom):
     painter.setRenderHint(QPainter.RenderHint.TextAntialiasing)
     for layer in doc.artboards():
         ar = layer.artboard_rect
-        painter.setPen(QPen(QColor(120, 120, 120), max(1.0, 1.0 / zoom)))
+        frame_pen = QPen(QColor(120, 120, 120), 1.0)
+        frame_pen.setCosmetic(True)
+        painter.setPen(frame_pen)
         painter.setBrush(Qt.BrushStyle.NoBrush)
         painter.drawRect(ar)
+        # The name: screen-sized text 4 screen px above the frame.
+        anchor = painter.combinedTransform().map(QPointF(ar.topLeft()))
+        painter.save()
+        painter.setTransform(QTransform())
         painter.setPen(QColor(200, 200, 200))
         font = painter.font()
-        font.setPointSizeF(max(10.0, 12.0 / zoom))
+        font.setPointSizeF(12.0)
         painter.setFont(font)
-        painter.drawText(ar.left(), ar.top() - max(4, int(4 / zoom)), layer.name)
+        painter.drawText(QPointF(anchor.x(), anchor.y() - 4), layer.name)
+        painter.restore()
     painter.restore()
 
 
@@ -130,16 +137,21 @@ def draw_slices(painter, *, doc, pan, zoom):
     pen1 = QPen(QColor(0, 150, 255, 200), pw)
     pen1.setCosmetic(True)
     painter.setPen(pen1)
-    font = painter.font()
-    font.setPointSizeF(max(8.0, 10.0 / zoom))
-    painter.setFont(font)
     for i, r in enumerate(slices):
         painter.setBrush(QColor(0, 150, 255, 20))
         painter.drawRect(r)
-        badge_rect = QRectF(r.left(), r.top(), 24 / zoom, 16 / zoom)
+        # The number badge: 24×16 screen px at the slice's corner.
+        corner = painter.combinedTransform().map(QPointF(QRectF(r).topLeft()))
+        painter.save()
+        painter.setTransform(QTransform())
+        badge_rect = QRectF(corner.x(), corner.y(), 24, 16)
         painter.fillRect(badge_rect, QColor(0, 150, 255, 200))
+        font = painter.font()
+        font.setPointSizeF(10.0)
+        painter.setFont(font)
         painter.setPen(QColor(255, 255, 255))
         painter.drawText(badge_rect, Qt.AlignmentFlag.AlignCenter, str(i + 1))
+        painter.restore()
 
         pen2 = QPen(QColor(0, 150, 255, 200), pw)
         pen2.setCosmetic(True)

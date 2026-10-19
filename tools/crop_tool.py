@@ -170,7 +170,7 @@ class CropTool(BaseTool):
     def draw_overlays(self, painter, pw, doc):
         if hasattr(self, "_smart_guides") and self._smart_guides:
             painter.save()
-            painter.setPen(QPen(QColor(255, 0, 255, 200), max(1.0, pw)))
+            painter.setPen(QPen(QColor(255, 0, 255, 200), pw))
             for gtype, val in self._smart_guides:
                 if gtype == 'v': painter.drawLine(QPointF(val, -10000), QPointF(val, 10000))
                 elif gtype == 'h': painter.drawLine(QPointF(-10000, val), QPointF(10000, val))

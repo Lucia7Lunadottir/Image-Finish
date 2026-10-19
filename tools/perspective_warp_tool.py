@@ -61,7 +61,7 @@ class PerspectiveWarpTool(TransformTool):
         painter.save()
         painter.setRenderHint(QPainter.RenderHint.Antialiasing)
         if len(self._src_poly) < 4:
-            painter.setPen(QPen(QColor(255, 255, 255), max(1.0, pw*1.5), Qt.PenStyle.DashLine))
+            painter.setPen(QPen(QColor(255, 255, 255), pw * 1.5, Qt.PenStyle.DashLine))
             for i, p in enumerate(self._src_poly):
                 painter.drawEllipse(p, 4*pw, 4*pw)
                 if i > 0: painter.drawLine(self._src_poly[i-1], p)
