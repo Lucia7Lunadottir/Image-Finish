@@ -85,9 +85,12 @@ class ViewActionsMixin:
         from ui import theme
         theme_m = self._menu(parent_menu, "menu.theme")
         self._theme_acts = {}
-        for name, key in (("dark", "menu.theme_dark"),
-                          ("light", "menu.theme_light"),
-                          ("custom", "menu.theme_custom")):
+        choices = [("dark", "menu.theme_dark"), ("light", "menu.theme_light"), ("custom", "menu.theme_custom")]
+        if theme.CHARACTER_AVAILABLE:       # only with equestria-qt-kit (Equestria OS)
+            choices.append((theme.CHARACTER, "menu.theme_character"))
+            theme.start_character_follow()
+            theme.on_theme_changed(self._apply_theme_live)
+        for name, key in choices:
             act = QAction(tr(key), self)
             act.setCheckable(True)
             act.setChecked(theme.current_theme() == name)

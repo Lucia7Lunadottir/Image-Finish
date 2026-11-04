@@ -1046,6 +1046,7 @@
   "menu.theme_light": "Світла",
   "status.theme_restart": "Тему застосовано. Деякі панелі повністю оновляться після перезапуску",
   "menu.theme_custom": "Власна",
+  "menu.theme_character": "Тема персонажа (Equestria OS)",
   "menu.theme_configure": "Налаштувати власну…",
   "dlg.theme_main_color": "Головний колір теми",
   "dlg.theme_base_question": "Будувати на темній основі?\n(Ні — світла основа)",

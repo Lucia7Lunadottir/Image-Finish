@@ -1046,6 +1046,7 @@
   "menu.theme_light": "浅色",
   "status.theme_restart": "主题已应用。部分面板将在重启后完全更新",
   "menu.theme_custom": "自定义",
+  "menu.theme_character": "角色主题 (Equestria OS)",
   "menu.theme_configure": "配置自定义…",
   "dlg.theme_main_color": "主题主色",
   "dlg.theme_base_question": "以深色为基础？\n（否 = 浅色基础）",

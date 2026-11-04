@@ -1046,6 +1046,7 @@
   "menu.theme_light": "Hell",
   "status.theme_restart": "Design angewendet. Einige Panels werden nach dem Neustart vollständig aktualisiert",
   "menu.theme_custom": "Benutzerdefiniert",
+  "menu.theme_character": "Charakter-Design (Equestria OS)",
   "menu.theme_configure": "Benutzerdefiniert einrichten…",
   "dlg.theme_main_color": "Hauptfarbe des Designs",
   "dlg.theme_base_question": "Auf dunkler Basis aufbauen?\n(Nein = helle Basis)",

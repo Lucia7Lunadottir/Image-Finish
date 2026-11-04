@@ -1067,6 +1067,7 @@
   "menu.theme_light": "Light",
   "status.theme_restart": "Theme applied. Some panels will update fully after restart",
   "menu.theme_custom": "Custom",
+  "menu.theme_character": "Character theme (Equestria OS)",
   "menu.theme_configure": "Configure Custom…",
   "dlg.theme_main_color": "Main theme color",
   "dlg.theme_base_question": "Build on a dark base?\n(No = light base)",

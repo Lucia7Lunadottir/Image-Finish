@@ -47,9 +47,9 @@ def _load_recolored_icon(icon_file: str, color: str | None = None) -> QIcon:
     return QIcon()
 
 
-def _tool_icon(td: ToolSpec) -> QIcon:
+def _tool_icon(td: ToolSpec, color: str | None = None) -> QIcon:
     """Icon fallback chain: SVG file -> drawn built-in icon -> null."""
-    ico = _load_recolored_icon(td.icon_file)
+    ico = _load_recolored_icon(td.icon_file, color)
     if not ico.isNull():
         return ico
     from ui.tool_icons import get_tool_icon
@@ -57,8 +57,9 @@ def _tool_icon(td: ToolSpec) -> QIcon:
 
 
 def _apply_icon(btn, td: ToolSpec, size: int = 22) -> None:
-    """Applies a recolored icon to a toolbar button."""
-    ico = _tool_icon(td)
+    """Applies a recolored icon to a toolbar button. The active tool sits on the
+    accent fill, so its icon takes the text-on-accent color (dark on a gold accent)."""
+    ico = _tool_icon(td, theme.ON_ACCENT if btn.property("active") else None)
     if not ico.isNull():
         btn.setIcon(ico)
         btn.setIconSize(QSize(size, size))
@@ -161,16 +162,23 @@ class ToolBar(QWidget):
         # Single tools
         for name, w in self._buttons.items():
             if isinstance(w, QPushButton):
+                was = bool(w.property("active"))
                 w.setProperty("active", name == tool_name)
                 w.style().unpolish(w)
                 w.style().polish(w)
+                if was != (name == tool_name) and TOOLS.get(name):
+                    _apply_icon(w, TOOLS[name])     # icon color follows the active fill
 
         # Tools in dropdown groups
         gid = self._tool_to_group.get(tool_name)
         for group_id, gbtn in self._groups.items():
+            was = bool(gbtn.property("active"))
             gbtn.setProperty("active", group_id == gid)
             gbtn.style().unpolish(gbtn)
             gbtn.style().polish(gbtn)
+            group_tool = TOOLS.get(self._group_active_tool.get(group_id, ""))
+            if was != (group_id == gid) and group_tool and group_id != gid:
+                _apply_icon(gbtn, group_tool)       # no longer active: back to the text color
 
         if gid:
             self._group_active_tool[gid] = tool_name

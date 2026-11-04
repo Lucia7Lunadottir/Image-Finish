@@ -1046,6 +1046,7 @@
   "menu.theme_light": "ライト",
   "status.theme_restart": "テーマを適用しました。一部のパネルは再起動後に完全に更新されます",
   "menu.theme_custom": "カスタム",
+  "menu.theme_character": "キャラクターテーマ (Equestria OS)",
   "menu.theme_configure": "カスタムを設定…",
   "dlg.theme_main_color": "テーマのメインカラー",
   "dlg.theme_base_question": "ダークベースで作成しますか？\n(いいえ = ライトベース)",

@@ -10,6 +10,14 @@ the startup theme until restart.
 import sys
 import weakref
 
+try:    # optional: Equestria OS character themes (her character switcher); absent on plain Arch/AUR
+    from equestria_kit import themes as _kit_themes
+except Exception:   # noqa: BLE001 — any kit problem must not stop the editor from starting
+    _kit_themes = None
+
+CHARACTER = "character"
+CHARACTER_AVAILABLE = _kit_themes is not None
+
 PALETTES = {
     "dark": {   # Catppuccin Mocha
         "CRUST": "#11111b", "MANTLE": "#181825", "BASE": "#1e1e2e",
@@ -33,6 +41,89 @@ FONT_STACK = '"Segoe UI", "Ubuntu", "Noto Sans", sans-serif'
 GRID_COLOR = "#808080"
 
 _current_name = "dark"
+_character_name = ""          # character theme last applied (equestria-qt-kit name)
+_theme_listeners: list = []   # called after a live switch that did not come from our menu
+
+
+def _mix(a: str, b: str, k: float) -> str:
+    from PyQt6.QtGui import QColor
+    ca, cb = QColor(a), QColor(b)
+    return QColor(round(ca.red() + (cb.red() - ca.red()) * k), round(ca.green() + (cb.green() - ca.green()) * k),
+                  round(ca.blue() + (cb.blue() - ca.blue()) * k)).name()
+
+
+def _luminance(h: str) -> float:
+    from PyQt6.QtGui import QColor
+    c = QColor(h)
+    ch = [x / 255 for x in (c.red(), c.green(), c.blue())]
+    ch = [x / 12.92 if x <= 0.03928 else ((x + 0.055) / 1.055) ** 2.4 for x in ch]
+    return 0.2126 * ch[0] + 0.7152 * ch[1] + 0.0722 * ch[2]
+
+
+def _contrast(a: str, b: str) -> float:
+    la, lb = sorted((_luminance(a), _luminance(b)), reverse=True)
+    return (la + 0.05) / (lb + 0.05)
+
+
+def _on_color(fill: str, dark: str) -> str:
+    """Readable text on a filled background: white, or the palette's darkest color."""
+    return "#ffffff" if _contrast("#ffffff", fill) >= _contrast(dark, fill) else dark
+
+
+def character_palette() -> dict | None:
+    """The active Equestria OS character theme (equestria-qt-kit) as an Image Finish palette.
+    Dark variant only. None when the kit is not installed or the theme can't be read."""
+    global _character_name
+    if _kit_themes is None:
+        return None
+    try:
+        name = _kit_themes.registry().resolve(_kit_themes.current_name())
+        k = dict(_kit_themes.THEMES[name])
+    except Exception:   # noqa: BLE001
+        return None
+    _character_name = name
+    from PyQt6.QtGui import QColor
+    acc = k["accent"]
+    return {
+        "CRUST": k["crust"], "MANTLE": k["mantle"], "BASE": k["base"],
+        "OVERLAY": _mix(k["base"], k["surface0"], .5),
+        "SURFACE0": k["surface0"], "SURFACE1": k["surface1"], "SURFACE2": k["surface2"],
+        "TEXT": k["text"], "SUBTEXT": k["subtext"], "MUTED": _mix(k["subtext"], k["base"], .3),
+        "ACCENT": acc, "ACCENT_LIGHT": QColor(acc).lighter(118).name(), "ACCENT_DARK": QColor(acc).darker(125).name(),
+        "DANGER": _mix(k["red"], k["base"], .55), "DANGER_BORDER": _mix(k["red"], k["base"], .35),
+        "DANGER_TEXT": k["red"],
+    }
+
+
+def character_name() -> str:
+    return _character_name
+
+
+def on_theme_changed(fn) -> None:
+    """fn() after the character theme changed in another app (her switcher) and was applied here."""
+    _theme_listeners.append(fn)
+
+
+def start_character_follow() -> None:
+    """Follow her character switcher live while the "character" theme is selected (needs QApplication)."""
+    if _kit_themes is None or getattr(start_character_follow, "_started", False):
+        return
+    start_character_follow._started = True
+
+    def changed(_name):
+        if _current_name != CHARACTER:
+            return _character_name
+        set_theme(CHARACTER)
+        for fn in list(_theme_listeners):
+            try:
+                fn()
+            except Exception as e:  # noqa: BLE001 — a Qt slot: an exception would abort PyQt6
+                print(f"[theme] listener: {e}", file=sys.stderr)
+        return _character_name
+    try:
+        _kit_themes.follow(changed, lambda: _character_name)
+    except Exception as e:  # noqa: BLE001
+        print(f"[theme] character follow: {e}", file=sys.stderr)
 
 
 def make_custom_palette(main_hex: str, base_name: str = "dark") -> dict:
@@ -86,6 +177,10 @@ def set_theme(name: str) -> None:
         except Exception:
             main_hex, base_name = "#7c3aed", "dark"
         palette = make_custom_palette(main_hex, base_name)
+    elif name == CHARACTER:
+        palette = character_palette()
+        if palette is None:         # kit missing or broken — keep a working theme
+            name, palette = "dark", PALETTES["dark"]
     else:
         palette = PALETTES.get(name)
     if palette is None:
@@ -102,6 +197,10 @@ def set_theme(name: str) -> None:
     mod.BORDER = palette["SURFACE0"]
     mod.INPUT_BORDER = palette["SURFACE1"]
     mod.SELECTION = palette["ACCENT"]
+    # text on accent fills (selected menu item, active tool…): white or dark — whichever reads
+    mod.ON_ACCENT = _on_color(palette["ACCENT"], palette["CRUST"] if _luminance(palette["BASE"]) < .3 else palette["TEXT"])
+    # bright text on SURFACE0 (selected layer row): white on dark themes, regular text on light ones
+    mod.BRIGHT_TEXT = "#ffffff" if _luminance(palette["BASE"]) < .3 else palette["TEXT"]
     repolish_all()
 
 
@@ -162,7 +261,7 @@ def save_theme(name: str) -> None:
 # Bind the saved (or default) palette at import time so import-time styles
 # in panels pick up the right colors from the very start.
 _saved = load_saved_theme()
-set_theme(_saved if _saved in (*PALETTES, "custom") else "dark")
+set_theme(_saved if _saved in (*PALETTES, "custom", CHARACTER) else "dark")
 
 
 def _qss_image(name: str, svg: str) -> str:
@@ -187,7 +286,7 @@ def build_stylesheet() -> str:
         'stroke-linecap="round" stroke-linejoin="round"/></svg>'))
     check = _qss_image("check", (
         '<svg xmlns="http://www.w3.org/2000/svg" width="12" height="12">'
-        '<path d="M2.5 6.3 L5 8.8 L9.6 3.4" stroke="#ffffff" stroke-width="2" fill="none" '
+        f'<path d="M2.5 6.3 L5 8.8 L9.6 3.4" stroke="{ON_ACCENT}" stroke-width="2" fill="none" '
         'stroke-linecap="round" stroke-linejoin="round"/></svg>'))
     return f"""
 /* ───────────────────────── Global ───────────────────────── */
@@ -229,7 +328,7 @@ QMenu::item {{
 }}
 QMenu::item:selected {{
     background-color: {ACCENT};
-    color: white;
+    color: {ON_ACCENT};
 }}
 QMenu::item:disabled {{
     color: {MUTED};
@@ -321,7 +420,7 @@ QPushButton#toolBtn:hover, QToolButton#toolBtn:hover {{
 QPushButton#toolBtn[active="true"], QToolButton#toolBtn[active="true"] {{
     background-color: {ACCENT};
     border-color: {ACCENT_LIGHT};
-    color: white;
+    color: {ON_ACCENT};
 }}
 QToolButton#toolBtn::menu-indicator {{
     subcontrol-origin: padding;
@@ -393,7 +492,7 @@ QComboBox QAbstractItemView {{
     border: 1px solid {SURFACE1};
     color: {TEXT};
     selection-background-color: {ACCENT};
-    selection-color: #ffffff;
+    selection-color: {ON_ACCENT};
     outline: none;
 }}
 
@@ -483,7 +582,7 @@ QListWidget::item {{
 }}
 QListWidget::item:selected {{
     background-color: {SURFACE0};
-    color: white;
+    color: {BRIGHT_TEXT};
 }}
 QListWidget::item:hover {{
     background-color: {OVERLAY};
@@ -530,7 +629,7 @@ QPushButton#styleToggleBtn:hover {{
 QPushButton#styleToggleBtn:checked {{
     background-color: {ACCENT};
     border-color: {ACCENT_LIGHT};
-    color: #ffffff;
+    color: {ON_ACCENT};
 }}
 QPushButton#styleToggleBtn:checked:hover {{
     background-color: {ACCENT_DARK};

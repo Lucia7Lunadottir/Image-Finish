@@ -1046,6 +1046,7 @@
   "menu.theme_light": "Jasny",
   "status.theme_restart": "Motyw zastosowany. Niektóre panele odświeżą się po ponownym uruchomieniu",
   "menu.theme_custom": "Własny",
+  "menu.theme_character": "Motyw postaci (Equestria OS)",
   "menu.theme_configure": "Skonfiguruj własny…",
   "dlg.theme_main_color": "Główny kolor motywu",
   "dlg.theme_base_question": "Budować na ciemnej bazie?\n(Nie = jasna baza)",

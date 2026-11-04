@@ -1046,6 +1046,7 @@
   "menu.theme_light": "Claro",
   "status.theme_restart": "Tema aplicado. Algunos paneles se actualizarán tras reiniciar",
   "menu.theme_custom": "Personalizado",
+  "menu.theme_character": "Tema del personaje (Equestria OS)",
   "menu.theme_configure": "Configurar personalizado…",
   "dlg.theme_main_color": "Color principal del tema",
   "dlg.theme_base_question": "¿Construir sobre base oscura?\n(No = base clara)",
