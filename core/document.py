@@ -513,8 +513,13 @@ class Document:
         for layer in self.layers:
             if layer.is_container or layer.image is None:
                 continue
-            need_w = max(layer.image.width(), width - layer.offset.x())
-            need_h = max(layer.image.height(), height - layer.offset.y())
+            # A pixel layer must cover the whole canvas on the left / top too, or
+            # the brush paints outside its image there: growing the canvas on the
+            # left / top shifts the layer right / down (extend_canvas), which left
+            # the new strip uncovered — paint landed nowhere.
+            grow_l, grow_t = self._uncovered_left_top(layer)
+            need_w = max(layer.image.width() + grow_l, width - layer.offset.x() + grow_l)
+            need_h = max(layer.image.height() + grow_t, height - layer.offset.y() + grow_t)
             if need_w <= layer.image.width() and need_h <= layer.image.height():
                 continue
             grown = QImage(need_w, need_h, QImage.Format.Format_ARGB32_Premultiplied)
@@ -522,11 +527,26 @@ class Document:
                        else Qt.GlobalColor.transparent)
             p = QPainter(grown)
             p.setCompositionMode(QPainter.CompositionMode.CompositionMode_Source)
-            p.drawImage(0, 0, layer.image)
+            p.drawImage(grow_l, grow_t, layer.image)
             p.end()
             layer.image = grown
+            if grow_l or grow_t:
+                # pixels stay where they were in the document; the layer mask lives
+                # in the layer's own coordinates, so it moves with them
+                from core.layer import shifted_mask
+                layer.offset = QPoint(layer.offset.x() - grow_l, layer.offset.y() - grow_t)
+                if layer.mask is not None:
+                    layer.mask = shifted_mask(layer.mask, grow_l, grow_t)
         self.width, self.height = width, height
         self.invalidate_composite()
+
+    @staticmethod
+    def _uncovered_left_top(layer: Layer) -> tuple[int, int]:
+        """How far a plain pixel layer starts right of / below the canvas origin
+        (0, 0 for live-rendered, fill and adjustment layers — they aren't painted on)."""
+        if type(layer) is not RasterLayer:
+            return 0, 0
+        return max(0, layer.offset.x()), max(0, layer.offset.y())
 
     def extend_canvas(self, left: int, top: int, right: int, bottom: int,
                       fill_color: QColor | None = None):

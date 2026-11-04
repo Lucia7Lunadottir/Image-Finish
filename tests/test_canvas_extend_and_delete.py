@@ -38,6 +38,26 @@ def test_growing_left_and_top_moves_pixels_and_fills_the_background(qapp):
     assert doc.layers[0].offset == QPoint(0, 0)                     # background stays a plain layer
 
 
+def test_pixel_layer_covers_the_new_left_and_top_strip(qapp):
+    """Bug: after growing the canvas on the left / top with the edge handles,
+    a non-background pixel layer was only shifted — its image didn't cover the
+    new strip, so the brush painted outside the layer there (nothing appeared)."""
+    doc = _opaque_doc()
+    top = doc.add_layer(name="dot")
+    top.image.setPixelColor(10, 10, QColor(255, 0, 0))
+    top.mask = QImage(top.image.size(), QImage.Format.Format_ARGB32_Premultiplied)
+    top.mask.fill(QColor(255, 255, 255))
+    top.mask.setPixelColor(10, 10, QColor(0, 0, 0))                 # hides the dot
+    doc.extend_canvas(20, 30, 0, 0)
+    assert top.offset.x() <= 0 and top.offset.y() <= 0              # starts at the canvas origin
+    assert top.image.width() - top.offset.x() >= doc.width
+    assert top.image.height() - top.offset.y() >= doc.height
+    lx, ly = 30 - top.offset.x(), 40 - top.offset.y()               # the dot, in layer coordinates
+    assert top.image.pixelColor(lx, ly) == QColor(255, 0, 0)        # pixels didn't move in the document
+    assert top.mask.pixelColor(lx, ly) == QColor(0, 0, 0)           # the mask moved with them
+    assert top.mask.pixelColor(5 - top.offset.x(), 5 - top.offset.y()) == QColor(255, 255, 255)
+
+
 def test_growing_on_all_sides_at_once(qapp):
     doc = _opaque_doc()
     doc.extend_canvas(5, 6, 7, 8, QColor(9, 9, 9))
