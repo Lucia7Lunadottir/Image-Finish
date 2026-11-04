@@ -68,14 +68,12 @@ def current() -> str:
 # ── Internal ─────────────────────────────────────────────────────────────────
 
 def _save_setting(lang: str) -> None:
+    """The language lives in the user's settings (QSettings, like the theme) —
+    not in settings.json next to the program: in an installed package that's
+    /usr/share/imagefinish, read-only, so the choice was silently lost."""
     try:
-        data: dict = {}
-        if os.path.exists(_SETTINGS_FILE):
-            with open(_SETTINGS_FILE, encoding="utf-8") as f:
-                data = json.load(f)
-        data["language"] = lang
-        with open(_SETTINGS_FILE, "w", encoding="utf-8") as f:
-            json.dump(data, f, ensure_ascii=False, indent=2)
+        from PyQt6.QtCore import QSettings
+        QSettings("ImageFinish", "ImageFinish").setValue("language", lang)
     except Exception:
         import logging
         logging.getLogger("imagefinish.locale").warning(
@@ -83,6 +81,17 @@ def _save_setting(lang: str) -> None:
 
 
 def _load_setting() -> str:
+    """User setting first; settings.json beside the program is the default
+    (and what older versions saved when run from a source checkout)."""
+    try:
+        from PyQt6.QtCore import QSettings
+        saved = QSettings("ImageFinish", "ImageFinish").value("language")
+        if saved:
+            return str(saved)
+    except Exception:
+        import logging
+        logging.getLogger("imagefinish.locale").warning(
+            "Could not read language setting", exc_info=True)
     try:
         if os.path.exists(_SETTINGS_FILE):
             with open(_SETTINGS_FILE, encoding="utf-8") as f:
